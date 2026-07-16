@@ -1,0 +1,19 @@
+<view class="page-shell profile-editor">
+  <view wx:if="{{loading}}" class="skeleton editor-skeleton"></view>
+  <view wx:else class="profile-form surface-card">
+    <button class="avatar-button" open-type="chooseAvatar" bindchooseavatar="handleAvatarChoose">
+      <image wx:if="{{avatarUrl}}" src="{{avatarUrl}}" mode="aspectFill" />
+      <view wx:else class="avatar-placeholder">选头像</view>
+    </button>
+    <view class="form-field">
+      <view class="field-label">用户名</view>
+      <input class="field-input" type="nickname" maxlength="16" value="{{displayName}}" bindinput="handleNameInput" />
+    </view>
+    <view class="form-field">
+      <view class="field-label">个人签名</view>
+      <textarea class="signature-input" maxlength="60" value="{{signature}}" bindinput="handleSignatureInput" />
+    </view>
+  </view>
+  <view wx:if="{{errorMessage}}" class="error-banner">{{errorMessage}}</view>
+  <button wx:if="{{!loading}}" class="primary-button save-button" loading="{{saving}}" disabled="{{saving}}" bindtap="handleSubmit">保存资料</button>
+</view>

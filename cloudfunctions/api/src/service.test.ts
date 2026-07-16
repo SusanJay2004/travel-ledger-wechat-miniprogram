@@ -195,4 +195,64 @@ describe('LedgerService solo flow', () => {
     const bob = await service.bootstrapSession('openid-bob');
     await expect(service.getTrip(bob.id, trip.id)).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
+
+  it('updates profile fields while preserving identity', async () => {
+    const updated = await service.updateProfile(user, {
+      displayName: '苏同学',
+      signature: '出发去看海',
+      avatarUrl: null,
+    });
+    expect(updated.id).toBe(user.id);
+    expect(updated.publicId).toBe(user.publicId);
+    expect(updated.displayName).toBe('苏同学');
+  });
+
+  it('updates, soft deletes and restores a bill without losing cents', async () => {
+    const trip = await service.createTrip(user, { name: '可纠错旅程' });
+    const dated = await service.addDate(user.id, {
+      tripId: trip.id,
+      date: '2026-07-10',
+      expectedVersion: trip.version,
+    });
+    const added = await service.addBill(user.id, {
+      tripId: trip.id,
+      date: '2026-07-10',
+      expectedVersion: dated.version,
+      bill: {
+        title: '午餐',
+        amountCents: 100,
+        participants: [{ memberId: user.id, displayName: user.displayName, shares: 1 }],
+        payers: [{ memberId: user.id, displayName: user.displayName, paidCents: 100 }],
+      },
+    });
+    const billId = added.bills[0]?.id;
+    expect(billId).toBeDefined();
+    const updated = await service.updateBill(user.id, {
+      tripId: trip.id,
+      billId: billId!,
+      date: '2026-07-10',
+      expectedVersion: added.version,
+      bill: {
+        title: '晚餐',
+        amountCents: 250,
+        participants: [{ memberId: user.id, displayName: user.displayName, shares: 1 }],
+        payers: [{ memberId: user.id, displayName: user.displayName, paidCents: 250 }],
+      },
+    });
+    expect(updated.totalCents).toBe(250);
+    const deleted = await service.deleteBill(user.id, {
+      tripId: trip.id,
+      billId: billId!,
+      expectedVersion: updated.version,
+    });
+    expect(deleted.totalCents).toBe(0);
+    expect(deleted.bills[0]?.deletedAt).not.toBeNull();
+    const restored = await service.restoreBill(user.id, {
+      tripId: trip.id,
+      billId: billId!,
+      expectedVersion: deleted.version,
+    });
+    expect(restored.totalCents).toBe(250);
+    expect(restored.bills[0]?.deletedAt).toBeNull();
+  });
 });

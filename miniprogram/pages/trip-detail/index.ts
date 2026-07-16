@@ -22,6 +22,7 @@ interface DateSection {
 interface DetailData {
   addingDate: boolean;
   dateSections: readonly DateSection[];
+  deletedBills: readonly BillCard[];
   errorMessage: string;
   loading: boolean;
   selectedDate: string;
@@ -32,9 +33,11 @@ interface DetailData {
 interface DetailMethods {
   handleAddBill(event: WechatMiniprogram.BaseEvent): void;
   handleArchive(): Promise<void>;
+  handleBillAction(event: WechatMiniprogram.BaseEvent): Promise<void>;
   handleComplete(): Promise<void>;
   handleDateChange(event: WechatMiniprogram.PickerChange): void;
   handleRetry(): void;
+  handleRestoreBill(event: WechatMiniprogram.BaseEvent): Promise<void>;
   handleSettle(): Promise<void>;
   loadTrip(): Promise<void>;
   submitDate(): Promise<void>;
@@ -44,6 +47,7 @@ Page<DetailData, DetailMethods>({
   data: {
     addingDate: false,
     dateSections: [],
+    deletedBills: [],
     errorMessage: '',
     loading: true,
     selectedDate: today(),
@@ -72,6 +76,7 @@ Page<DetailData, DetailMethods>({
       void wx.setNavigationBarTitle({ title: trip.name });
       this.setData({
         dateSections: buildDateSections(trip),
+        deletedBills: trip.bills.filter((bill) => bill.deletedAt !== null).map(toBillCard),
         loading: false,
         trip,
         totalText: formatCents(trip.totalCents),
@@ -111,6 +116,50 @@ Page<DetailData, DetailMethods>({
       void wx.navigateTo({
         url: `/pages/bill-editor/index?tripId=${trip.id}&date=${date}&version=${trip.version}`,
       });
+    }
+  },
+
+  async handleBillAction(event: WechatMiniprogram.BaseEvent) {
+    const trip = this.data.trip;
+    const billId = String(event.currentTarget.dataset['billId'] ?? '');
+    if (trip === null || trip.status !== 'active' || billId.length === 0) return;
+    const selected = await wx.showActionSheet({ itemList: ['修改账单', '删除账单'] });
+    if (selected.tapIndex === 0) {
+      const bill = trip.bills.find((item) => item.id === billId);
+      if (bill !== undefined) {
+        void wx.navigateTo({
+          url: `/pages/bill-editor/index?tripId=${trip.id}&date=${bill.date}&version=${trip.version}&billId=${bill.id}`,
+        });
+      }
+      return;
+    }
+    const confirmed = await confirm('删除这笔账单？', '删除后 30 天内可以从本页底部恢复。');
+    if (!confirmed) return;
+    try {
+      await callApi('trip.deleteBill', {
+        tripId: trip.id,
+        billId,
+        expectedVersion: trip.version,
+      });
+      await this.loadTrip();
+    } catch (error: unknown) {
+      void wx.showToast({ icon: 'none', title: toMessage(error) });
+    }
+  },
+
+  async handleRestoreBill(event: WechatMiniprogram.BaseEvent) {
+    const trip = this.data.trip;
+    const billId = String(event.currentTarget.dataset['billId'] ?? '');
+    if (trip === null || billId.length === 0) return;
+    try {
+      await callApi('trip.restoreBill', {
+        tripId: trip.id,
+        billId,
+        expectedVersion: trip.version,
+      });
+      await this.loadTrip();
+    } catch (error: unknown) {
+      void wx.showToast({ icon: 'none', title: toMessage(error) });
     }
   },
 
@@ -200,16 +249,20 @@ function buildDateSections(trip: TripDetail): readonly DateSection[] {
     bills: trip.bills
       .filter((bill) => bill.date === date && bill.deletedAt === null)
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
-      .map((bill) => ({
-        ...bill,
-        amountText: formatCents(bill.amountCents),
-        invalid: bill.validationCodes.length > 0,
-        participantText: bill.participants
-          .map((item) => `${item.displayName}×${item.shares}`)
-          .join('、'),
-        payerText: bill.payers.map((item) => item.displayName).join('、'),
-      })),
+      .map(toBillCard),
   }));
+}
+
+function toBillCard(bill: TripBill): BillCard {
+  return {
+    ...bill,
+    amountText: formatCents(bill.amountCents),
+    invalid: bill.validationCodes.length > 0,
+    participantText: bill.participants
+      .map((item) => `${item.displayName}×${item.shares}`)
+      .join('、'),
+    payerText: bill.payers.map((item) => item.displayName).join('、'),
+  };
 }
 
 function today(): string {

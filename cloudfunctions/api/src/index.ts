@@ -45,6 +45,14 @@ export async function main(event: ApiEvent): Promise<unknown> {
     switch (action) {
       case 'session.bootstrap':
         return success(requestId, publicProfile(user));
+      case 'session.updateProfile': {
+        const updated = await service.updateProfile(user, {
+          displayName: requiredString(event.payload, 'displayName'),
+          signature: requiredString(event.payload, 'signature'),
+          avatarUrl: optionalNullableString(event.payload, 'avatarUrl'),
+        });
+        return success(requestId, publicProfile(updated));
+      }
       case 'trip.list':
         return success(requestId, await service.listTrips(user.id));
       case 'trip.listArchived':
@@ -60,6 +68,15 @@ export async function main(event: ApiEvent): Promise<unknown> {
         });
         return success(requestId, { tripId: trip.id, trip });
       }
+      case 'trip.rename':
+        return success(
+          requestId,
+          await service.renameTrip(user.id, {
+            tripId: requiredString(event.payload, 'tripId'),
+            name: requiredString(event.payload, 'name'),
+            expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
+          }),
+        );
       case 'trip.addDate':
         return success(
           requestId,
@@ -77,6 +94,35 @@ export async function main(event: ApiEvent): Promise<unknown> {
             date: requiredString(event.payload, 'date'),
             expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
             bill: requiredBill(event.payload),
+          }),
+        );
+      case 'trip.updateBill':
+        return success(
+          requestId,
+          await service.updateBill(user.id, {
+            tripId: requiredString(event.payload, 'tripId'),
+            billId: requiredString(event.payload, 'billId'),
+            date: requiredString(event.payload, 'date'),
+            expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
+            bill: requiredBill(event.payload),
+          }),
+        );
+      case 'trip.deleteBill':
+        return success(
+          requestId,
+          await service.deleteBill(user.id, {
+            tripId: requiredString(event.payload, 'tripId'),
+            billId: requiredString(event.payload, 'billId'),
+            expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
+          }),
+        );
+      case 'trip.restoreBill':
+        return success(
+          requestId,
+          await service.restoreBill(user.id, {
+            tripId: requiredString(event.payload, 'tripId'),
+            billId: requiredString(event.payload, 'billId'),
+            expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
           }),
         );
       case 'trip.calculate':
@@ -174,6 +220,15 @@ function optionalBoolean(payload: unknown, key: string): boolean {
   if (value === undefined) return false;
   if (typeof value !== 'boolean') {
     throw new BusinessError('REQUEST_INVALID', `字段 ${key} 必须是布尔值。`);
+  }
+  return value;
+}
+
+function optionalNullableString(payload: unknown, key: string): string | null {
+  const value = payloadValue(payload, key);
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string') {
+    throw new BusinessError('REQUEST_INVALID', `字段 ${key} 必须是字符串。`);
   }
   return value;
 }

@@ -1,0 +1,65 @@
+.editor-skeleton {
+  height: 500rpx;
+}
+
+.profile-form {
+  padding: 36rpx 30rpx;
+}
+
+.avatar-button {
+  background: transparent;
+  height: 150rpx;
+  margin: 0 auto 38rpx;
+  padding: 0;
+  width: 150rpx;
+}
+
+.avatar-button::after {
+  border: 0;
+}
+
+.avatar-button image,
+.avatar-placeholder {
+  border-radius: 50%;
+  height: 150rpx;
+  width: 150rpx;
+}
+
+.avatar-placeholder {
+  align-items: center;
+  background: #d8dddb;
+  color: #65706d;
+  display: flex;
+  font-size: 24rpx;
+  justify-content: center;
+}
+
+.form-field + .form-field {
+  border-top: 1rpx solid var(--color-line);
+  margin-top: 30rpx;
+  padding-top: 30rpx;
+}
+
+.field-label {
+  font-size: 24rpx;
+  font-weight: 700;
+  margin-bottom: 16rpx;
+}
+
+.field-input {
+  font-size: 32rpx;
+  height: 76rpx;
+}
+
+.signature-input {
+  box-sizing: border-box;
+  font-size: 27rpx;
+  height: 170rpx;
+  line-height: 1.6;
+  width: 100%;
+}
+
+.save-button {
+  margin-top: 36rpx;
+  width: 100%;
+}

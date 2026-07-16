@@ -7,9 +7,9 @@
     "pages/trip-editor/index",
     "pages/trip-detail/index",
     "pages/bill-editor/index",
-    "pages/archived-trips/index"
+    "pages/archived-trips/index",
+    "pages/profile-editor/index"
   ],
-  "requiredPrivateInfos": ["chooseAvatar"],
   "sitemapLocation": "sitemap.json",
   "style": "v2",
   "tabBar": {

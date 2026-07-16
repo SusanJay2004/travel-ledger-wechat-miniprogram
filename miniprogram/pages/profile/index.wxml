@@ -22,6 +22,7 @@
       <view class="profile-id">ID {{profile.publicId}}</view>
       <view class="profile-signature">{{profile.signature}}</view>
     </view>
+    <button class="profile-edit" bindtap="handleEditProfile">编辑</button>
   </view>
 
   <view class="menu-card surface-card">

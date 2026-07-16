@@ -3,6 +3,8 @@ import {
   LIMITS,
   calculateSettlement,
   isValidTripName,
+  isValidSignature,
+  isValidUsername,
   validateBill,
   type BillInput,
   type SettlementResult,
@@ -34,6 +36,28 @@ export interface AddBillInput {
   tripId: string;
   date: string;
   bill: BillInput;
+  expectedVersion: number;
+}
+
+export interface UpdateProfileInput {
+  displayName: string;
+  signature: string;
+  avatarUrl: string | null;
+}
+
+export interface RenameTripInput {
+  tripId: string;
+  name: string;
+  expectedVersion: number;
+}
+
+export interface UpdateBillInput extends AddBillInput {
+  billId: string;
+}
+
+export interface BillMutationInput {
+  tripId: string;
+  billId: string;
   expectedVersion: number;
 }
 
@@ -105,6 +129,27 @@ export class LedgerService {
       );
   }
 
+  async updateProfile(user: UserDocument, input: UpdateProfileInput): Promise<UserDocument> {
+    const displayName = input.displayName.trim();
+    const signature = input.signature.trim() || DEFAULT_SIGNATURE;
+    assertBusiness(isValidUsername(displayName), 'USERNAME_INVALID', '用户名格式不正确。');
+    assertBusiness(isValidSignature(signature), 'SIGNATURE_INVALID', '个人签名格式不正确。');
+    assertBusiness(
+      input.avatarUrl === null || input.avatarUrl.length <= 512,
+      'AVATAR_URL_INVALID',
+      '头像地址格式不正确。',
+    );
+    const next: UserDocument = {
+      ...user,
+      displayName,
+      signature,
+      avatarUrl: input.avatarUrl,
+      updatedAt: this.clock.now().toISOString(),
+    };
+    await this.repository.updateUser(next);
+    return next;
+  }
+
   async listArchivedTrips(userId: string): Promise<readonly TripDocument[]> {
     const trips = await this.repository.listTripsForUser(userId);
     return trips
@@ -161,6 +206,13 @@ export class LedgerService {
     return trip;
   }
 
+  async renameTrip(userId: string, input: RenameTripInput): Promise<TripDocument> {
+    const name = input.name.trim();
+    assertBusiness(isValidTripName(name), 'TRIP_NAME_INVALID', '行程名称格式不正确。');
+    const trip = await this.editableTrip(userId, input.tripId, input.expectedVersion);
+    return this.saveTrip(trip, userId, { name });
+  }
+
   async addDate(userId: string, input: AddDateInput): Promise<TripDocument> {
     assertCalendarDate(input.date);
     const trip = await this.editableTrip(userId, input.tripId, input.expectedVersion);
@@ -181,37 +233,7 @@ export class LedgerService {
       'BILL_LIMIT_REACHED',
       `每段行程最多保留 ${LIMITS.billsPerTrip} 条账单。`,
     );
-    const memberIds = new Set(trip.memberIds);
-    for (const participant of input.bill.participants) {
-      assertBusiness(
-        memberIds.has(participant.memberId),
-        'MEMBER_NOT_IN_TRIP',
-        '参与人不在当前行程中。',
-      );
-    }
-    for (const payer of input.bill.payers) {
-      assertBusiness(memberIds.has(payer.memberId), 'MEMBER_NOT_IN_TRIP', '付款人不在当前行程中。');
-    }
-
-    const validationCodes = validateBill(input.bill).map((issue) => issue.code);
-    const coreCodes = new Set([
-      'TITLE_REQUIRED',
-      'TITLE_TOO_LONG',
-      'TITLE_HAS_CONTROL_CHARACTER',
-      'AMOUNT_INVALID',
-      'PARTICIPANTS_REQUIRED',
-      'PARTICIPANT_DUPLICATE',
-      'PARTICIPANT_SHARE_INVALID',
-      'PAYERS_REQUIRED',
-      'PAYER_DUPLICATE',
-      'PAYER_AMOUNT_INVALID',
-    ]);
-    assertBusiness(
-      !validationCodes.some((code) => coreCodes.has(code)),
-      'BILL_CORE_INVALID',
-      '账单核心字段不完整或格式不正确。',
-      { validationCodes },
-    );
+    const validationCodes = validateBillForTrip(trip, input.bill);
 
     const timestamp = this.clock.now().toISOString();
     const bill: BillDocument = {
@@ -230,6 +252,92 @@ export class LedgerService {
       bills: [...trip.bills, bill],
       totalCents: trip.totalCents + bill.amountCents,
       invalidBillCount: trip.invalidBillCount + (validationCodes.length > 0 ? 1 : 0),
+      ledgerRevision: trip.ledgerRevision + 1,
+    });
+  }
+
+  async updateBill(userId: string, input: UpdateBillInput): Promise<TripDocument> {
+    assertCalendarDate(input.date);
+    const trip = await this.editableTrip(userId, input.tripId, input.expectedVersion);
+    assertBusiness(trip.dates.includes(input.date), 'DATE_NOT_FOUND', '请先添加账单所属日期。');
+    const existing = requiredBill(trip, input.billId);
+    assertBusiness(existing.deletedAt === null, 'BILL_DELETED', '已删除账单不能直接修改。');
+    const validationCodes = validateBillForTrip(trip, input.bill);
+    const timestamp = this.clock.now().toISOString();
+    const replacement: BillDocument = {
+      ...structuredClone(input.bill),
+      id: existing.id,
+      date: input.date,
+      validationCodes,
+      createdBy: existing.createdBy,
+      createdAt: existing.createdAt,
+      updatedBy: userId,
+      updatedAt: timestamp,
+      deletedAt: null,
+      deletedBy: null,
+    };
+    const bills = trip.bills.map((bill) => (bill.id === existing.id ? replacement : bill));
+    return this.saveTrip(trip, userId, {
+      bills,
+      totalCents: trip.totalCents - existing.amountCents + replacement.amountCents,
+      invalidBillCount:
+        trip.invalidBillCount -
+        (existing.validationCodes.length > 0 ? 1 : 0) +
+        (replacement.validationCodes.length > 0 ? 1 : 0),
+      ledgerRevision: trip.ledgerRevision + 1,
+    });
+  }
+
+  async deleteBill(userId: string, input: BillMutationInput): Promise<TripDocument> {
+    const trip = await this.editableTrip(userId, input.tripId, input.expectedVersion);
+    const existing = requiredBill(trip, input.billId);
+    assertBusiness(existing.deletedAt === null, 'BILL_ALREADY_DELETED', '该账单已经删除。');
+    const timestamp = this.clock.now().toISOString();
+    const bills = trip.bills.map((bill) =>
+      bill.id === existing.id
+        ? {
+            ...bill,
+            deletedAt: timestamp,
+            deletedBy: userId,
+            updatedAt: timestamp,
+            updatedBy: userId,
+          }
+        : bill,
+    );
+    return this.saveTrip(trip, userId, {
+      bills,
+      totalCents: trip.totalCents - existing.amountCents,
+      invalidBillCount: trip.invalidBillCount - (existing.validationCodes.length > 0 ? 1 : 0),
+      ledgerRevision: trip.ledgerRevision + 1,
+    });
+  }
+
+  async restoreBill(userId: string, input: BillMutationInput): Promise<TripDocument> {
+    const trip = await this.editableTrip(userId, input.tripId, input.expectedVersion);
+    const existing = requiredBill(trip, input.billId);
+    assertBusiness(existing.deletedAt !== null, 'BILL_NOT_DELETED', '该账单没有被删除。');
+    const deletedAt = new Date(existing.deletedAt).getTime();
+    assertBusiness(
+      Number.isFinite(deletedAt) &&
+        this.clock.now().getTime() - deletedAt < 30 * 24 * 60 * 60 * 1000,
+      'BILL_RESTORE_EXPIRED',
+      '该账单已超过 30 天恢复期。',
+    );
+    assertBusiness(
+      activeBills(trip).length < LIMITS.billsPerTrip,
+      'BILL_LIMIT_REACHED',
+      `每段行程最多保留 ${LIMITS.billsPerTrip} 条账单。`,
+    );
+    const timestamp = this.clock.now().toISOString();
+    const bills = trip.bills.map((bill) =>
+      bill.id === existing.id
+        ? { ...bill, deletedAt: null, deletedBy: null, updatedAt: timestamp, updatedBy: userId }
+        : bill,
+    );
+    return this.saveTrip(trip, userId, {
+      bills,
+      totalCents: trip.totalCents + existing.amountCents,
+      invalidBillCount: trip.invalidBillCount + (existing.validationCodes.length > 0 ? 1 : 0),
       ledgerRevision: trip.ledgerRevision + 1,
     });
   }
@@ -386,6 +494,46 @@ function memberFor(trip: TripDocument, userId: string): TripMemberDocument {
 
 function activeBills(trip: TripDocument) {
   return trip.bills.filter((bill) => bill.deletedAt === null);
+}
+
+function requiredBill(trip: TripDocument, billId: string): BillDocument {
+  const bill = trip.bills.find((item) => item.id === billId);
+  assertBusiness(bill !== undefined, 'BILL_NOT_FOUND', '找不到该账单。');
+  return bill;
+}
+
+function validateBillForTrip(trip: TripDocument, bill: BillInput) {
+  const memberIds = new Set(trip.memberIds);
+  for (const participant of bill.participants) {
+    assertBusiness(
+      memberIds.has(participant.memberId),
+      'MEMBER_NOT_IN_TRIP',
+      '参与人不在当前行程中。',
+    );
+  }
+  for (const payer of bill.payers) {
+    assertBusiness(memberIds.has(payer.memberId), 'MEMBER_NOT_IN_TRIP', '付款人不在当前行程中。');
+  }
+  const validationCodes = validateBill(bill).map((issue) => issue.code);
+  const coreCodes = new Set([
+    'TITLE_REQUIRED',
+    'TITLE_TOO_LONG',
+    'TITLE_HAS_CONTROL_CHARACTER',
+    'AMOUNT_INVALID',
+    'PARTICIPANTS_REQUIRED',
+    'PARTICIPANT_DUPLICATE',
+    'PARTICIPANT_SHARE_INVALID',
+    'PAYERS_REQUIRED',
+    'PAYER_DUPLICATE',
+    'PAYER_AMOUNT_INVALID',
+  ]);
+  assertBusiness(
+    !validationCodes.some((code) => coreCodes.has(code)),
+    'BILL_CORE_INVALID',
+    '账单核心字段不完整或格式不正确。',
+    { validationCodes },
+  );
+  return validationCodes;
 }
 
 function toTripSummary(trip: TripDocument): TripSummaryDocument {

@@ -9,6 +9,7 @@ interface MemberRow extends TripMember {
 
 interface BillEditorData {
   amountYuan: string;
+  billId: string;
   date: string;
   dateText: string;
   errorMessage: string;
@@ -35,6 +36,7 @@ interface BillEditorMethods {
 Page<BillEditorData, BillEditorMethods>({
   data: {
     amountYuan: '',
+    billId: '',
     date: '',
     dateText: '',
     errorMessage: '',
@@ -48,7 +50,12 @@ Page<BillEditorData, BillEditorMethods>({
 
   onLoad(query: Record<string, string | undefined>) {
     const date = query['date'] ?? '';
-    this.setData({ date, dateText: date.replaceAll('-', '.'), tripId: query['tripId'] ?? '' });
+    this.setData({
+      billId: query['billId'] ?? '',
+      date,
+      dateText: date.replaceAll('-', '.'),
+      tripId: query['tripId'] ?? '',
+    });
     void this.loadTrip();
   },
 
@@ -59,17 +66,26 @@ Page<BillEditorData, BillEditorMethods>({
     }
     try {
       const trip = await callApi<TripDetail>('trip.get', { tripId: this.data.tripId });
+      const existing = trip.bills.find((bill) => bill.id === this.data.billId);
       this.setData({
+        amountYuan: existing === undefined ? '' : (existing.amountCents / 100).toFixed(2),
         loading: false,
         memberRows: trip.members
           .filter((member) => member.viewState !== 'detached')
-          .map((member, index) => ({
-            ...member,
-            paidYuan: '',
-            participantSelected: true,
-            payerSelected: index === 0,
-            shares: '1',
-          })),
+          .map((member, index) => {
+            const participant = existing?.participants.find(
+              (item) => item.memberId === member.userId,
+            );
+            const payer = existing?.payers.find((item) => item.memberId === member.userId);
+            return {
+              ...member,
+              paidYuan: payer === undefined ? '' : (payer.paidCents / 100).toFixed(2),
+              participantSelected: existing === undefined ? true : participant !== undefined,
+              payerSelected: existing === undefined ? index === 0 : payer !== undefined,
+              shares: String(participant?.shares ?? 1),
+            };
+          }),
+        title: existing?.title ?? '',
         trip,
       });
     } catch (error: unknown) {
@@ -174,8 +190,9 @@ Page<BillEditorData, BillEditorMethods>({
 
     this.setData({ saving: true });
     try {
-      await callApi('trip.addBill', {
+      await callApi(this.data.billId.length > 0 ? 'trip.updateBill' : 'trip.addBill', {
         tripId: trip.id,
+        billId: this.data.billId,
         date: this.data.date,
         expectedVersion: trip.version,
         bill: { title, amountCents, participants, payers },

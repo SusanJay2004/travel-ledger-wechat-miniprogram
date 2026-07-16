@@ -9,6 +9,7 @@ interface ProfileData {
 
 interface ProfileMethods {
   handleArchivedTrips(): void;
+  handleEditProfile(): void;
   loadProfile(): Promise<void>;
 }
 
@@ -39,5 +40,9 @@ Page<ProfileData, ProfileMethods>({
 
   handleArchivedTrips() {
     void wx.navigateTo({ url: '/pages/archived-trips/index' });
+  },
+
+  handleEditProfile() {
+    void wx.navigateTo({ url: '/pages/profile-editor/index' });
   },
 });

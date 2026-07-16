@@ -22,7 +22,8 @@
     "minified": true,
     "postcss": true,
     "preloadBackgroundData": false,
-    "urlCheck": true
+    "urlCheck": true,
+    "useCompilerPlugins": ["typescript"]
   },
   "simulatorType": "wechat",
   "srcMiniprogramRoot": "miniprogram/"

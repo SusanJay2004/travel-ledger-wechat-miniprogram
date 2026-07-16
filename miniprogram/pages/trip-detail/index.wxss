@@ -144,6 +144,39 @@
   margin-top: 14rpx;
 }
 
+.deleted-section {
+  margin: 6rpx 0 30rpx;
+  padding: 28rpx;
+}
+
+.deleted-section__title {
+  color: var(--color-muted);
+  font-size: 24rpx;
+  font-weight: 700;
+  margin-bottom: 12rpx;
+}
+
+.deleted-row {
+  align-items: center;
+  border-top: 1rpx solid var(--color-line);
+  display: flex;
+  font-size: 24rpx;
+  justify-content: space-between;
+  min-height: 78rpx;
+}
+
+.restore-small {
+  background: transparent;
+  color: var(--color-primary);
+  font-size: 23rpx;
+  margin: 0;
+  padding: 0 12rpx;
+}
+
+.restore-small::after {
+  border: 0;
+}
+
 .add-another-date {
   border: 2rpx dashed #b8cbc7;
   border-radius: 22rpx;

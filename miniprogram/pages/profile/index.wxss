@@ -35,8 +35,25 @@
 }
 
 .profile-lines {
+  flex: 1;
   min-width: 0;
   padding-left: 28rpx;
+}
+
+.profile-edit {
+  background: var(--color-primary-soft);
+  border-radius: 15rpx;
+  color: var(--color-primary);
+  flex-shrink: 0;
+  font-size: 22rpx;
+  line-height: 58rpx;
+  margin: 0;
+  min-height: 58rpx;
+  padding: 0 20rpx;
+}
+
+.profile-edit::after {
+  border: 0;
 }
 
 .name-skeleton {

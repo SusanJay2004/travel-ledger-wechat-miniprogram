@@ -40,7 +40,7 @@
           >＋ 记一笔</button>
         </view>
         <view wx:if="{{item.bills.length === 0}}" class="date-empty surface-card">这一天还没有账单</view>
-        <view wx:for="{{item.bills}}" wx:for-item="bill" wx:key="id" class="bill-card surface-card">
+        <view wx:for="{{item.bills}}" wx:for-item="bill" wx:key="id" class="bill-card surface-card" data-bill-id="{{bill.id}}" bindtap="handleBillAction">
           <view class="bill-card__top">
             <view class="bill-card__title">{{bill.title}}</view>
             <view class="bill-card__amount">{{bill.amountText}}</view>
@@ -53,6 +53,14 @@
       <picker wx:if="{{trip.status === 'active'}}" mode="date" value="{{selectedDate}}" bindchange="handleDateChange">
         <view class="add-another-date">＋ 插入新日期</view>
       </picker>
+    </view>
+
+    <view wx:if="{{deletedBills.length > 0 && trip.status === 'active'}}" class="deleted-section surface-card">
+      <view class="deleted-section__title">最近删除的账单</view>
+      <view wx:for="{{deletedBills}}" wx:key="id" class="deleted-row">
+        <view>{{item.title}} · {{item.amountText}}</view>
+        <button class="restore-small" data-bill-id="{{item.id}}" bindtap="handleRestoreBill">恢复</button>
+      </view>
     </view>
 
     <view class="trip-lifecycle">

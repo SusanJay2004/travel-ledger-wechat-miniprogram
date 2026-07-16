@@ -105,4 +105,21 @@ describe('calculateSettlement', () => {
       ]),
     ).toThrow(/PARTICIPANT_SHARE_SUM_INVALID/);
   });
+
+  it('settles the 20-member 100-bill limit within two seconds', () => {
+    const members = Array.from({ length: 20 }, (_, index) => `M${String(index).padStart(2, '0')}`);
+    const bills: BillInput[] = Array.from({ length: 100 }, (_, index) => ({
+      title: `账单${index}`,
+      amountCents: 2_000,
+      participants: members.map((id) => ({ ...member(id), shares: 1 })),
+      payers: [{ ...member(members[0]!), paidCents: 2_000 }],
+    }));
+    const startedAt = performance.now();
+    const result = calculateSettlement(bills);
+    const durationMs = performance.now() - startedAt;
+
+    expect(result.minimumTransferCount).toBe(19);
+    expect(result.transfers.reduce((sum, transfer) => sum + transfer.amountCents, 0)).toBe(190_000);
+    expect(durationMs).toBeLessThan(2_000);
+  }, 5_000);
 });

@@ -36,6 +36,11 @@ interface MaintenanceTripDocument {
   updatedBy: string;
 }
 
+interface ExpiringSocialDocument {
+  id: string;
+  expiresAt: string;
+}
+
 interface CloudSdk {
   DYNAMIC_CURRENT_ENV: symbol;
   database(): Database;
@@ -67,9 +72,18 @@ export async function main(): Promise<Record<string, number>> {
   for (const collection of ['idempotency_records', 'rate_limit_records']) {
     summary.expiredTokensRemoved += await removeExpired(db, collection, 'expiresAt', nowIso);
   }
-  for (const collection of ['friend_requests', 'trip_invitations']) {
-    summary.expiredSocialRecordsRemoved += await removeExpired(db, collection, 'expiresAt', nowIso);
-  }
+  summary.expiredSocialRecordsRemoved += await purgeExpiredSocial(
+    db,
+    'friend_requests',
+    'requestId',
+    nowIso,
+  );
+  summary.expiredSocialRecordsRemoved += await purgeExpiredSocial(
+    db,
+    'trip_invitations',
+    'invitationId',
+    nowIso,
+  );
   const syncCutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
   summary.oldSyncEventsRemoved += await removeExpired(db, 'sync_events', 'createdAt', syncCutoff);
 
@@ -121,6 +135,32 @@ async function removeExpired(
     .where({ [field]: db.command.lt(cutoff) })
     .remove();
   return result.stats?.removed ?? 0;
+}
+
+async function purgeExpiredSocial(
+  db: Database,
+  collectionName: string,
+  notificationField: 'requestId' | 'invitationId',
+  cutoff: string,
+): Promise<number> {
+  let removed = 0;
+  while (true) {
+    const expired = await db
+      .collection<ExpiringSocialDocument>(collectionName)
+      .where({ expiresAt: db.command.lt(cutoff) })
+      .limit(100)
+      .get();
+    if (expired.data.length === 0) return removed;
+    for (const item of expired.data) {
+      await db
+        .collection('notifications')
+        .where({ [notificationField]: item.id })
+        .remove();
+      const result = await db.collection(collectionName).where({ _id: item.id }).remove();
+      removed += result.stats?.removed ?? 0;
+    }
+    if (expired.data.length < 100) return removed;
+  }
 }
 
 async function listAll<T>(collection: Collection<T>): Promise<T[]> {

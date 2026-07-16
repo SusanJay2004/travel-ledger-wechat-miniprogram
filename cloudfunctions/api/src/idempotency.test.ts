@@ -68,6 +68,11 @@ class MemoryCloudCollection<T> implements CloudCollection<T> {
   async update(_options: { data: Partial<T> }): Promise<UpdateResult> {
     return { stats: { updated: 0 } };
   }
+
+  async remove(): Promise<UpdateResult> {
+    this.database.documents.clear();
+    return { stats: { updated: 1 } };
+  }
 }
 
 describe('IdempotencyService', () => {

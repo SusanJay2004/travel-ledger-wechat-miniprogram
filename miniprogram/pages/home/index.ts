@@ -31,6 +31,7 @@ Page<HomeData, HomeMethods>({
   },
 
   onShow() {
+    if (wx.getStorageSync<boolean>('privacy-consent-v1') !== true) return;
     void this.loadTrips();
   },
 

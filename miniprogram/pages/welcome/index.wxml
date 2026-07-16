@@ -1,0 +1,15 @@
+<view class="welcome-page">
+  <view class="welcome-mark">同</view>
+  <view class="welcome-title">同行账本</view>
+  <view class="welcome-subtitle">一起记清旅途中的每一笔，结束时轻松 AA</view>
+  <view class="privacy-card surface-card">
+    <view class="privacy-title">开始前，请了解我们如何使用数据</view>
+    <view class="privacy-copy">我们使用微信身份识别你的账号，保存你主动填写的资料、行程与账单；不会读取通讯录，也不提供代收付款。</view>
+    <view class="consent-row" bindtap="toggleAccepted">
+      <view class="consent-check {{accepted ? 'consent-check--active' : ''}}">{{accepted ? '✓' : ''}}</view>
+      <view>我已阅读并同意<text class="legal-link" data-type="privacy" catchtap="handleLegal">《隐私保护指引》</text>和<text class="legal-link" data-type="terms" catchtap="handleLegal">《用户协议》</text></view>
+    </view>
+    <view wx:if="{{errorMessage}}" class="error-banner">{{errorMessage}}</view>
+    <button class="primary-button enter-button" loading="{{loading}}" disabled="{{loading}}" bindtap="handleContinue">微信身份进入</button>
+  </view>
+</view>

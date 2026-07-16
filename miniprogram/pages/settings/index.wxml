@@ -1,0 +1,11 @@
+<view class="page-shell settings-page">
+  <view class="settings-card surface-card">
+    <view class="settings-row" data-type="privacy" bindtap="handleLegal"><text>隐私保护指引</text><text>›</text></view>
+    <view class="settings-row" data-type="terms" bindtap="handleLegal"><text>用户协议</text><text>›</text></view>
+  </view>
+  <view class="danger-card surface-card">
+    <view class="danger-title">注销账号</view>
+    <view class="danger-copy">注销将删除个人资料、好友关系与通知，并把共享账本中的名字匿名化为“已注销用户”。</view>
+    <button class="delete-account" loading="{{deleting}}" disabled="{{deleting}}" bindtap="handleDeleteAccount">永久注销账号</button>
+  </view>
+</view>

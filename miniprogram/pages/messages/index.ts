@@ -55,6 +55,7 @@ Page<MessageData, MessageMethods>({
   },
 
   onShow() {
+    if (wx.getStorageSync<boolean>('privacy-consent-v1') !== true) return;
     if (this.data.collaborationEnabled) void this.loadData();
   },
 

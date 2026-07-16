@@ -21,6 +21,7 @@ import type {
   UserDocument,
 } from './models';
 import type { Repository } from './repository';
+import type { SocialRepository } from './social-repository';
 
 export interface TripChangePublisher {
   publishTripCreated(after: TripDocument, actorUserId: string): Promise<void>;
@@ -114,7 +115,10 @@ export class LedgerService {
 
   async bootstrapSession(openId: string): Promise<UserDocument> {
     const existing = await this.repository.findUserByOpenId(openId);
-    if (existing !== null) return existing;
+    if (existing !== null && existing.status === 'active') return existing;
+    if (existing?.status === 'deleting') {
+      throw new BusinessError('ACCOUNT_DELETION_PENDING', '账号正在注销，请稍后重新进入。', true);
+    }
 
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const publicId = this.ids.publicId();
@@ -171,6 +175,80 @@ export class LedgerService {
     };
     await this.repository.updateUser(next);
     return next;
+  }
+
+  async deleteAccount(user: UserDocument, social: SocialRepository): Promise<void> {
+    const deleting: UserDocument =
+      user.status === 'deleting'
+        ? user
+        : {
+            ...user,
+            displayName: '已注销用户',
+            signature: DEFAULT_SIGNATURE,
+            avatarUrl: null,
+            qrCodeFileId: null,
+            status: 'deleting',
+            updatedAt: this.clock.now().toISOString(),
+          };
+    if (user.status !== 'deleting') await this.repository.updateUser(deleting);
+
+    const trips = await this.repository.listTripsForUser(user.id);
+    for (const trip of trips) {
+      const next: TripDocument = {
+        ...trip,
+        members: trip.members.map((member) =>
+          member.userId === user.id
+            ? {
+                ...member,
+                displayNameSnapshot: '已注销用户',
+                viewState: 'detached' as const,
+                archivedAt: null,
+                purgeAfter: null,
+              }
+            : member,
+        ),
+        bills: trip.bills.map((bill) => ({
+          ...bill,
+          participants: bill.participants.map((participant) =>
+            participant.memberId === user.id
+              ? { ...participant, displayName: '已注销用户' }
+              : participant,
+          ),
+          payers: bill.payers.map((payer) =>
+            payer.memberId === user.id ? { ...payer, displayName: '已注销用户' } : payer,
+          ),
+        })),
+        version: trip.version + 1,
+        updatedBy: user.id,
+        updatedAt: this.clock.now().toISOString(),
+      };
+      const currentMember = trip.members.find((member) => member.userId === user.id);
+      if (
+        currentMember?.viewState === 'detached' &&
+        currentMember.displayNameSnapshot === '已注销用户'
+      ) {
+        continue;
+      }
+      const replaced = await this.repository.replaceTrip(next, trip.version);
+      if (!replaced) {
+        throw new BusinessError('VERSION_CONFLICT', '有行程正在被修改，请稍后重新确认注销。', true);
+      }
+      await this.publisher.publishTripChange(
+        trip,
+        next,
+        'member.account_deleted',
+        user.id,
+        'member',
+        user.id,
+      );
+    }
+    await social.purgeUserData(user.id);
+    await this.repository.updateUser({
+      ...deleting,
+      openId: `deleted:${user.id}`,
+      publicId: `DEL${user.id.slice(-7).toUpperCase()}`,
+      status: 'deleted',
+    });
   }
 
   async listArchivedTrips(userId: string): Promise<readonly TripDocument[]> {

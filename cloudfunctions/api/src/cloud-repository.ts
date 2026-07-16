@@ -20,6 +20,7 @@ export interface CloudCollection<T> {
   limit(value: number): CloudCollection<T>;
   skip(value: number): CloudCollection<T>;
   where(query: Record<string, unknown>): CloudCollection<T>;
+  remove(): Promise<UpdateResult>;
   update(options: { data: Partial<T> }): Promise<UpdateResult>;
 }
 

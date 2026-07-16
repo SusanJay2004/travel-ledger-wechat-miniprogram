@@ -148,6 +148,21 @@ export class CloudSocialRepository implements SocialRepository {
     return result.data.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
 
+  async purgeUserData(userId: string) {
+    await Promise.all([
+      this.friendRequests().where({ fromUserId: userId }).remove(),
+      this.friendRequests().where({ toUserId: userId }).remove(),
+      this.friendships().where({ userIds: userId }).remove(),
+      this.blocks().where({ blockerUserId: userId }).remove(),
+      this.blocks().where({ blockedUserId: userId }).remove(),
+      this.notifications().where({ userId }).remove(),
+      this.notifications().where({ actorUserId: userId }).remove(),
+      this.invitations().where({ inviterUserId: userId }).remove(),
+      this.invitations().where({ inviteeUserId: userId }).remove(),
+      this.syncEvents().where({ userId }).remove(),
+    ]);
+  }
+
   private async getDocument<T>(collection: CloudCollection<T>, id: string): Promise<T | null> {
     try {
       return (await collection.doc(id).get()).data;

@@ -1,6 +1,7 @@
 {
-  "entryPagePath": "pages/home/index",
+  "entryPagePath": "pages/welcome/index",
   "pages": [
+    "pages/welcome/index",
     "pages/home/index",
     "pages/messages/index",
     "pages/profile/index",
@@ -11,7 +12,9 @@
     "pages/profile-editor/index",
     "pages/trip-invite/index",
     "pages/trip-activity/index",
-    "pages/profile-code/index"
+    "pages/profile-code/index",
+    "pages/settings/index",
+    "pages/legal/index"
   ],
   "sitemapLocation": "sitemap.json",
   "style": "v2",

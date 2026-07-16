@@ -41,6 +41,7 @@ export interface SocialRepository {
   createSyncEvent(event: SyncEventDocument): Promise<void>;
   createAuditLog(log: AuditLogDocument): Promise<void>;
   listAuditLogs(tripId: string): Promise<readonly AuditLogDocument[]>;
+  purgeUserData(userId: string): Promise<void>;
 }
 
 export class MemorySocialRepository implements SocialRepository {
@@ -188,8 +189,35 @@ export class MemorySocialRepository implements SocialRepository {
   listSyncEventsForTest() {
     return [...this.syncEvents.values()].map((event) => structuredClone(event));
   }
+
+  async purgeUserData(userId: string) {
+    deleteMatching(
+      this.friendRequests,
+      (item) => item.fromUserId === userId || item.toUserId === userId,
+    );
+    deleteMatching(this.friendships, (item) => item.userIds.includes(userId));
+    deleteMatching(
+      this.blocks,
+      (item) => item.blockerUserId === userId || item.blockedUserId === userId,
+    );
+    deleteMatching(
+      this.notifications,
+      (item) => item.userId === userId || item.actorUserId === userId,
+    );
+    deleteMatching(
+      this.invitations,
+      (item) => item.inviterUserId === userId || item.inviteeUserId === userId,
+    );
+    deleteMatching(this.syncEvents, (item) => item.userId === userId);
+  }
 }
 
 function cloneOrNull<T>(value: T | undefined): T | null {
   return value === undefined ? null : structuredClone(value);
+}
+
+function deleteMatching<T>(items: Map<string, T>, predicate: (item: T) => boolean): void {
+  for (const [id, item] of items) {
+    if (predicate(item)) items.delete(id);
+  }
 }

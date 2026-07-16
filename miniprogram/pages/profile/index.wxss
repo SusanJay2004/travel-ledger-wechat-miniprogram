@@ -103,6 +103,10 @@
   border-bottom: 1rpx solid var(--color-line);
 }
 
+.menu-item--top-border {
+  border-top: 1rpx solid var(--color-line);
+}
+
 .menu-item--pressed {
   background: #f7f4ec;
 }

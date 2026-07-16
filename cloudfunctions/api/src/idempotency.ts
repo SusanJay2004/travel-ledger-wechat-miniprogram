@@ -81,6 +81,7 @@ export class IdempotencyService {
 export function isWriteAction(action: string): boolean {
   return new Set([
     'session.updateProfile',
+    'session.deleteAccount',
     'session.qrCode',
     'trip.create',
     'trip.rename',

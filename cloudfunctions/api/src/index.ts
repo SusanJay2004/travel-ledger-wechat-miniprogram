@@ -20,6 +20,7 @@ interface CloudContext {
 interface CloudSdk {
   DYNAMIC_CURRENT_ENV: symbol;
   database(): CloudDatabase;
+  deleteFile(options: { fileList: string[] }): Promise<unknown>;
   getWXContext(): CloudContext;
   init(options: { env: symbol }): void;
   openapi: {
@@ -66,7 +67,15 @@ export async function main(event: ApiEvent): Promise<unknown> {
   );
 
   try {
-    const user = await service.bootstrapSession(openId);
+    const existingUser = await repository.findUserByOpenId(openId);
+    if (action === 'session.deleteAccount' && existingUser === null) {
+      await idempotency.execute(openId, requestId, action, async () => null);
+      return success(requestId, null);
+    }
+    const user =
+      action === 'session.deleteAccount' && existingUser?.status === 'deleting'
+        ? existingUser
+        : await service.bootstrapSession(openId);
     const write = <T>(operation: () => Promise<T>) =>
       isWriteAction(action)
         ? idempotency.execute(openId, requestId, action, operation)
@@ -121,6 +130,10 @@ export async function main(event: ApiEvent): Promise<unknown> {
         );
         return success(requestId, publicProfile(updated));
       }
+      case 'session.deleteAccount':
+        await write(() => service.deleteAccount(user, socialRepository));
+        await deleteUserFiles(user);
+        return success(requestId, null);
       case 'social.search':
         return success(
           requestId,
@@ -353,6 +366,18 @@ export async function main(event: ApiEvent): Promise<unknown> {
     }
     console.error('cloud-api-unhandled', { action, requestId, error });
     return failure(requestId, 'INTERNAL_ERROR', '服务暂时不可用，请稍后重试。', true);
+  }
+}
+
+async function deleteUserFiles(user: Awaited<ReturnType<LedgerService['bootstrapSession']>>) {
+  const fileList = [user.avatarUrl, user.qrCodeFileId].filter(
+    (value): value is string => typeof value === 'string' && value.startsWith('cloud://'),
+  );
+  if (fileList.length === 0) return;
+  try {
+    await cloud.deleteFile({ fileList });
+  } catch {
+    console.error('account-file-cleanup-failed', { userId: user.id, fileCount: fileList.length });
   }
 }
 

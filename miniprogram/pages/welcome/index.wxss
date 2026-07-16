@@ -1,0 +1,87 @@
+.welcome-page {
+  align-items: center;
+  background: linear-gradient(165deg, #eef7f3 0%, var(--color-bg) 48%);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 150rpx 32rpx 60rpx;
+}
+
+.welcome-mark {
+  align-items: center;
+  background: var(--color-primary);
+  border-radius: 32rpx;
+  box-shadow: 0 18rpx 40rpx rgba(22, 125, 115, 0.24);
+  color: #fff;
+  display: flex;
+  font-size: 58rpx;
+  font-weight: 750;
+  height: 128rpx;
+  justify-content: center;
+  width: 128rpx;
+}
+
+.welcome-title {
+  font-size: 50rpx;
+  font-weight: 750;
+  margin-top: 34rpx;
+}
+
+.welcome-subtitle {
+  color: var(--color-muted);
+  font-size: 25rpx;
+  margin-top: 12rpx;
+  text-align: center;
+}
+
+.privacy-card {
+  box-sizing: border-box;
+  margin-top: 76rpx;
+  padding: 32rpx;
+  width: 100%;
+}
+
+.privacy-title {
+  font-size: 29rpx;
+  font-weight: 700;
+}
+
+.privacy-copy,
+.consent-row {
+  color: var(--color-muted);
+  font-size: 23rpx;
+  line-height: 1.65;
+  margin-top: 20rpx;
+}
+
+.consent-row {
+  align-items: flex-start;
+  display: flex;
+}
+
+.consent-check {
+  border: 2rpx solid #aeb8b5;
+  border-radius: 50%;
+  box-sizing: border-box;
+  color: #fff;
+  flex-shrink: 0;
+  height: 38rpx;
+  line-height: 34rpx;
+  margin: 2rpx 14rpx 0 0;
+  text-align: center;
+  width: 38rpx;
+}
+
+.consent-check--active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.legal-link {
+  color: var(--color-primary);
+}
+
+.enter-button {
+  margin-top: 28rpx;
+}

@@ -14,6 +14,7 @@ interface ProfileMethods {
   handleArchivedTrips(): void;
   handleEditProfile(): void;
   handleProfileCode(): void;
+  handleSettings(): void;
   loadProfile(): Promise<void>;
 }
 
@@ -27,6 +28,7 @@ Page<ProfileData, ProfileMethods>({
   },
 
   onShow() {
+    if (wx.getStorageSync<boolean>('privacy-consent-v1') !== true) return;
     void this.loadProfile();
   },
 
@@ -53,5 +55,9 @@ Page<ProfileData, ProfileMethods>({
 
   handleProfileCode() {
     void wx.navigateTo({ url: '/pages/profile-code/index' });
+  },
+
+  handleSettings() {
+    void wx.navigateTo({ url: '/pages/settings/index' });
   },
 });

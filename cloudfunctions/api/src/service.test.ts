@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { Clock, IdGenerator, UserDocument } from './models';
 import { MemoryRepository } from './repository';
 import { LedgerService } from './service';
+import { MemorySocialRepository } from './social-repository';
 
 class TestClock implements Clock {
   constructor(private current = new Date('2026-07-10T08:00:00.000Z')) {}
@@ -245,6 +246,37 @@ describe('LedgerService solo flow', () => {
     expect(updated.id).toBe(user.id);
     expect(updated.publicId).toBe(user.publicId);
     expect(updated.displayName).toBe('苏同学');
+  });
+
+  it('anonymizes ledger history and permits a fresh account after deletion', async () => {
+    const trip = await service.createTrip(user, { name: '注销前行程' });
+    const dated = await service.addDate(user.id, {
+      tripId: trip.id,
+      date: '2026-07-10',
+      expectedVersion: trip.version,
+    });
+    await service.addBill(user.id, {
+      tripId: trip.id,
+      date: '2026-07-10',
+      expectedVersion: dated.version,
+      bill: {
+        title: '车票',
+        amountCents: 100,
+        participants: [{ memberId: user.id, displayName: user.displayName, shares: 1 }],
+        payers: [{ memberId: user.id, displayName: user.displayName, paidCents: 100 }],
+      },
+    });
+    await service.deleteAccount(user, new MemorySocialRepository());
+
+    const historical = await repository.getTrip(trip.id);
+    expect(historical?.members[0]?.displayNameSnapshot).toBe('已注销用户');
+    expect(historical?.members[0]?.viewState).toBe('detached');
+    expect(historical?.bills[0]?.participants[0]?.displayName).toBe('已注销用户');
+    expect(historical?.bills[0]?.amountCents).toBe(100);
+
+    const fresh = await service.bootstrapSession('openid-alice');
+    expect(fresh.id).not.toBe(user.id);
+    expect(fresh.status).toBe('active');
   });
 
   it('updates, soft deletes and restores a bill without losing cents', async () => {

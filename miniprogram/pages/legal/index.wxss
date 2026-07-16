@@ -1,0 +1,16 @@
+.legal-page {
+  padding-top: 38rpx;
+}
+
+.legal-title {
+  font-size: 42rpx;
+  font-weight: 750;
+  margin-bottom: 34rpx;
+}
+
+.legal-paragraph {
+  color: #4e5a57;
+  font-size: 26rpx;
+  line-height: 1.8;
+  margin-bottom: 24rpx;
+}

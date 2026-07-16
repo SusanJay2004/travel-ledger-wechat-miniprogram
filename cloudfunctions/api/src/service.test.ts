@@ -29,6 +29,11 @@ class TestIds implements IdGenerator {
     this.sequence += 1;
     return `TESTID${String(this.sequence).padStart(4, '0')}`;
   }
+
+  sceneToken() {
+    this.sequence += 1;
+    return `scenetoken${String(this.sequence).padStart(10, '0')}`;
+  }
 }
 
 describe('LedgerService solo flow', () => {
@@ -419,6 +424,8 @@ describe('LedgerService solo flow', () => {
       },
     });
     await service.deleteAccount(user, new MemorySocialRepository());
+
+    expect((await repository.getUser(user.id))?.qrSceneToken).toBeNull();
 
     const historical = await repository.getTrip(trip.id);
     expect(historical?.members[0]?.displayNameSnapshot).toBe('已注销用户');

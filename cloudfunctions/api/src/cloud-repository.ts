@@ -41,6 +41,11 @@ export class CloudRepository implements Repository {
     return result.data[0] ?? null;
   }
 
+  async findUserByQrSceneToken(token: string): Promise<UserDocument | null> {
+    const result = await this.users().where({ qrSceneToken: token }).limit(1).get();
+    return result.data[0] ?? null;
+  }
+
   async getUser(userId: string): Promise<UserDocument | null> {
     try {
       return (await this.users().doc(userId).get()).data;

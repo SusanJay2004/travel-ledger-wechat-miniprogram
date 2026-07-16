@@ -13,10 +13,10 @@
 - `openId`：微信环境内用户身份，只允许云端读取。
 - `publicId`：10 位公开搜索 ID。
 - `displayName`、`signature`、`avatarUrl`：用户资料。
-- `qrCodeFileId`：协作版按公开 ID 生成并缓存的个人小程序码文件 ID；场景参数不包含 `OpenID`。
+- `qrCodeFileId`、`qrSceneToken`：协作版个人小程序码文件和 20 位随机不透明场景令牌；二维码不包含公开 ID、内部 ID 或 `OpenID`，云端解析后只返回可申请好友的公开资料。
 - `status`、`createdAt`、`updatedAt`：生命周期字段。
 
-唯一索引：`openId`、`publicId`。
+唯一索引：`openId`、`publicId`、稀疏 `qrSceneToken`。
 
 ## `trips`
 

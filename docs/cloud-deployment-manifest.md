@@ -21,25 +21,26 @@
 
 在开发环境先创建并用实际查询验证，确认后逐项复制到生产环境：
 
-| 集合                  | 类型 | 字段顺序                                    |
-| --------------------- | ---- | ------------------------------------------- |
-| `users`               | 唯一 | `openId ASC`                                |
-| `users`               | 唯一 | `publicId ASC`                              |
-| `trips`               | 普通 | `memberIds ASC`                             |
-| `trips`               | 普通 | `_id ASC, version ASC`                      |
-| `friend_requests`     | 普通 | `fromUserId ASC, toUserId ASC, status ASC`  |
-| `friend_requests`     | 普通 | `toUserId ASC, createdAt DESC`              |
-| `friendships`         | 普通 | `userIds ASC`                               |
-| `blocks`              | 普通 | `blockerUserId ASC, blockedUserId ASC`      |
-| `notifications`       | 普通 | `userId ASC, createdAt DESC`                |
-| `notifications`       | 普通 | `tripId ASC`                                |
-| `trip_invitations`    | 普通 | `tripId ASC, inviteeUserId ASC, status ASC` |
-| `sync_events`         | 普通 | `userId ASC, tripId ASC, createdAt DESC`    |
-| `audit_logs`          | 普通 | `tripId ASC, createdAt DESC`                |
-| `idempotency_records` | 普通 | `expiresAt ASC`                             |
-| `rate_limit_records`  | 普通 | `ownerHash ASC, scope ASC, bucket ASC`      |
-| `rate_limit_records`  | 普通 | `expiresAt ASC`                             |
-| `backup_manifests`    | 普通 | `createdAt DESC`                            |
+| 集合                  | 类型      | 字段顺序                                    |
+| --------------------- | --------- | ------------------------------------------- |
+| `users`               | 唯一      | `openId ASC`                                |
+| `users`               | 唯一      | `publicId ASC`                              |
+| `users`               | 唯一/稀疏 | `qrSceneToken ASC`                          |
+| `trips`               | 普通      | `memberIds ASC`                             |
+| `trips`               | 普通      | `_id ASC, version ASC`                      |
+| `friend_requests`     | 普通      | `fromUserId ASC, toUserId ASC, status ASC`  |
+| `friend_requests`     | 普通      | `toUserId ASC, createdAt DESC`              |
+| `friendships`         | 普通      | `userIds ASC`                               |
+| `blocks`              | 普通      | `blockerUserId ASC, blockedUserId ASC`      |
+| `notifications`       | 普通      | `userId ASC, createdAt DESC`                |
+| `notifications`       | 普通      | `tripId ASC`                                |
+| `trip_invitations`    | 普通      | `tripId ASC, inviteeUserId ASC, status ASC` |
+| `sync_events`         | 普通      | `userId ASC, tripId ASC, createdAt DESC`    |
+| `audit_logs`          | 普通      | `tripId ASC, createdAt DESC`                |
+| `idempotency_records` | 普通      | `expiresAt ASC`                             |
+| `rate_limit_records`  | 普通      | `ownerHash ASC, scope ASC, bucket ASC`      |
+| `rate_limit_records`  | 普通      | `expiresAt ASC`                             |
+| `backup_manifests`    | 普通      | `createdAt DESC`                            |
 
 ## 云函数
 

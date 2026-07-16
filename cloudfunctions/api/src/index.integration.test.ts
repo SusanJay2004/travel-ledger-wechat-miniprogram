@@ -68,6 +68,40 @@ describe('cloud API command integration', () => {
     );
     expect(forbidden).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } });
   });
+
+  it('generates and resolves an opaque QR scene without embedding a public id', async () => {
+    const previousMode = process.env['PRODUCT_MODE'];
+    process.env['PRODUCT_MODE'] = 'collaboration';
+    try {
+      const cloud = createMemoryCloudSdk('openid-alice');
+      const bootstrap = await command(cloud.sdk, 'session.bootstrap', {}, 'qr-bootstrap-alice');
+      const alice = successData(bootstrap) as { publicId: string };
+      await command(cloud.sdk, 'session.qrCode', {}, 'qr-generate-alice');
+      const stored = cloud.database.documents('users')[0]!;
+      expect(stored['qrSceneToken']).toMatch(/^[A-Za-z0-9_-]{20}$/);
+      expect(String(stored['qrSceneToken'])).not.toContain(alice.publicId);
+
+      cloud.setOpenId('openid-bob');
+      await command(cloud.sdk, 'session.bootstrap', {}, 'qr-bootstrap-bob');
+      const resolved = await command(
+        cloud.sdk,
+        'social.resolveQrScene',
+        { token: stored['qrSceneToken'] },
+        'qr-resolve-bob',
+      );
+      expect(successData(resolved)).toMatchObject({ publicId: alice.publicId });
+      const malformed = await command(
+        cloud.sdk,
+        'social.resolveQrScene',
+        { token: alice.publicId },
+        'qr-resolve-malformed',
+      );
+      expect(malformed).toMatchObject({ ok: false, error: { code: 'QR_SCENE_INVALID' } });
+    } finally {
+      if (previousMode === undefined) delete process.env['PRODUCT_MODE'];
+      else process.env['PRODUCT_MODE'] = previousMode;
+    }
+  });
 });
 
 async function command(

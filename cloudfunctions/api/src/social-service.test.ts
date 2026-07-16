@@ -30,6 +30,11 @@ class TestIds implements IdGenerator {
     this.sequence += 1;
     return `ABCDEFGH${String(this.sequence + 22).padStart(2, '2')}`;
   }
+
+  sceneToken() {
+    this.sequence += 1;
+    return `scenetoken${String(this.sequence).padStart(10, '0')}`;
+  }
 }
 
 describe('SocialService collaboration gates', () => {
@@ -105,6 +110,17 @@ describe('SocialService collaboration gates', () => {
     await social.unblockUser(alice.id, bob.id);
     expect(await social.listBlockedUsers(alice.id)).toEqual([]);
     expect(await social.searchByPublicId(bob.id, alice.publicId)).not.toBeNull();
+  });
+
+  it('resolves an opaque QR token without exposing identity in the scene', async () => {
+    await repository.updateUser({ ...alice, qrSceneToken: 'AbCdEfGhIjKlMnOpQr_2' });
+    expect(await social.resolveQrScene(bob.id, 'AbCdEfGhIjKlMnOpQr_2')).toMatchObject({
+      publicId: alice.publicId,
+    });
+    expect(await social.resolveQrScene(alice.id, 'AbCdEfGhIjKlMnOpQr_2')).toBeNull();
+    await expect(social.resolveQrScene(bob.id, alice.publicId)).rejects.toMatchObject({
+      code: 'QR_SCENE_INVALID',
+    });
   });
 
   it('allows an unreferenced member to leave but protects referenced debt history', async () => {

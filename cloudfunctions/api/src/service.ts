@@ -146,6 +146,8 @@ export class LedgerService {
         displayName: `旅人${publicId.slice(-6)}`,
         signature: DEFAULT_SIGNATURE,
         avatarUrl: null,
+        qrCodeFileId: null,
+        qrSceneToken: null,
         status: 'active',
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -206,6 +208,7 @@ export class LedgerService {
             signature: DEFAULT_SIGNATURE,
             avatarUrl: null,
             qrCodeFileId: null,
+            qrSceneToken: null,
             status: 'deleting',
             updatedAt: this.clock.now().toISOString(),
           };

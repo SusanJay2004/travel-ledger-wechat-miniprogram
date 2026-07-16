@@ -65,6 +65,15 @@ export class SocialService {
     return publicProfile(user);
   }
 
+  async resolveQrScene(currentUserId: string, token: string): Promise<PublicUserProfile | null> {
+    this.assertCollaboration();
+    assertBusiness(/^[A-Za-z0-9_-]{20}$/.test(token), 'QR_SCENE_INVALID', '二维码参数无效。');
+    const user = await this.repository.findUserByQrSceneToken(token);
+    if (user === null || user.status !== 'active' || user.id === currentUserId) return null;
+    if (await this.social.isBlockedEither(currentUserId, user.id)) return null;
+    return publicProfile(user);
+  }
+
   async sendFriendRequest(
     from: UserDocument,
     targetPublicId: string,

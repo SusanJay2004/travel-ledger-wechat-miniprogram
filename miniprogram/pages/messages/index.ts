@@ -16,6 +16,7 @@ interface MessageData {
   blockedUsers: readonly BlockedUserView[];
   loading: boolean;
   notifications: readonly AppNotification[];
+  pendingSceneToken: string;
   unreadCount: number;
   publicIdQuery: string;
   searchResult: PublicUserProfile | null;
@@ -30,6 +31,7 @@ interface MessageMethods {
   handleQueryInput(event: WechatMiniprogram.Input): void;
   handleSearch(): Promise<void>;
   loadData(): Promise<void>;
+  resolveQrScene(token: string): Promise<void>;
   switchTab(event: WechatMiniprogram.BaseEvent): void;
 }
 
@@ -42,16 +44,34 @@ Page<MessageData, MessageMethods>({
     blockedUsers: [],
     loading: runtimeConfig.collaborationEnabled,
     notifications: [],
+    pendingSceneToken: '',
     unreadCount: 0,
     publicIdQuery: '',
     searchResult: null,
   },
 
   onLoad(query: Record<string, string | undefined>) {
-    const publicId = scenePublicId(query['scene']) ?? query['publicId'] ?? '';
+    const token = sceneToken(query['scene']);
+    if (token !== null) {
+      this.setData({ activeTab: 'friends', pendingSceneToken: token });
+      return;
+    }
+    const publicId = query['publicId'] ?? '';
     if (/^[A-Z2-9]{10}$/.test(publicId)) {
       this.setData({ activeTab: 'friends', publicIdQuery: publicId });
       if (this.data.collaborationEnabled) void this.handleSearch();
+    }
+  },
+
+  async resolveQrScene(token: string) {
+    try {
+      const searchResult = await callApi<PublicUserProfile | null>('social.resolveQrScene', {
+        token,
+      });
+      this.setData({ loading: false, searchResult });
+      if (searchResult === null) void wx.showToast({ icon: 'none', title: '二维码已失效或不可用' });
+    } catch (error: unknown) {
+      this.setData({ errorMessage: toMessage(error), loading: false });
     }
   },
 
@@ -63,6 +83,11 @@ Page<MessageData, MessageMethods>({
         this.setData({ collaborationEnabled });
         if (collaborationEnabled) {
           void this.loadData();
+          if (this.data.pendingSceneToken.length > 0) {
+            const token = this.data.pendingSceneToken;
+            this.setData({ pendingSceneToken: '' });
+            void this.resolveQrScene(token);
+          }
           if (/^[A-Z2-9]{10}$/.test(this.data.publicIdQuery) && this.data.searchResult === null) {
             void this.handleSearch();
           }
@@ -206,7 +231,7 @@ function isCancelled(error: unknown): boolean {
   return error.errMsg.includes('cancel');
 }
 
-function scenePublicId(scene: string | undefined): string | null {
+function sceneToken(scene: string | undefined): string | null {
   if (scene === undefined) return null;
   let decoded: string;
   try {
@@ -214,6 +239,6 @@ function scenePublicId(scene: string | undefined): string | null {
   } catch {
     return null;
   }
-  const match = /(?:^|&)u=([A-Z2-9]{10})(?:&|$)/.exec(decoded);
+  const match = /(?:^|&)t=([A-Za-z0-9_-]{20})(?:&|$)/.exec(decoded);
   return match?.[1] ?? null;
 }

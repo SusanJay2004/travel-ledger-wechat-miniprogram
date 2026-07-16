@@ -129,11 +129,17 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
             if (productMode !== 'collaboration') {
               throw new BusinessError('FEATURE_DISABLED', '当前发布版本未开放好友二维码。');
             }
-            if (user.qrCodeFileId !== undefined && user.qrCodeFileId !== null) {
+            if (
+              user.qrCodeFileId !== undefined &&
+              user.qrCodeFileId !== null &&
+              user.qrSceneToken !== undefined &&
+              user.qrSceneToken !== null
+            ) {
               return { fileId: user.qrCodeFileId };
             }
+            const qrSceneToken = secureIdGenerator.sceneToken();
             const code = await sdk.openapi.wxacode.getUnlimited({
-              scene: `u=${user.publicId}`,
+              scene: `t=${qrSceneToken}`,
               page: 'pages/messages/index',
               checkPath: false,
               envVersion:
@@ -154,7 +160,7 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
               cloudPath: `profile-codes/${user.id}.png`,
               fileContent: code.buffer,
             });
-            await repository.updateUser({ ...user, qrCodeFileId: uploaded.fileID });
+            await repository.updateUser({ ...user, qrCodeFileId: uploaded.fileID, qrSceneToken });
             return { fileId: uploaded.fileID };
           }),
         );
@@ -177,6 +183,11 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
         return success(
           requestId,
           await social.searchByPublicId(user.id, requiredString(event.payload, 'publicId')),
+        );
+      case 'social.resolveQrScene':
+        return success(
+          requestId,
+          await social.resolveQrScene(user.id, requiredString(event.payload, 'token')),
         );
       case 'social.sendFriendRequest':
         return success(

@@ -3,6 +3,7 @@ import type { TripDocument, UserDocument } from './models';
 export interface Repository {
   findUserByOpenId(openId: string): Promise<UserDocument | null>;
   findUserByPublicId(publicId: string): Promise<UserDocument | null>;
+  findUserByQrSceneToken(token: string): Promise<UserDocument | null>;
   getUser(userId: string): Promise<UserDocument | null>;
   createUser(user: UserDocument): Promise<void>;
   updateUser(user: UserDocument): Promise<void>;
@@ -24,6 +25,10 @@ export class MemoryRepository implements Repository {
 
   async findUserByPublicId(publicId: string): Promise<UserDocument | null> {
     return [...this.users.values()].find((user) => user.publicId === publicId) ?? null;
+  }
+
+  async findUserByQrSceneToken(token: string): Promise<UserDocument | null> {
+    return [...this.users.values()].find((user) => user.qrSceneToken === token) ?? null;
   }
 
   async getUser(userId: string): Promise<UserDocument | null> {

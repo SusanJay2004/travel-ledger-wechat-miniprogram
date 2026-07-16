@@ -11,6 +11,7 @@ export interface UserDocument {
   signature: string;
   avatarUrl: string | null;
   qrCodeFileId?: string | null;
+  qrSceneToken?: string | null;
   status: 'active' | 'deleting' | 'deleted';
   createdAt: string;
   updatedAt: string;
@@ -213,4 +214,5 @@ export interface Clock {
 export interface IdGenerator {
   entityId(prefix: string): string;
   publicId(): string;
+  sceneToken(): string;
 }

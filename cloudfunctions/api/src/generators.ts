@@ -16,4 +16,7 @@ export const secureIdGenerator: IdGenerator = {
     const bytes = randomBytes(10);
     return [...bytes].map((byte) => PUBLIC_ID_ALPHABET[byte % PUBLIC_ID_ALPHABET.length]).join('');
   },
+  sceneToken() {
+    return randomBytes(15).toString('base64url');
+  },
 };

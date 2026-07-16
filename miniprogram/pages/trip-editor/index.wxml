@@ -15,13 +15,14 @@
       placeholder-class="name-input__placeholder"
       value="{{name}}"
       bindinput="handleNameInput"
+      disabled="{{!editable}}"
       focus
     />
     <view class="field-hint">仅支持中文、英文字母、数字和内部空格</view>
     <view wx:if="{{errorMessage}}" class="error-banner">{{errorMessage}}</view>
   </view>
 
-  <button class="primary-button submit-button" loading="{{saving}}" disabled="{{saving}}" bindtap="handleSubmit">
-    {{saving ? '正在保存…' : (tripId ? '保存修改' : '创建行程')}}
+  <button class="primary-button submit-button" loading="{{saving}}" disabled="{{saving || !editable}}" bindtap="handleSubmit">
+    {{saving ? '正在保存…' : (!editable ? '行程已完结' : (tripId ? '保存修改' : '创建行程'))}}
   </button>
 </view>

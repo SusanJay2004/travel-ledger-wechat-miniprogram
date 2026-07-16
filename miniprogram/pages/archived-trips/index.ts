@@ -1,4 +1,5 @@
 import { callApi, type TripDetail } from '../../services/api';
+import { isVersionConflict, showVersionConflictAndRefresh } from '../../services/conflict';
 import { getSessionProfile } from '../../services/session';
 
 interface ArchivedCard extends TripDetail {
@@ -72,6 +73,10 @@ Page<ArchivedData, ArchivedMethods>({
       void wx.showToast({ icon: 'success', title: '已恢复到首页' });
       await this.loadTrips();
     } catch (error: unknown) {
+      if (isVersionConflict(error)) {
+        await showVersionConflictAndRefresh(() => this.loadTrips());
+        return;
+      }
       void wx.showToast({ icon: 'none', title: toMessage(error) });
     }
   },
@@ -90,6 +95,10 @@ Page<ArchivedData, ArchivedMethods>({
       await callApi('trip.removeArchived', { tripId, expectedVersion: version });
       await this.loadTrips();
     } catch (error: unknown) {
+      if (isVersionConflict(error)) {
+        await showVersionConflictAndRefresh(() => this.loadTrips());
+        return;
+      }
       void wx.showToast({ icon: 'none', title: toMessage(error) });
     }
   },
@@ -112,6 +121,10 @@ Page<ArchivedData, ArchivedMethods>({
       }
       await this.loadTrips();
     } catch (error: unknown) {
+      if (isVersionConflict(error)) {
+        await showVersionConflictAndRefresh(() => this.loadTrips());
+        return;
+      }
       void wx.showToast({ icon: 'none', title: toMessage(error) });
       await this.loadTrips();
     }

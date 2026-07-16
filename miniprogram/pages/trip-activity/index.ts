@@ -1,4 +1,5 @@
 import { callApi, type TripActivity, type TripDetail } from '../../services/api';
+import { isVersionConflict, showVersionConflictAndRefresh } from '../../services/conflict';
 
 interface ActivityItem extends TripActivity {
   actorName: string;
@@ -84,6 +85,10 @@ Page<ActivityData, ActivityMethods>({
       await this.loadActivity();
       void wx.showToast({ icon: 'success', title: '账单已恢复' });
     } catch (error: unknown) {
+      if (isVersionConflict(error)) {
+        await showVersionConflictAndRefresh(() => this.loadActivity());
+        return;
+      }
       void wx.showToast({ icon: 'none', title: toMessage(error) });
     }
   },

@@ -6,6 +6,7 @@ import {
   type FriendView,
   type PublicUserProfile,
 } from '../../services/api';
+import { isVersionConflict } from '../../services/conflict';
 import { getSessionProfile } from '../../services/session';
 
 interface MessageData {
@@ -169,6 +170,17 @@ Page<MessageData, MessageMethods>({
       }
       await this.loadData();
     } catch (error: unknown) {
+      if (invitationId.length > 0 && isVersionConflict(error)) {
+        await wx.showModal({
+          title: '邀请需要重新确认',
+          content: '这段行程刚刚发生了变化。将刷新通知，请查看后再次处理邀请。',
+          showCancel: false,
+          confirmText: '刷新通知',
+          confirmColor: '#0F6E65',
+        });
+        await this.loadData();
+        return;
+      }
       void wx.showToast({ icon: 'none', title: toMessage(error) });
     }
   },

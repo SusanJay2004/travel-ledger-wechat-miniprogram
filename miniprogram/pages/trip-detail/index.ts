@@ -14,6 +14,7 @@ import {
   writeTripDetailCache,
 } from '../../services/local-cache';
 import { getLocallyCachedSessionProfile, getSessionProfile } from '../../services/session';
+import { isVersionConflict, showVersionConflictAndRefresh } from '../../services/conflict';
 
 interface BillCard extends TripBill {
   amountText: string;
@@ -191,6 +192,10 @@ Page<DetailData, DetailMethods>({
       await this.loadTrip();
     } catch (error: unknown) {
       this.setData({ addingDate: false });
+      if (isVersionConflict(error)) {
+        await showVersionConflictAndRefresh(() => this.loadTrip());
+        return;
+      }
       void wx.showToast({ icon: 'none', title: toMessage(error) });
     }
   },
@@ -219,6 +224,10 @@ Page<DetailData, DetailMethods>({
       });
       await this.loadTrip();
     } catch (error: unknown) {
+      if (isVersionConflict(error)) {
+        await showVersionConflictAndRefresh(() => this.loadTrip());
+        return;
+      }
       void wx.showToast({ icon: 'none', title: toMessage(error) });
     }
   },
@@ -266,6 +275,10 @@ Page<DetailData, DetailMethods>({
       await callApi('trip.reopen', { tripId: trip.id, expectedVersion: trip.version });
       await this.loadTrip();
     } catch (error: unknown) {
+      if (isVersionConflict(error)) {
+        await showVersionConflictAndRefresh(() => this.loadTrip());
+        return;
+      }
       void wx.showToast({ icon: 'none', title: toMessage(error) });
     }
   },
@@ -282,6 +295,10 @@ Page<DetailData, DetailMethods>({
       await callApi('social.leaveTrip', { tripId: trip.id });
       void wx.switchTab({ url: '/pages/home/index' });
     } catch (error: unknown) {
+      if (isVersionConflict(error)) {
+        await showVersionConflictAndRefresh(() => this.loadTrip());
+        return;
+      }
       void wx.showToast({ icon: 'none', title: toMessage(error) });
     }
   },
@@ -311,6 +328,10 @@ Page<DetailData, DetailMethods>({
       });
       await this.loadTrip();
     } catch (error: unknown) {
+      if (isVersionConflict(error)) {
+        await showVersionConflictAndRefresh(() => this.loadTrip());
+        return;
+      }
       void wx.showToast({ icon: 'none', title: toMessage(error) });
     }
   },
@@ -327,6 +348,10 @@ Page<DetailData, DetailMethods>({
       });
       await this.loadTrip();
     } catch (error: unknown) {
+      if (isVersionConflict(error)) {
+        await showVersionConflictAndRefresh(() => this.loadTrip());
+        return;
+      }
       void wx.showToast({ icon: 'none', title: toMessage(error) });
     }
   },
@@ -402,13 +427,25 @@ Page<DetailData, DetailMethods>({
       if (error instanceof ApiError && error.code === 'INVALID_BILLS_REQUIRE_CONFIRMATION') {
         const ignore = await confirm('仍有待完善账单', '这些账单不会参与结算。确认忽略并完结吗？');
         if (ignore) {
-          await callApi<TripDetail>('trip.complete', {
-            tripId: trip.id,
-            expectedVersion: trip.version,
-            ignoreInvalidBills: true,
-          });
-          await this.loadTrip();
+          try {
+            await callApi<TripDetail>('trip.complete', {
+              tripId: trip.id,
+              expectedVersion: trip.version,
+              ignoreInvalidBills: true,
+            });
+            await this.loadTrip();
+          } catch (retryError: unknown) {
+            if (isVersionConflict(retryError)) {
+              await showVersionConflictAndRefresh(() => this.loadTrip());
+              return;
+            }
+            void wx.showToast({ icon: 'none', title: toMessage(retryError) });
+          }
         }
+        return;
+      }
+      if (isVersionConflict(error)) {
+        await showVersionConflictAndRefresh(() => this.loadTrip());
         return;
       }
       void wx.showToast({ icon: 'none', title: toMessage(error) });
@@ -427,6 +464,10 @@ Page<DetailData, DetailMethods>({
       await callApi('trip.archive', { tripId: trip.id, expectedVersion: trip.version });
       void wx.switchTab({ url: '/pages/home/index' });
     } catch (error: unknown) {
+      if (isVersionConflict(error)) {
+        await showVersionConflictAndRefresh(() => this.loadTrip());
+        return;
+      }
       void wx.showToast({ icon: 'none', title: toMessage(error) });
     }
   },

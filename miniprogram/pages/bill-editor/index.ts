@@ -1,11 +1,11 @@
-import { callApi, type TripDetail, type TripMember } from '../../services/api';
+import { callApi, type TripDetail } from '../../services/api';
+import {
+  isVersionConflict,
+  reconcileBillConflict,
+  type ConflictMemberRow,
+} from '../../services/conflict';
 
-interface MemberRow extends TripMember {
-  paidYuan: string;
-  participantSelected: boolean;
-  payerSelected: boolean;
-  shares: string;
-}
+type MemberRow = ConflictMemberRow;
 
 interface BillEditorData {
   amountYuan: string;
@@ -24,6 +24,7 @@ interface BillEditorData {
   title: string;
   trip: TripDetail | null;
   tripId: string;
+  writeBlockedReason: string;
 }
 
 interface BillEditorMethods {
@@ -32,6 +33,7 @@ interface BillEditorMethods {
   handlePaidInput(event: WechatMiniprogram.Input): void;
   handleShareInput(event: WechatMiniprogram.Input): void;
   handleSubmit(): Promise<void>;
+  handleVersionConflict(): Promise<void>;
   handleTitleInput(event: WechatMiniprogram.Input): void;
   loadTrip(): Promise<void>;
   persistDraft(): void;
@@ -59,6 +61,7 @@ Page<BillEditorData, BillEditorMethods>({
     title: '',
     trip: null,
     tripId: '',
+    writeBlockedReason: '',
   },
 
   onHide() {
@@ -108,6 +111,12 @@ Page<BillEditorData, BillEditorMethods>({
           };
         });
       if (draft !== null) memberRows = applyDraftRows(memberRows, draft.memberRows);
+      const writeBlockedReason =
+        trip.status === 'completed'
+          ? '行程已完结，当前账本为只读。'
+          : this.data.billId.length > 0 && (existing === undefined || existing.deletedAt !== null)
+            ? '这笔账单已被删除，不能直接覆盖；请先从活动记录恢复。'
+            : '';
       this.setData({
         amountYuan,
         date: existing?.date ?? this.data.date,
@@ -123,6 +132,7 @@ Page<BillEditorData, BillEditorMethods>({
         memberRows,
         title: draft?.title ?? existing?.title ?? '',
         trip,
+        writeBlockedReason,
       });
       this.refreshAllocationWarning(memberRows, amountYuan);
     } catch (error: unknown) {
@@ -131,10 +141,12 @@ Page<BillEditorData, BillEditorMethods>({
   },
 
   handleTitleInput(event: WechatMiniprogram.Input) {
+    if (this.data.writeBlockedReason.length > 0) return;
     this.setData({ title: event.detail.value, errorMessage: '' });
   },
 
   handleDateChange(event: WechatMiniprogram.PickerChange) {
+    if (this.data.writeBlockedReason.length > 0) return;
     const index = Number(event.detail.value);
     const date = this.data.dateOptions[index];
     if (date === undefined) return;
@@ -142,6 +154,7 @@ Page<BillEditorData, BillEditorMethods>({
   },
 
   handleAmountInput(event: WechatMiniprogram.Input) {
+    if (this.data.writeBlockedReason.length > 0) return;
     const amountYuan = event.detail.value;
     const selectedPayers = this.data.memberRows.filter((member) => member.payerSelected);
     const memberRows = this.data.memberRows.map((member) =>
@@ -154,6 +167,7 @@ Page<BillEditorData, BillEditorMethods>({
   },
 
   toggleParticipant(event: WechatMiniprogram.BaseEvent) {
+    if (this.data.writeBlockedReason.length > 0) return;
     const userId = String(event.currentTarget.dataset['userId'] ?? '');
     const memberRows = this.data.memberRows.map((member) =>
       member.userId === userId
@@ -169,6 +183,7 @@ Page<BillEditorData, BillEditorMethods>({
   },
 
   togglePayer(event: WechatMiniprogram.BaseEvent) {
+    if (this.data.writeBlockedReason.length > 0) return;
     const userId = String(event.currentTarget.dataset['userId'] ?? '');
     const next = this.data.memberRows.map((member) =>
       member.userId === userId
@@ -199,7 +214,7 @@ Page<BillEditorData, BillEditorMethods>({
 
   async handleSubmit() {
     const trip = this.data.trip;
-    if (trip === null || this.data.saving) return;
+    if (trip === null || this.data.saving || this.data.writeBlockedReason.length > 0) return;
     const title = this.data.title.trim();
     const amountCents = parseCents(this.data.amountYuan);
     if (title.length === 0 || [...title].length > 12) {
@@ -246,11 +261,71 @@ Page<BillEditorData, BillEditorMethods>({
       removeDraft(this.data.tripId, this.data.date);
       void wx.navigateBack();
     } catch (error: unknown) {
+      if (isVersionConflict(error)) {
+        await this.handleVersionConflict();
+        return;
+      }
       this.setData({ errorMessage: toMessage(error), saving: false });
     }
   },
 
+  async handleVersionConflict() {
+    const currentRows = this.data.memberRows;
+    try {
+      const latest = await callApi<TripDetail>('trip.get', { tripId: this.data.tripId });
+      const resolution = reconcileBillConflict(
+        latest,
+        this.data.billId,
+        this.data.date,
+        currentRows,
+      );
+      if (resolution.billDeleted) {
+        await wx.showModal({
+          title: '这笔账单已被删除',
+          content: '同行人已经删除了这笔账单，当前输入不会覆盖该操作。',
+          showCancel: false,
+        });
+        this.setData({
+          errorMessage: '账单已被删除，请返回行程查看最新内容。',
+          saving: false,
+          trip: latest,
+          writeBlockedReason: '这笔账单已被删除，不能直接覆盖；请先从活动记录恢复。',
+        });
+        return;
+      }
+      await wx.showModal({
+        title: latest.status === 'completed' ? '行程已完结' : '账本刚刚被修改',
+        content:
+          latest.status === 'completed'
+            ? '已保留你的当前输入，但同行人已完结行程，账本现在为只读。'
+            : '已保留你的事件、金额和分配，并刷新最新成员、日期和版本。请检查后再次保存。',
+        showCancel: false,
+        confirmText: latest.status === 'completed' ? '查看最新行程' : '检查并重试',
+        confirmColor: '#0F6E65',
+      });
+      this.setData({
+        date: resolution.date,
+        dateOptions: resolution.dateOptions,
+        dateOptionTexts: resolution.dateOptions.map(formatDate),
+        dateSelectedIndex: Math.max(0, resolution.dateOptions.indexOf(resolution.date)),
+        dateText: formatDate(resolution.date),
+        errorMessage:
+          latest.status === 'completed'
+            ? '行程已完结，当前输入未提交。'
+            : '同行人已更新账本，请检查最新成员和日期后再次保存。',
+        memberRows: resolution.memberRows,
+        saving: false,
+        trip: latest,
+        writeBlockedReason: latest.status === 'completed' ? '行程已完结，当前账本为只读。' : '',
+      });
+      this.refreshAllocationWarning(resolution.memberRows);
+    } catch (refreshError: unknown) {
+      this.setData({ errorMessage: toMessage(refreshError), saving: false });
+    }
+  },
+
   updateMemberValue(event: WechatMiniprogram.Input, key: 'paidYuan' | 'shares') {
+    if (this.data.writeBlockedReason.length > 0) return;
     const userId = String(event.currentTarget.dataset['userId'] ?? '');
     const value = event.detail.value;
     const memberRows = this.data.memberRows.map((member) =>

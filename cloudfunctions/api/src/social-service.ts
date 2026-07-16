@@ -12,6 +12,11 @@ import type {
 } from './models';
 import type { Repository } from './repository';
 import type { SocialRepository } from './social-repository';
+import type { TripChangePublisher } from './service';
+
+const noopPublisher: TripChangePublisher = {
+  publishTripChange: async () => undefined,
+};
 
 export interface PublicUserProfile {
   userId: string;
@@ -32,6 +37,7 @@ export class SocialService {
     private readonly clock: Clock,
     private readonly ids: IdGenerator,
     private readonly mode: ProductMode,
+    private readonly publisher: TripChangePublisher = noopPublisher,
   ) {}
 
   async searchByPublicId(
@@ -307,6 +313,14 @@ export class SocialService {
     };
     const saved = await this.repository.replaceTrip(next, trip.version);
     if (!saved) throw new BusinessError('VERSION_CONFLICT', '行程已被修改，请刷新后重试。');
+    await this.publisher.publishTripChange(
+      trip,
+      next,
+      'member.left',
+      currentUser.id,
+      'member',
+      currentUser.id,
+    );
     for (const memberId of next.memberIds) {
       await this.social.createNotification(
         notification(this.ids, now, {
@@ -385,6 +399,14 @@ export class SocialService {
       };
       const saved = await this.repository.replaceTrip(next, trip.version);
       if (!saved) throw new BusinessError('VERSION_CONFLICT', '行程已被修改，请重新处理邀请。');
+      await this.publisher.publishTripChange(
+        trip,
+        next,
+        'member.joined',
+        currentUser.id,
+        'member',
+        currentUser.id,
+      );
       for (const memberId of trip.memberIds) {
         await this.social.createNotification(
           notification(this.ids, now, {

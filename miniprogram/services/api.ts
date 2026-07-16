@@ -127,13 +127,31 @@ export interface AppNotification {
   createdAt: string;
 }
 
-export async function callApi<T>(action: string, payload: unknown = {}): Promise<T> {
+export interface CallApiOptions {
+  requestId?: string;
+  transportRetries?: number;
+}
+
+export async function callApi<T>(
+  action: string,
+  payload: unknown = {},
+  options: CallApiOptions = {},
+): Promise<T> {
   if (wx.cloud === undefined) throw new Error('当前微信版本不支持云开发。');
-  const requestId = createRequestId();
-  const result = await wx.cloud.callFunction({
-    name: 'api',
-    data: { action, payload, requestId },
-  });
+  const requestId = options.requestId ?? createRequestId();
+  const retries = options.transportRetries ?? 1;
+  let result: Awaited<ReturnType<NonNullable<typeof wx.cloud>['callFunction']>>;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      result = await wx.cloud.callFunction({
+        name: 'api',
+        data: { action, payload, requestId },
+      });
+      break;
+    } catch (error: unknown) {
+      if (attempt >= retries) throw error;
+    }
+  }
   const response = result.result as ApiResponse<T>;
   if (response === undefined || response === null || typeof response !== 'object') {
     throw new Error('服务器返回了无法识别的数据。');
@@ -161,7 +179,7 @@ export class ApiError extends Error {
   }
 }
 
-function createRequestId(): string {
+export function createRequestId(): string {
   const random = Math.random().toString(36).slice(2, 10);
   return `${Date.now().toString(36)}-${random}`;
 }

@@ -1,8 +1,10 @@
 import type {
   BlockDocument,
+  AuditLogDocument,
   FriendRequestDocument,
   FriendshipDocument,
   NotificationDocument,
+  SyncEventDocument,
   TripInvitationDocument,
 } from './models';
 
@@ -32,6 +34,10 @@ export interface SocialRepository {
   ): Promise<TripInvitationDocument | null>;
   createInvitation(invitation: TripInvitationDocument): Promise<void>;
   updateInvitation(invitation: TripInvitationDocument): Promise<void>;
+
+  createSyncEvent(event: SyncEventDocument): Promise<void>;
+  createAuditLog(log: AuditLogDocument): Promise<void>;
+  listAuditLogs(tripId: string): Promise<readonly AuditLogDocument[]>;
 }
 
 export class MemorySocialRepository implements SocialRepository {
@@ -40,6 +46,8 @@ export class MemorySocialRepository implements SocialRepository {
   private readonly blocks = new Map<string, BlockDocument>();
   private readonly notifications = new Map<string, NotificationDocument>();
   private readonly invitations = new Map<string, TripInvitationDocument>();
+  private readonly syncEvents = new Map<string, SyncEventDocument>();
+  private readonly auditLogs = new Map<string, AuditLogDocument>();
 
   async getFriendRequest(requestId: string) {
     return cloneOrNull(this.friendRequests.get(requestId));
@@ -140,6 +148,25 @@ export class MemorySocialRepository implements SocialRepository {
 
   async updateInvitation(invitation: TripInvitationDocument) {
     this.invitations.set(invitation.id, structuredClone(invitation));
+  }
+
+  async createSyncEvent(event: SyncEventDocument) {
+    this.syncEvents.set(event.id, structuredClone(event));
+  }
+
+  async createAuditLog(log: AuditLogDocument) {
+    this.auditLogs.set(log.id, structuredClone(log));
+  }
+
+  async listAuditLogs(tripId: string) {
+    return [...this.auditLogs.values()]
+      .filter((log) => log.tripId === tripId)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      .map((log) => structuredClone(log));
+  }
+
+  listSyncEventsForTest() {
+    return [...this.syncEvents.values()].map((event) => structuredClone(event));
   }
 }
 

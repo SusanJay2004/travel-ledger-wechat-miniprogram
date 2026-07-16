@@ -76,6 +76,46 @@ export interface TripInvitationDocument {
   respondedAt: string | null;
 }
 
+export interface SyncEventDocument {
+  id: string;
+  userId: string;
+  ownerOpenId: string;
+  tripId: string;
+  ledgerRevision: number;
+  action: string;
+  actorUserId: string;
+  createdAt: string;
+}
+
+export interface AuditLogDocument {
+  id: string;
+  tripId: string;
+  actorUserId: string;
+  action: string;
+  entityType: 'trip' | 'date' | 'bill' | 'member';
+  entityId: string;
+  beforeVersion: number;
+  afterVersion: number;
+  createdAt: string;
+}
+
+export interface IdempotencyRecordDocument {
+  id: string;
+  ownerOpenId: string;
+  requestId: string;
+  action: string;
+  status: 'processing' | 'completed' | 'failed';
+  response: unknown;
+  error: {
+    code: string;
+    message: string;
+    retryable: boolean;
+    details?: Readonly<Record<string, unknown>>;
+  } | null;
+  createdAt: string;
+  expiresAt: string;
+}
+
 export interface TripMemberDocument {
   userId: string;
   displayNameSnapshot: string;

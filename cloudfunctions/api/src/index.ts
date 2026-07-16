@@ -1,7 +1,9 @@
 import { CloudRepository, type CloudDatabase } from './cloud-repository';
 import { CloudSocialRepository } from './cloud-social-repository';
 import { BusinessError } from './errors';
+import { EventPublisher } from './event-publisher';
 import { secureIdGenerator, systemClock } from './generators';
+import { IdempotencyService, isWriteAction } from './idempotency';
 import { LedgerService } from './service';
 import { SocialService } from './social-service';
 
@@ -36,30 +38,38 @@ export async function main(event: ApiEvent): Promise<unknown> {
     return failure(requestId, 'UNAUTHENTICATED', '无法识别当前微信用户，请重新进入小程序。');
   }
 
-  const service = new LedgerService(
-    new CloudRepository(cloud.database()),
-    systemClock,
-    secureIdGenerator,
-  );
+  const database = cloud.database();
+  const repository = new CloudRepository(database);
+  const socialRepository = new CloudSocialRepository(database);
+  const publisher = new EventPublisher(socialRepository, repository);
+  const idempotency = new IdempotencyService(database, systemClock);
+  const service = new LedgerService(repository, systemClock, secureIdGenerator, publisher);
   const social = new SocialService(
-    new CloudRepository(cloud.database()),
-    new CloudSocialRepository(cloud.database()),
+    repository,
+    socialRepository,
     systemClock,
     secureIdGenerator,
     process.env['PRODUCT_MODE'] === 'collaboration' ? 'collaboration' : 'solo',
+    publisher,
   );
 
   try {
     const user = await service.bootstrapSession(openId);
+    const write = <T>(operation: () => Promise<T>) =>
+      isWriteAction(action)
+        ? idempotency.execute(openId, requestId, action, operation)
+        : operation();
     switch (action) {
       case 'session.bootstrap':
         return success(requestId, publicProfile(user));
       case 'session.updateProfile': {
-        const updated = await service.updateProfile(user, {
-          displayName: requiredString(event.payload, 'displayName'),
-          signature: requiredString(event.payload, 'signature'),
-          avatarUrl: optionalNullableString(event.payload, 'avatarUrl'),
-        });
+        const updated = await write(() =>
+          service.updateProfile(user, {
+            displayName: requiredString(event.payload, 'displayName'),
+            signature: requiredString(event.payload, 'signature'),
+            avatarUrl: optionalNullableString(event.payload, 'avatarUrl'),
+          }),
+        );
         return success(requestId, publicProfile(updated));
       }
       case 'social.search':
@@ -70,51 +80,65 @@ export async function main(event: ApiEvent): Promise<unknown> {
       case 'social.sendFriendRequest':
         return success(
           requestId,
-          await social.sendFriendRequest(user, requiredString(event.payload, 'publicId')),
+          await write(() =>
+            social.sendFriendRequest(user, requiredString(event.payload, 'publicId')),
+          ),
         );
       case 'social.respondFriendRequest':
         return success(
           requestId,
-          await social.respondFriendRequest(
-            user,
-            requiredString(event.payload, 'requestId'),
-            requiredBoolean(event.payload, 'accept'),
+          await write(() =>
+            social.respondFriendRequest(
+              user,
+              requiredString(event.payload, 'requestId'),
+              requiredBoolean(event.payload, 'accept'),
+            ),
           ),
         );
       case 'social.listFriends':
         return success(requestId, await social.listFriends(user.id));
       case 'social.deleteFriend':
-        await social.deleteFriend(user.id, requiredString(event.payload, 'friendUserId'));
+        await write(() =>
+          social.deleteFriend(user.id, requiredString(event.payload, 'friendUserId')),
+        );
         return success(requestId, null);
       case 'social.blockUser':
-        await social.blockUser(user.id, requiredString(event.payload, 'blockedUserId'));
+        await write(() =>
+          social.blockUser(user.id, requiredString(event.payload, 'blockedUserId')),
+        );
         return success(requestId, null);
       case 'social.listNotifications':
         return success(requestId, await social.listNotifications(user.id));
       case 'social.markNotificationRead':
-        await social.markNotificationRead(user.id, requiredString(event.payload, 'notificationId'));
+        await write(() =>
+          social.markNotificationRead(user.id, requiredString(event.payload, 'notificationId')),
+        );
         return success(requestId, null);
       case 'social.inviteToTrip':
         return success(
           requestId,
-          await social.inviteToTrip(
-            user,
-            requiredString(event.payload, 'tripId'),
-            requiredString(event.payload, 'inviteeUserId'),
+          await write(() =>
+            social.inviteToTrip(
+              user,
+              requiredString(event.payload, 'tripId'),
+              requiredString(event.payload, 'inviteeUserId'),
+            ),
           ),
         );
       case 'social.leaveTrip':
         return success(
           requestId,
-          await social.leaveTrip(user, requiredString(event.payload, 'tripId')),
+          await write(() => social.leaveTrip(user, requiredString(event.payload, 'tripId'))),
         );
       case 'social.respondTripInvitation':
         return success(
           requestId,
-          await social.respondTripInvitation(
-            user,
-            requiredString(event.payload, 'invitationId'),
-            requiredBoolean(event.payload, 'accept'),
+          await write(() =>
+            social.respondTripInvitation(
+              user,
+              requiredString(event.payload, 'invitationId'),
+              requiredBoolean(event.payload, 'accept'),
+            ),
           ),
         );
       case 'trip.list':
@@ -127,67 +151,81 @@ export async function main(event: ApiEvent): Promise<unknown> {
           await service.getTrip(user.id, requiredString(event.payload, 'tripId')),
         );
       case 'trip.create': {
-        const trip = await service.createTrip(user, {
-          name: requiredString(event.payload, 'name'),
-        });
+        const trip = await write(() =>
+          service.createTrip(user, {
+            name: requiredString(event.payload, 'name'),
+          }),
+        );
         return success(requestId, { tripId: trip.id, trip });
       }
       case 'trip.rename':
         return success(
           requestId,
-          await service.renameTrip(user.id, {
-            tripId: requiredString(event.payload, 'tripId'),
-            name: requiredString(event.payload, 'name'),
-            expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
-          }),
+          await write(() =>
+            service.renameTrip(user.id, {
+              tripId: requiredString(event.payload, 'tripId'),
+              name: requiredString(event.payload, 'name'),
+              expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
+            }),
+          ),
         );
       case 'trip.addDate':
         return success(
           requestId,
-          await service.addDate(user.id, {
-            tripId: requiredString(event.payload, 'tripId'),
-            date: requiredString(event.payload, 'date'),
-            expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
-          }),
+          await write(() =>
+            service.addDate(user.id, {
+              tripId: requiredString(event.payload, 'tripId'),
+              date: requiredString(event.payload, 'date'),
+              expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
+            }),
+          ),
         );
       case 'trip.addBill':
         return success(
           requestId,
-          await service.addBill(user.id, {
-            tripId: requiredString(event.payload, 'tripId'),
-            date: requiredString(event.payload, 'date'),
-            expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
-            bill: requiredBill(event.payload),
-          }),
+          await write(() =>
+            service.addBill(user.id, {
+              tripId: requiredString(event.payload, 'tripId'),
+              date: requiredString(event.payload, 'date'),
+              expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
+              bill: requiredBill(event.payload),
+            }),
+          ),
         );
       case 'trip.updateBill':
         return success(
           requestId,
-          await service.updateBill(user.id, {
-            tripId: requiredString(event.payload, 'tripId'),
-            billId: requiredString(event.payload, 'billId'),
-            date: requiredString(event.payload, 'date'),
-            expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
-            bill: requiredBill(event.payload),
-          }),
+          await write(() =>
+            service.updateBill(user.id, {
+              tripId: requiredString(event.payload, 'tripId'),
+              billId: requiredString(event.payload, 'billId'),
+              date: requiredString(event.payload, 'date'),
+              expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
+              bill: requiredBill(event.payload),
+            }),
+          ),
         );
       case 'trip.deleteBill':
         return success(
           requestId,
-          await service.deleteBill(user.id, {
-            tripId: requiredString(event.payload, 'tripId'),
-            billId: requiredString(event.payload, 'billId'),
-            expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
-          }),
+          await write(() =>
+            service.deleteBill(user.id, {
+              tripId: requiredString(event.payload, 'tripId'),
+              billId: requiredString(event.payload, 'billId'),
+              expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
+            }),
+          ),
         );
       case 'trip.restoreBill':
         return success(
           requestId,
-          await service.restoreBill(user.id, {
-            tripId: requiredString(event.payload, 'tripId'),
-            billId: requiredString(event.payload, 'billId'),
-            expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
-          }),
+          await write(() =>
+            service.restoreBill(user.id, {
+              tripId: requiredString(event.payload, 'tripId'),
+              billId: requiredString(event.payload, 'billId'),
+              expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
+            }),
+          ),
         );
       case 'trip.calculate':
         return success(
@@ -197,35 +235,43 @@ export async function main(event: ApiEvent): Promise<unknown> {
       case 'trip.complete':
         return success(
           requestId,
-          await service.completeTrip(user.id, {
-            tripId: requiredString(event.payload, 'tripId'),
-            expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
-            ignoreInvalidBills: optionalBoolean(event.payload, 'ignoreInvalidBills'),
-          }),
+          await write(() =>
+            service.completeTrip(user.id, {
+              tripId: requiredString(event.payload, 'tripId'),
+              expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
+              ignoreInvalidBills: optionalBoolean(event.payload, 'ignoreInvalidBills'),
+            }),
+          ),
         );
       case 'trip.archive':
         return success(
           requestId,
-          await service.archiveTrip(user.id, {
-            tripId: requiredString(event.payload, 'tripId'),
-            expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
-          }),
+          await write(() =>
+            service.archiveTrip(user.id, {
+              tripId: requiredString(event.payload, 'tripId'),
+              expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
+            }),
+          ),
         );
       case 'trip.reopen':
         return success(
           requestId,
-          await service.reopenTrip(user.id, {
-            tripId: requiredString(event.payload, 'tripId'),
-            expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
-          }),
+          await write(() =>
+            service.reopenTrip(user.id, {
+              tripId: requiredString(event.payload, 'tripId'),
+              expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
+            }),
+          ),
         );
       case 'trip.restore':
         return success(
           requestId,
-          await service.restoreTrip(user.id, {
-            tripId: requiredString(event.payload, 'tripId'),
-            expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
-          }),
+          await write(() =>
+            service.restoreTrip(user.id, {
+              tripId: requiredString(event.payload, 'tripId'),
+              expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
+            }),
+          ),
         );
       default:
         return failure(requestId, 'UNKNOWN_ACTION', '无法识别该操作。');

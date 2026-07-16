@@ -1,9 +1,11 @@
 import type { CloudCollection, CloudDatabase } from './cloud-repository';
 import type {
   BlockDocument,
+  AuditLogDocument,
   FriendRequestDocument,
   FriendshipDocument,
   NotificationDocument,
+  SyncEventDocument,
   TripInvitationDocument,
 } from './models';
 import type { SocialRepository } from './social-repository';
@@ -116,6 +118,23 @@ export class CloudSocialRepository implements SocialRepository {
       .set({ data: withDocumentId(invitation) });
   }
 
+  async createSyncEvent(event: SyncEventDocument) {
+    await this.syncEvents()
+      .doc(event.id)
+      .set({ data: withDocumentId(event) });
+  }
+
+  async createAuditLog(log: AuditLogDocument) {
+    await this.auditLogs()
+      .doc(log.id)
+      .set({ data: withDocumentId(log) });
+  }
+
+  async listAuditLogs(tripId: string) {
+    const result = await this.auditLogs().where({ tripId }).limit(100).get();
+    return result.data.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+
   private async getDocument<T>(collection: CloudCollection<T>, id: string): Promise<T | null> {
     try {
       return (await collection.doc(id).get()).data;
@@ -143,6 +162,14 @@ export class CloudSocialRepository implements SocialRepository {
 
   private invitations() {
     return this.db.collection<TripInvitationDocument>('trip_invitations');
+  }
+
+  private syncEvents() {
+    return this.db.collection<SyncEventDocument>('sync_events');
+  }
+
+  private auditLogs() {
+    return this.db.collection<AuditLogDocument>('audit_logs');
   }
 }
 

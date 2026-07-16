@@ -22,6 +22,21 @@ import type {
 } from './models';
 import type { Repository } from './repository';
 
+export interface TripChangePublisher {
+  publishTripChange(
+    before: TripDocument,
+    after: TripDocument,
+    action: string,
+    actorUserId: string,
+    entityType: 'trip' | 'date' | 'bill' | 'member',
+    entityId: string,
+  ): Promise<void>;
+}
+
+const noopPublisher: TripChangePublisher = {
+  publishTripChange: async () => undefined,
+};
+
 export interface CreateTripInput {
   name: string;
 }
@@ -87,6 +102,7 @@ export class LedgerService {
     private readonly repository: Repository,
     private readonly clock: Clock,
     private readonly ids: IdGenerator,
+    private readonly publisher: TripChangePublisher = noopPublisher,
   ) {}
 
   async bootstrapSession(openId: string): Promise<UserDocument> {
@@ -210,7 +226,7 @@ export class LedgerService {
     const name = input.name.trim();
     assertBusiness(isValidTripName(name), 'TRIP_NAME_INVALID', '行程名称格式不正确。');
     const trip = await this.editableTrip(userId, input.tripId, input.expectedVersion);
-    return this.saveTrip(trip, userId, { name });
+    return this.saveTrip(trip, userId, { name }, 'trip.renamed', 'trip', trip.id);
   }
 
   async addDate(userId: string, input: AddDateInput): Promise<TripDocument> {
@@ -218,10 +234,17 @@ export class LedgerService {
     const trip = await this.editableTrip(userId, input.tripId, input.expectedVersion);
     assertBusiness(!trip.dates.includes(input.date), 'DATE_ALREADY_EXISTS', '该日期已经存在。');
 
-    return this.saveTrip(trip, userId, {
-      dates: [...trip.dates, input.date].sort(),
-      ledgerRevision: trip.ledgerRevision + 1,
-    });
+    return this.saveTrip(
+      trip,
+      userId,
+      {
+        dates: [...trip.dates, input.date].sort(),
+        ledgerRevision: trip.ledgerRevision + 1,
+      },
+      'date.created',
+      'date',
+      input.date,
+    );
   }
 
   async addBill(userId: string, input: AddBillInput): Promise<TripDocument> {
@@ -248,12 +271,19 @@ export class LedgerService {
       deletedAt: null,
       deletedBy: null,
     };
-    return this.saveTrip(trip, userId, {
-      bills: [...trip.bills, bill],
-      totalCents: trip.totalCents + bill.amountCents,
-      invalidBillCount: trip.invalidBillCount + (validationCodes.length > 0 ? 1 : 0),
-      ledgerRevision: trip.ledgerRevision + 1,
-    });
+    return this.saveTrip(
+      trip,
+      userId,
+      {
+        bills: [...trip.bills, bill],
+        totalCents: trip.totalCents + bill.amountCents,
+        invalidBillCount: trip.invalidBillCount + (validationCodes.length > 0 ? 1 : 0),
+        ledgerRevision: trip.ledgerRevision + 1,
+      },
+      'bill.created',
+      'bill',
+      bill.id,
+    );
   }
 
   async updateBill(userId: string, input: UpdateBillInput): Promise<TripDocument> {
@@ -277,15 +307,22 @@ export class LedgerService {
       deletedBy: null,
     };
     const bills = trip.bills.map((bill) => (bill.id === existing.id ? replacement : bill));
-    return this.saveTrip(trip, userId, {
-      bills,
-      totalCents: trip.totalCents - existing.amountCents + replacement.amountCents,
-      invalidBillCount:
-        trip.invalidBillCount -
-        (existing.validationCodes.length > 0 ? 1 : 0) +
-        (replacement.validationCodes.length > 0 ? 1 : 0),
-      ledgerRevision: trip.ledgerRevision + 1,
-    });
+    return this.saveTrip(
+      trip,
+      userId,
+      {
+        bills,
+        totalCents: trip.totalCents - existing.amountCents + replacement.amountCents,
+        invalidBillCount:
+          trip.invalidBillCount -
+          (existing.validationCodes.length > 0 ? 1 : 0) +
+          (replacement.validationCodes.length > 0 ? 1 : 0),
+        ledgerRevision: trip.ledgerRevision + 1,
+      },
+      'bill.updated',
+      'bill',
+      existing.id,
+    );
   }
 
   async deleteBill(userId: string, input: BillMutationInput): Promise<TripDocument> {
@@ -304,12 +341,19 @@ export class LedgerService {
           }
         : bill,
     );
-    return this.saveTrip(trip, userId, {
-      bills,
-      totalCents: trip.totalCents - existing.amountCents,
-      invalidBillCount: trip.invalidBillCount - (existing.validationCodes.length > 0 ? 1 : 0),
-      ledgerRevision: trip.ledgerRevision + 1,
-    });
+    return this.saveTrip(
+      trip,
+      userId,
+      {
+        bills,
+        totalCents: trip.totalCents - existing.amountCents,
+        invalidBillCount: trip.invalidBillCount - (existing.validationCodes.length > 0 ? 1 : 0),
+        ledgerRevision: trip.ledgerRevision + 1,
+      },
+      'bill.deleted',
+      'bill',
+      existing.id,
+    );
   }
 
   async restoreBill(userId: string, input: BillMutationInput): Promise<TripDocument> {
@@ -334,12 +378,19 @@ export class LedgerService {
         ? { ...bill, deletedAt: null, deletedBy: null, updatedAt: timestamp, updatedBy: userId }
         : bill,
     );
-    return this.saveTrip(trip, userId, {
-      bills,
-      totalCents: trip.totalCents + existing.amountCents,
-      invalidBillCount: trip.invalidBillCount + (existing.validationCodes.length > 0 ? 1 : 0),
-      ledgerRevision: trip.ledgerRevision + 1,
-    });
+    return this.saveTrip(
+      trip,
+      userId,
+      {
+        bills,
+        totalCents: trip.totalCents + existing.amountCents,
+        invalidBillCount: trip.invalidBillCount + (existing.validationCodes.length > 0 ? 1 : 0),
+        ledgerRevision: trip.ledgerRevision + 1,
+      },
+      'bill.restored',
+      'bill',
+      existing.id,
+    );
   }
 
   async calculate(
@@ -371,11 +422,18 @@ export class LedgerService {
       '仍有分配无效的账单，请修改或明确忽略后再完结。',
     );
     const timestamp = this.clock.now().toISOString();
-    return this.saveTrip(trip, userId, {
-      status: 'completed',
-      completedAt: timestamp,
-      completedBy: userId,
-    });
+    return this.saveTrip(
+      trip,
+      userId,
+      {
+        status: 'completed',
+        completedAt: timestamp,
+        completedBy: userId,
+      },
+      'trip.completed',
+      'trip',
+      trip.id,
+    );
   }
 
   async reopenTrip(userId: string, input: ReopenTripInput): Promise<TripDocument> {
@@ -392,11 +450,18 @@ export class LedgerService {
         );
       }
     }
-    return this.saveTrip(trip, userId, {
-      status: 'active',
-      completedAt: null,
-      completedBy: null,
-    });
+    return this.saveTrip(
+      trip,
+      userId,
+      {
+        status: 'active',
+        completedAt: null,
+        completedBy: null,
+      },
+      'trip.reopened',
+      'trip',
+      trip.id,
+    );
   }
 
   async archiveTrip(userId: string, input: ArchiveTripInput): Promise<TripDocument> {
@@ -413,7 +478,7 @@ export class LedgerService {
           }
         : member,
     );
-    return this.saveTrip(trip, userId, { members });
+    return this.saveTrip(trip, userId, { members }, 'member.archived', 'member', userId);
   }
 
   async restoreTrip(userId: string, input: RestoreTripInput): Promise<TripDocument> {
@@ -435,7 +500,7 @@ export class LedgerService {
         ? { ...item, viewState: 'home' as const, archivedAt: null, purgeAfter: null }
         : item,
     );
-    return this.saveTrip(trip, userId, { members });
+    return this.saveTrip(trip, userId, { members }, 'member.restored', 'member', userId);
   }
 
   private async editableTrip(userId: string, tripId: string, expectedVersion: number) {
@@ -470,6 +535,9 @@ export class LedgerService {
     trip: TripDocument,
     userId: string,
     changes: Partial<TripDocument>,
+    action: string,
+    entityType: 'trip' | 'date' | 'bill' | 'member',
+    entityId: string,
   ): Promise<TripDocument> {
     const next: TripDocument = {
       ...trip,
@@ -482,6 +550,7 @@ export class LedgerService {
     if (!replaced) {
       throw new BusinessError('VERSION_CONFLICT', '行程已被其他成员修改，请刷新后重试。');
     }
+    await this.publisher.publishTripChange(trip, next, action, userId, entityType, entityId);
     return next;
   }
 }

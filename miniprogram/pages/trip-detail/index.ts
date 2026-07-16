@@ -6,6 +6,8 @@ import {
   type TripDetail,
 } from '../../services/api';
 import { runtimeConfig } from '../../config/runtime';
+import { watchTripSync, type SyncSubscription } from '../../services/sync';
+import { getSessionProfile } from '../../services/session';
 
 interface BillCard extends TripBill {
   amountText: string;
@@ -33,6 +35,7 @@ interface DetailData {
 }
 
 interface DetailMethods {
+  closeSync(): Promise<void>;
   handleAddBill(event: WechatMiniprogram.BaseEvent): void;
   handleArchive(): Promise<void>;
   handleBillAction(event: WechatMiniprogram.BaseEvent): Promise<void>;
@@ -45,9 +48,14 @@ interface DetailMethods {
   handleSettle(): Promise<void>;
   loadTrip(): Promise<void>;
   submitDate(): Promise<void>;
+  startSync(trip: TripDetail, currentUserId: string): void;
+  syncDebounce: number | null;
+  syncSubscription: SyncSubscription | null;
 }
 
 Page<DetailData, DetailMethods>({
+  syncSubscription: null as SyncSubscription | null,
+  syncDebounce: null as number | null,
   data: {
     addingDate: false,
     collaborationEnabled: runtimeConfig.collaborationEnabled,
@@ -69,6 +77,14 @@ Page<DetailData, DetailMethods>({
     void this.loadTrip();
   },
 
+  onHide() {
+    void this.closeSync();
+  },
+
+  onUnload() {
+    void this.closeSync();
+  },
+
   async loadTrip() {
     const tripId = this.data.trip?.id;
     if (tripId === undefined) {
@@ -77,7 +93,10 @@ Page<DetailData, DetailMethods>({
     }
     this.setData({ errorMessage: '', loading: true });
     try {
-      const trip = await callApi<TripDetail>('trip.get', { tripId });
+      const [trip, profile] = await Promise.all([
+        callApi<TripDetail>('trip.get', { tripId }),
+        getSessionProfile(),
+      ]);
       void wx.setNavigationBarTitle({ title: trip.name });
       this.setData({
         dateSections: buildDateSections(trip),
@@ -86,6 +105,7 @@ Page<DetailData, DetailMethods>({
         trip,
         totalText: formatCents(trip.totalCents),
       });
+      this.startSync(trip, profile.userId);
     } catch (error: unknown) {
       this.setData({ errorMessage: toMessage(error), loading: false });
     }
@@ -265,6 +285,36 @@ Page<DetailData, DetailMethods>({
 
   handleRetry() {
     void this.loadTrip();
+  },
+
+  startSync(trip: TripDetail, currentUserId: string) {
+    if (this.syncSubscription !== null) return;
+    if (!trip.members.some((member) => member.userId === currentUserId)) return;
+    this.syncSubscription = watchTripSync({
+      userId: currentUserId,
+      tripId: trip.id,
+      onSync: () => {
+        if (this.syncDebounce !== null) clearTimeout(this.syncDebounce);
+        this.syncDebounce = setTimeout(() => {
+          this.syncDebounce = null;
+          void this.loadTrip();
+        }, 250);
+      },
+      onError: (message) => {
+        void wx.showToast({ icon: 'none', title: message });
+        void this.closeSync();
+      },
+    });
+  },
+
+  async closeSync() {
+    if (this.syncDebounce !== null) {
+      clearTimeout(this.syncDebounce);
+      this.syncDebounce = null;
+    }
+    const subscription = this.syncSubscription;
+    this.syncSubscription = null;
+    if (subscription !== null) await subscription.close();
   },
 });
 

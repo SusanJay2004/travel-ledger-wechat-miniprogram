@@ -1,0 +1,127 @@
+import { describe, expect, it } from 'vitest';
+
+import type { CloudCollection, CloudDatabase, QueryResult, UpdateResult } from './cloud-repository';
+import { BusinessError } from './errors';
+import { IdempotencyService } from './idempotency';
+import type { Clock, IdempotencyRecordDocument } from './models';
+
+class TestClock implements Clock {
+  now() {
+    return new Date('2026-07-17T08:00:00.000Z');
+  }
+}
+
+class MemoryCloudDatabase implements CloudDatabase {
+  readonly documents = new Map<string, unknown>();
+  failCompletedWrite = false;
+
+  collection<T>(_name: string): CloudCollection<T> {
+    return new MemoryCloudCollection<T>(this);
+  }
+}
+
+class MemoryCloudCollection<T> implements CloudCollection<T> {
+  constructor(private readonly database: MemoryCloudDatabase) {}
+
+  async add(options: { data: T }) {
+    const id = documentId(options.data);
+    if (this.database.documents.has(id)) throw new Error('duplicate document');
+    this.database.documents.set(id, structuredClone(options.data));
+  }
+
+  doc(id: string) {
+    return {
+      get: async () => {
+        const data = this.database.documents.get(id);
+        if (data === undefined) throw new Error('document not found');
+        return { data: structuredClone(data) as T };
+      },
+      remove: async () => {
+        this.database.documents.delete(id);
+      },
+      set: async (options: { data: T }) => {
+        const record = options.data as IdempotencyRecordDocument;
+        if (this.database.failCompletedWrite && record.status === 'completed') {
+          throw new Error('completion write failed');
+        }
+        this.database.documents.set(id, structuredClone(options.data));
+      },
+    };
+  }
+
+  async get(): Promise<QueryResult<T>> {
+    return { data: [...this.database.documents.values()] as T[] };
+  }
+
+  limit(_value: number): CloudCollection<T> {
+    return this;
+  }
+
+  skip(_value: number): CloudCollection<T> {
+    return this;
+  }
+
+  where(_query: Record<string, unknown>): CloudCollection<T> {
+    return this;
+  }
+
+  async update(_options: { data: Partial<T> }): Promise<UpdateResult> {
+    return { stats: { updated: 0 } };
+  }
+}
+
+describe('IdempotencyService', () => {
+  it('returns the stored response without executing a duplicate request', async () => {
+    const database = new MemoryCloudDatabase();
+    const service = new IdempotencyService(database, new TestClock());
+    let calls = 0;
+    const operation = async () => ({ tripId: `trip-${++calls}` });
+
+    const first = await service.execute('openid-alice', 'request-123', 'trip.create', operation);
+    const replay = await service.execute('openid-alice', 'request-123', 'trip.create', operation);
+
+    expect(first).toEqual({ tripId: 'trip-1' });
+    expect(replay).toEqual(first);
+    expect(calls).toBe(1);
+  });
+
+  it('stores domain failures and never reruns the same failed request', async () => {
+    const service = new IdempotencyService(new MemoryCloudDatabase(), new TestClock());
+    let calls = 0;
+    const operation = async () => {
+      calls += 1;
+      throw new BusinessError('TRIP_NAME_INVALID', '行程名称格式不正确。');
+    };
+
+    await expect(
+      service.execute('openid-alice', 'request-456', 'trip.create', operation),
+    ).rejects.toMatchObject({ code: 'TRIP_NAME_INVALID' });
+    await expect(
+      service.execute('openid-alice', 'request-456', 'trip.create', operation),
+    ).rejects.toMatchObject({ code: 'TRIP_NAME_INVALID' });
+    expect(calls).toBe(1);
+  });
+
+  it('keeps an uncertain request locked if persisting its result fails', async () => {
+    const database = new MemoryCloudDatabase();
+    database.failCompletedWrite = true;
+    const service = new IdempotencyService(database, new TestClock());
+    let calls = 0;
+    const operation = async () => ++calls;
+
+    await expect(
+      service.execute('openid-alice', 'request-789', 'trip.create', operation),
+    ).rejects.toMatchObject({ code: 'REQUEST_RESULT_UNCERTAIN' });
+    await expect(
+      service.execute('openid-alice', 'request-789', 'trip.create', operation),
+    ).rejects.toMatchObject({ code: 'REQUEST_IN_PROGRESS' });
+    expect(calls).toBe(1);
+  });
+});
+
+function documentId(value: unknown): string {
+  if (typeof value !== 'object' || value === null || !('_id' in value)) {
+    throw new Error('document id required');
+  }
+  return String(value._id);
+}

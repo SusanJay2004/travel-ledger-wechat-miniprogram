@@ -10,7 +10,7 @@ import { RateLimiter } from './rate-limit';
 import { successResponse } from './response';
 import { SocialService } from './social-service';
 
-interface ApiEvent {
+export interface ApiEvent {
   action?: unknown;
   payload?: unknown;
   requestId?: unknown;
@@ -20,7 +20,7 @@ interface CloudContext {
   OPENID?: string;
 }
 
-interface CloudSdk {
+export interface CloudSdk {
   DYNAMIC_CURRENT_ENV: symbol;
   database(): CloudDatabase;
   deleteFile(options: { fileList: string[] }): Promise<unknown>;
@@ -49,15 +49,26 @@ interface CloudSdk {
   uploadFile(options: { cloudPath: string; fileContent: Buffer }): Promise<{ fileID: string }>;
 }
 
-// wx-server-sdk is installed by the cloud function workspace and loaded by the cloud runtime.
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const cloud = require('wx-server-sdk') as CloudSdk;
-cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
-
 export async function main(event: ApiEvent): Promise<unknown> {
+  return handleApiEvent(event, runtimeCloud());
+}
+
+let initializedCloud: CloudSdk | null = null;
+
+function runtimeCloud(): CloudSdk {
+  if (initializedCloud !== null) return initializedCloud;
+  // wx-server-sdk is installed by the cloud function workspace and loaded by the cloud runtime.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const sdk = require('wx-server-sdk') as CloudSdk;
+  sdk.init({ env: sdk.DYNAMIC_CURRENT_ENV });
+  initializedCloud = sdk;
+  return sdk;
+}
+
+export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<unknown> {
   const requestId = typeof event.requestId === 'string' ? event.requestId : 'missing-request-id';
   const action = typeof event.action === 'string' ? event.action : '';
-  const openId = cloud.getWXContext().OPENID;
+  const openId = sdk.getWXContext().OPENID;
 
   if (openId === undefined || openId.length === 0) {
     return failure(requestId, 'UNAUTHENTICATED', '无法识别当前微信用户，请重新进入小程序。');
@@ -66,14 +77,14 @@ export async function main(event: ApiEvent): Promise<unknown> {
     return failure(requestId, 'REQUEST_ID_INVALID', '请求标识格式不正确。');
   }
 
-  const database = cloud.database();
+  const database = sdk.database();
   const repository = new CloudRepository(database);
   const socialRepository = new CloudSocialRepository(database);
   const publisher = new EventPublisher(socialRepository, repository);
   const idempotency = new IdempotencyService(database, systemClock);
   const rateLimiter = new RateLimiter(database, systemClock);
   const contentSecurity = new WechatContentSecurity(
-    cloud,
+    sdk,
     process.env['CONTENT_SECURITY_MODE'] !== 'disabled',
   );
   const service = new LedgerService(
@@ -121,7 +132,7 @@ export async function main(event: ApiEvent): Promise<unknown> {
             if (user.qrCodeFileId !== undefined && user.qrCodeFileId !== null) {
               return { fileId: user.qrCodeFileId };
             }
-            const code = await cloud.openapi.wxacode.getUnlimited({
+            const code = await sdk.openapi.wxacode.getUnlimited({
               scene: `u=${user.publicId}`,
               page: 'pages/messages/index',
               checkPath: false,
@@ -139,7 +150,7 @@ export async function main(event: ApiEvent): Promise<unknown> {
                 true,
               );
             }
-            const uploaded = await cloud.uploadFile({
+            const uploaded = await sdk.uploadFile({
               cloudPath: `profile-codes/${user.id}.png`,
               fileContent: code.buffer,
             });
@@ -160,7 +171,7 @@ export async function main(event: ApiEvent): Promise<unknown> {
       }
       case 'session.deleteAccount':
         await write(() => service.deleteAccount(user, socialRepository));
-        await deleteUserFiles(user);
+        await deleteUserFiles(sdk, user);
         return success(requestId, null);
       case 'social.search':
         return success(
@@ -408,13 +419,16 @@ export async function main(event: ApiEvent): Promise<unknown> {
   }
 }
 
-async function deleteUserFiles(user: Awaited<ReturnType<LedgerService['bootstrapSession']>>) {
+async function deleteUserFiles(
+  sdk: CloudSdk,
+  user: Awaited<ReturnType<LedgerService['bootstrapSession']>>,
+) {
   const fileList = [user.avatarUrl, user.qrCodeFileId].filter(
     (value): value is string => typeof value === 'string' && value.startsWith('cloud://'),
   );
   if (fileList.length === 0) return;
   try {
-    await cloud.deleteFile({ fileList });
+    await sdk.deleteFile({ fileList });
   } catch {
     console.error('account-file-cleanup-failed', { userId: user.id, fileCount: fileList.length });
   }

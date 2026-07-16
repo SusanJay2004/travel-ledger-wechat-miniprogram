@@ -15,6 +15,9 @@ describe('sanitizeClientData', () => {
     };
     expect(sanitizeClientData(trip)).not.toHaveProperty('projectionOutbox');
     expect(sanitizeClientData([trip])[0]).not.toHaveProperty('settlementCache');
+    expect(sanitizeClientData({ tripId: trip.id, trip }).trip).not.toHaveProperty(
+      'projectionOutbox',
+    );
     expect(trip.projectionOutbox).toHaveLength(1);
   });
 });

@@ -1,0 +1,157 @@
+import type {
+  CloudCollection,
+  CloudDatabase,
+  QueryResult,
+  UpdateResult,
+} from '../cloud-repository';
+import type { CloudSdk } from '../index';
+
+type Document = Record<string, unknown>;
+
+export class MemoryCloudDatabase implements CloudDatabase {
+  private readonly collections = new Map<string, Map<string, Document>>();
+
+  collection<T>(name: string): CloudCollection<T> {
+    const documents = this.collections.get(name) ?? new Map<string, Document>();
+    this.collections.set(name, documents);
+    return new MemoryCollection<T>(documents);
+  }
+
+  documents(name: string): readonly Document[] {
+    return [...(this.collections.get(name)?.values() ?? [])].map((value) => structuredClone(value));
+  }
+}
+
+export function createMemoryCloudSdk(openId = 'test-openid'): {
+  database: MemoryCloudDatabase;
+  sdk: CloudSdk;
+  setOpenId(value: string | undefined): void;
+} {
+  const database = new MemoryCloudDatabase();
+  let currentOpenId: string | undefined = openId;
+  const context = () => (currentOpenId === undefined ? {} : { OPENID: currentOpenId });
+  const sdk: CloudSdk = {
+    DYNAMIC_CURRENT_ENV: Symbol('memory'),
+    database: () => database,
+    deleteFile: async () => undefined,
+    getWXContext: context,
+    init: () => undefined,
+    openapi: {
+      security: {
+        imgSecCheck: async () => ({}),
+        msgSecCheck: async () => ({ result: { suggest: 'pass' } }),
+      },
+      wxacode: {
+        getUnlimited: async () => ({ buffer: Buffer.from('png') }),
+      },
+    },
+    downloadFile: async () => ({ fileContent: Buffer.alloc(0) }),
+    uploadFile: async ({ cloudPath }) => ({ fileID: `cloud://memory/${cloudPath}` }),
+  };
+  return { database, sdk, setOpenId: (value) => (currentOpenId = value) };
+}
+
+class MemoryCollection<T> implements CloudCollection<T> {
+  private query: Record<string, unknown> | null = null;
+  private offset = 0;
+  private maximum = Number.POSITIVE_INFINITY;
+
+  constructor(private readonly documents: Map<string, Document>) {}
+
+  async add(options: { data: T }): Promise<void> {
+    const document = toDocument(options.data);
+    const id = documentId(document);
+    if (this.documents.has(id)) throw new Error('duplicate document');
+    this.documents.set(id, structuredClone(document));
+  }
+
+  doc(id: string) {
+    return {
+      get: async () => {
+        const document = this.documents.get(id);
+        if (document === undefined) throw new Error('document not found');
+        return { data: structuredClone(document) as T };
+      },
+      remove: async () => {
+        this.documents.delete(id);
+      },
+      set: async (options: { data: T }) => {
+        this.documents.set(id, structuredClone(toDocument(options.data)));
+      },
+    };
+  }
+
+  async get(): Promise<QueryResult<T>> {
+    return { data: this.matches().slice(this.offset, this.offset + this.maximum) as T[] };
+  }
+
+  limit(value: number): CloudCollection<T> {
+    const next = this.clone();
+    next.maximum = value;
+    return next;
+  }
+
+  skip(value: number): CloudCollection<T> {
+    const next = this.clone();
+    next.offset = value;
+    return next;
+  }
+
+  where(query: Record<string, unknown>): CloudCollection<T> {
+    const next = this.clone();
+    next.query = query;
+    return next;
+  }
+
+  async update(options: { data: Partial<T> }): Promise<UpdateResult> {
+    let updated = 0;
+    for (const [id, document] of this.documents) {
+      if (!matches(document, this.query)) continue;
+      this.documents.set(id, { ...document, ...structuredClone(toDocument(options.data)) });
+      updated += 1;
+    }
+    return { stats: { updated } };
+  }
+
+  async remove(): Promise<UpdateResult> {
+    let removed = 0;
+    for (const [id, document] of this.documents) {
+      if (!matches(document, this.query)) continue;
+      this.documents.delete(id);
+      removed += 1;
+    }
+    return { stats: { updated: removed } };
+  }
+
+  private clone(): MemoryCollection<T> {
+    const copy = new MemoryCollection<T>(this.documents);
+    copy.query = this.query;
+    copy.offset = this.offset;
+    copy.maximum = this.maximum;
+    return copy;
+  }
+
+  private matches(): Document[] {
+    return [...this.documents.values()].filter((document) => matches(document, this.query));
+  }
+}
+
+function toDocument(value: unknown): Document {
+  if (typeof value !== 'object' || value === null) throw new Error('document must be an object');
+  return value as Document;
+}
+
+function documentId(document: Document): string {
+  const id = document['_id'] ?? document['id'];
+  if (typeof id !== 'string' || id.length === 0) throw new Error('document id required');
+  return id;
+}
+
+function matches(document: Document, query: Record<string, unknown> | null): boolean {
+  if (query === null) return true;
+  return Object.entries(query).every(([key, expected]) => {
+    const actual = document[key];
+    if (Array.isArray(actual)) return actual.includes(expected);
+    return actual === expected;
+  });
+}

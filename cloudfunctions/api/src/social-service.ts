@@ -409,6 +409,21 @@ export class SocialService {
         '该行程已无法加入。',
       );
       assertBusiness(
+        trip.memberIds.includes(invitation.inviterUserId),
+        'INVITER_LEFT_TRIP',
+        '邀请人已不在该行程中，无法再接受邀请。',
+      );
+      assertBusiness(
+        (await this.social.getFriendship(invitation.inviterUserId, currentUser.id)) !== null,
+        'INVITATION_FRIENDSHIP_ENDED',
+        '你与邀请人已不是好友，无法再接受邀请。',
+      );
+      assertBusiness(
+        !(await this.social.isBlockedEither(invitation.inviterUserId, currentUser.id)),
+        'INVITATION_UNAVAILABLE',
+        '该邀请当前不可用。',
+      );
+      assertBusiness(
         !trip.memberIds.includes(currentUser.id),
         'ALREADY_TRIP_MEMBER',
         '你已经在该行程中。',

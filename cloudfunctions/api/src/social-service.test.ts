@@ -214,4 +214,39 @@ describe('SocialService collaboration gates', () => {
       code: 'MEMBER_LIMIT_REACHED',
     });
   });
+
+  it('rechecks current authorization before accepting an invitation', async () => {
+    const request = await social.sendFriendRequest(alice, bob.publicId);
+    await social.respondFriendRequest(bob, request.id, true);
+
+    const friendshipTrip = await ledger.createTrip(alice, { name: '好友失效' });
+    const friendshipInvitation = await social.inviteToTrip(alice, friendshipTrip.id, bob.id);
+    await social.deleteFriend(alice.id, bob.id);
+    await expect(
+      social.respondTripInvitation(bob, friendshipInvitation.id, true),
+    ).rejects.toMatchObject({ code: 'INVITATION_FRIENDSHIP_ENDED' });
+
+    const newRequest = await social.sendFriendRequest(alice, bob.publicId);
+    await social.respondFriendRequest(bob, newRequest.id, true);
+    const blockedTrip = await ledger.createTrip(alice, { name: '拉黑失效' });
+    const blockedInvitation = await social.inviteToTrip(alice, blockedTrip.id, bob.id);
+    await social.blockUser(alice.id, bob.id);
+    await expect(
+      social.respondTripInvitation(bob, blockedInvitation.id, true),
+    ).rejects.toMatchObject({ code: 'INVITATION_FRIENDSHIP_ENDED' });
+
+    await social.unblockUser(alice.id, bob.id);
+    const finalRequest = await social.sendFriendRequest(alice, bob.publicId);
+    await social.respondFriendRequest(bob, finalRequest.id, true);
+    const inviterTrip = await ledger.createTrip(alice, { name: '邀请人退出' });
+    const inviterInvitation = await social.inviteToTrip(alice, inviterTrip.id, bob.id);
+    const carolRequest = await social.sendFriendRequest(alice, carol.publicId);
+    await social.respondFriendRequest(carol, carolRequest.id, true);
+    const carolInvitation = await social.inviteToTrip(alice, inviterTrip.id, carol.id);
+    await social.respondTripInvitation(carol, carolInvitation.id, true);
+    await social.leaveTrip(alice, inviterTrip.id);
+    await expect(
+      social.respondTripInvitation(bob, inviterInvitation.id, true),
+    ).rejects.toMatchObject({ code: 'INVITER_LEFT_TRIP' });
+  });
 });

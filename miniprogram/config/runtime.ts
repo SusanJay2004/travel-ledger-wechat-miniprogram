@@ -4,6 +4,7 @@ export const runtimeConfig = {
   mode: 'solo' as ProductMode,
   collaborationEnabled: false,
   productName: '同行账本',
+  version: '0.1.0',
 };
 
 export function configureRuntimeMode(mode: ProductMode): void {

@@ -11,6 +11,7 @@
       <view class="activity-card surface-card">
         <view class="activity-copy"><text class="activity-name">{{item.actorName}}</text> {{item.actionText}}</view>
         <view class="activity-time">{{item.timeText}}</view>
+        <button wx:if="{{item.canRestoreBill}}" class="activity-restore" data-bill-id="{{item.entityId}}" bindtap="handleRestoreBill">恢复账单</button>
       </view>
     </view>
   </view>

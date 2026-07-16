@@ -3,6 +3,7 @@ import { callApi, type TripActivity, type TripDetail } from '../../services/api'
 interface ActivityItem extends TripActivity {
   actorName: string;
   actionText: string;
+  canRestoreBill: boolean;
   timeText: string;
 }
 
@@ -10,15 +11,17 @@ interface ActivityData {
   activities: readonly ActivityItem[];
   errorMessage: string;
   loading: boolean;
+  trip: TripDetail | null;
   tripId: string;
 }
 
 interface ActivityMethods {
+  handleRestoreBill(event: WechatMiniprogram.BaseEvent): Promise<void>;
   loadActivity(): Promise<void>;
 }
 
 Page<ActivityData, ActivityMethods>({
-  data: { activities: [], errorMessage: '', loading: true, tripId: '' },
+  data: { activities: [], errorMessage: '', loading: true, trip: null, tripId: '' },
 
   onLoad(query: Record<string, string | undefined>) {
     this.setData({ tripId: query['id'] ?? '' });
@@ -43,12 +46,45 @@ Page<ActivityData, ActivityMethods>({
           ...activity,
           actorName: nameById[activity.actorUserId] ?? '同行人',
           actionText: actionText(activity.action),
+          canRestoreBill:
+            trip.status === 'active' &&
+            activity.action === 'bill.deleted' &&
+            trip.bills.some(
+              (bill) =>
+                bill.id === activity.entityId &&
+                bill.deletedAt !== null &&
+                Date.now() - new Date(bill.deletedAt).getTime() < 30 * 24 * 60 * 60 * 1000,
+            ),
           timeText: formatTime(activity.createdAt),
         })),
         loading: false,
+        trip,
       });
     } catch (error: unknown) {
       this.setData({ errorMessage: toMessage(error), loading: false });
+    }
+  },
+
+  async handleRestoreBill(event: WechatMiniprogram.BaseEvent) {
+    const trip = this.data.trip;
+    const billId = String(event.currentTarget.dataset['billId'] ?? '');
+    if (trip === null || billId.length === 0) return;
+    const confirmed = await wx.showModal({
+      title: '恢复这笔账单？',
+      content: '恢复后会重新计入总支出和分账，并同步给所有同行人。',
+      confirmColor: '#0F6E65',
+    });
+    if (!confirmed.confirm) return;
+    try {
+      await callApi('trip.restoreBill', {
+        tripId: trip.id,
+        billId,
+        expectedVersion: trip.version,
+      });
+      await this.loadActivity();
+      void wx.showToast({ icon: 'success', title: '账单已恢复' });
+    } catch (error: unknown) {
+      void wx.showToast({ icon: 'none', title: toMessage(error) });
     }
   },
 });

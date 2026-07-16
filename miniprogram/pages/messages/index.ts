@@ -17,6 +17,7 @@ interface MessageData {
   loading: boolean;
   notifications: readonly AppNotification[];
   pendingSceneToken: string;
+  version: string;
   unreadCount: number;
   publicIdQuery: string;
   searchResult: PublicUserProfile | null;
@@ -45,6 +46,7 @@ Page<MessageData, MessageMethods>({
     loading: runtimeConfig.collaborationEnabled,
     notifications: [],
     pendingSceneToken: '',
+    version: runtimeConfig.version,
     unreadCount: 0,
     publicIdQuery: '',
     searchResult: null,

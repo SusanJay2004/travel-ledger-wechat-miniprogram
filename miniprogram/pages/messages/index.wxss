@@ -45,6 +45,13 @@
   min-height: 44vh;
 }
 
+.mode-version {
+  color: var(--color-muted);
+  font-size: 22rpx;
+  line-height: 1.6;
+  margin-top: 8rpx;
+}
+
 .notification-card,
 .friend-card,
 .search-card {

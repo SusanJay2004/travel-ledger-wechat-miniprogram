@@ -23,6 +23,7 @@ interface TripGroup {
 
 interface TripCard extends TripSummary {
   dateText: string;
+  statusText: string;
   totalText: string;
 }
 
@@ -130,6 +131,7 @@ function groupTrips(trips: readonly TripSummary[]): readonly TripGroup[] {
             ? formatDate(trip.startDate)
             : `${formatDate(trip.startDate)}-${formatDate(trip.endDate ?? trip.startDate)}`,
       totalText: `¥${(trip.totalCents / 100).toFixed(2)}`,
+      statusText: trip.status === 'active' ? '进行中' : '已完结',
     }));
   const groups = new Map<string, TripCard[]>();
   for (const card of cards) {

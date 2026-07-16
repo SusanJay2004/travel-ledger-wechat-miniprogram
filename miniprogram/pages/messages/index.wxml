@@ -6,6 +6,7 @@
     <view class="empty-state__mark">信</view>
     <view class="empty-state__title">当前是单人记账模式</view>
     <view class="empty-state__description">公开 ID、好友和邀请会在协作版通过平台发布门禁后开放。</view>
+    <view class="mode-version">同行账本 v{{version}} · 应用内通知会在协作版开放</view>
   </view>
 
   <block wx:else>

@@ -98,6 +98,17 @@
   overflow-wrap: anywhere;
 }
 
+.trip-card__status {
+  color: var(--color-primary);
+  font-size: 21rpx;
+  font-weight: 700;
+  margin-bottom: 8rpx;
+}
+
+.trip-card__status--completed {
+  color: var(--color-muted);
+}
+
 .trip-card__date,
 .trip-card__amount-label {
   color: var(--color-muted);

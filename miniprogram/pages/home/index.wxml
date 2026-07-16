@@ -41,6 +41,7 @@
         hover-class="trip-card--pressed"
       >
         <view class="trip-card__main">
+          <view class="trip-card__status trip-card__status--{{trip.status}}">{{trip.statusText}}</view>
           <view class="trip-card__name">{{trip.name}}</view>
           <view class="trip-card__date">{{trip.dateText}}</view>
           <view wx:if="{{trip.invalidBillCount > 0}}" class="trip-card__warning">

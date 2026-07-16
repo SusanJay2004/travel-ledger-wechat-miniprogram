@@ -33,10 +33,10 @@ export class CloudSocialRepository implements SocialRepository {
 
   async listFriendRequests(userId: string) {
     const [sent, received] = await Promise.all([
-      this.friendRequests().where({ fromUserId: userId }).limit(100).get(),
-      this.friendRequests().where({ toUserId: userId }).limit(100).get(),
+      listAll(this.friendRequests().where({ fromUserId: userId })),
+      listAll(this.friendRequests().where({ toUserId: userId })),
     ]);
-    return deduplicate([...sent.data, ...received.data]);
+    return deduplicate([...sent, ...received]);
   }
 
   async createFriendRequest(request: FriendRequestDocument) {
@@ -50,12 +50,12 @@ export class CloudSocialRepository implements SocialRepository {
   }
 
   async getFriendship(userA: string, userB: string) {
-    const result = await this.friendships().where({ userIds: userA }).limit(100).get();
-    return result.data.find((friendship) => friendship.userIds.includes(userB)) ?? null;
+    const result = await listAll(this.friendships().where({ userIds: userA }));
+    return result.find((friendship) => friendship.userIds.includes(userB)) ?? null;
   }
 
   async listFriendships(userId: string) {
-    return (await this.friendships().where({ userIds: userId }).limit(100).get()).data;
+    return listAll(this.friendships().where({ userIds: userId }));
   }
 
   async createFriendship(friendship: FriendshipDocument) {
@@ -80,7 +80,7 @@ export class CloudSocialRepository implements SocialRepository {
   }
 
   async listBlocks(blockerUserId: string) {
-    return (await this.blocks().where({ blockerUserId }).limit(100).get()).data;
+    return listAll(this.blocks().where({ blockerUserId }));
   }
 
   async createBlock(block: BlockDocument) {
@@ -102,8 +102,8 @@ export class CloudSocialRepository implements SocialRepository {
   }
 
   async listNotifications(userId: string) {
-    const result = await this.notifications().where({ userId }).limit(100).get();
-    return result.data.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    const result = await listAll(this.notifications().where({ userId }));
+    return result.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
 
   async markNotificationRead(notificationId: string, userId: string, readAt: string) {
@@ -150,8 +150,8 @@ export class CloudSocialRepository implements SocialRepository {
   }
 
   async listAuditLogs(tripId: string) {
-    const result = await this.auditLogs().where({ tripId }).limit(100).get();
-    return result.data.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    const result = await listAll(this.auditLogs().where({ tripId }));
+    return result.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
 
   async purgeUserData(userId: string) {
@@ -213,6 +213,17 @@ function withDocumentId<T extends { id: string }>(value: T): T & { _id: string }
 
 function deduplicate<T extends { id: string }>(items: readonly T[]): readonly T[] {
   return [...new Map(items.map((item) => [item.id, item])).values()];
+}
+
+async function listAll<T>(collection: CloudCollection<T>): Promise<T[]> {
+  const items: T[] = [];
+  let offset = 0;
+  while (true) {
+    const page = await collection.skip(offset).limit(100).get();
+    items.push(...page.data);
+    if (page.data.length < 100) return items;
+    offset += page.data.length;
+  }
 }
 
 function isNotFoundError(error: unknown): boolean {

@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { CloudSocialRepository } from './cloud-social-repository';
-import type { AuditLogDocument, FriendshipDocument, NotificationDocument } from './models';
+import type {
+  AuditLogDocument,
+  FriendRequestDocument,
+  FriendshipDocument,
+  NotificationDocument,
+} from './models';
 import { MemoryCloudDatabase } from './testing/memory-cloud';
 
 describe('CloudSocialRepository pagination', () => {
@@ -58,6 +63,31 @@ describe('CloudSocialRepository pagination', () => {
 
     expect(await repository.listInvitations('alice')).toHaveLength(101);
   });
+
+  it('purges every page of account-scoped social data', async () => {
+    const database = new MemoryCloudDatabase();
+    const repository = new CloudSocialRepository(database);
+    for (let index = 0; index < 101; index += 1) {
+      await repository.createFriendRequest(friendRequest(index));
+      await repository.createNotification(notification(index));
+      await repository.createFriendship(friendship(index));
+    }
+    await repository.createFriendRequest({
+      ...friendRequest(999),
+      id: 'unrelated-request',
+      fromUserId: 'carol',
+      toUserId: 'dave',
+    });
+
+    await repository.purgeUserData('alice');
+
+    expect(await repository.listFriendRequests('alice')).toEqual([]);
+    expect(await repository.listNotifications('alice')).toEqual([]);
+    expect(await repository.listFriendships('alice')).toEqual([]);
+    expect(database.documents('friend_requests')).toEqual([
+      expect.objectContaining({ id: 'unrelated-request' }),
+    ]);
+  });
 });
 
 function friendship(index: number): FriendshipDocument {
@@ -83,6 +113,19 @@ function notification(index: number): NotificationDocument {
     body: '行程更新',
     readAt: null,
     createdAt: `2026-07-${String(index + 1).padStart(3, '0')}T00:00:00.000Z`,
+  };
+}
+
+function friendRequest(index: number): FriendRequestDocument {
+  const suffix = String(index).padStart(3, '0');
+  return {
+    id: `friend-request-${suffix}`,
+    fromUserId: 'alice',
+    toUserId: `friend-${suffix}`,
+    status: 'accepted',
+    createdAt: '2026-07-17T00:00:00.000Z',
+    expiresAt: '2026-08-17T00:00:00.000Z',
+    respondedAt: '2026-07-17T01:00:00.000Z',
   };
 }
 

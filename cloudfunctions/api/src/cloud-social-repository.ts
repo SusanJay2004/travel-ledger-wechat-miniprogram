@@ -221,18 +221,18 @@ export class CloudSocialRepository implements SocialRepository {
   }
 
   async purgeUserData(userId: string) {
-    await Promise.all([
-      this.friendRequests().where({ fromUserId: userId }).remove(),
-      this.friendRequests().where({ toUserId: userId }).remove(),
-      this.friendships().where({ userIds: userId }).remove(),
-      this.blocks().where({ blockerUserId: userId }).remove(),
-      this.blocks().where({ blockedUserId: userId }).remove(),
-      this.notifications().where({ userId }).remove(),
-      this.notifications().where({ actorUserId: userId }).remove(),
-      this.invitations().where({ inviterUserId: userId }).remove(),
-      this.invitations().where({ inviteeUserId: userId }).remove(),
-      this.syncEvents().where({ userId }).remove(),
-    ]);
+    // Delete explicit pages rather than relying on backend-dependent query-delete limits.
+    // Running each scope sequentially also keeps a large account deletion below burst quotas.
+    await removeAllMatching(this.friendRequests(), { fromUserId: userId });
+    await removeAllMatching(this.friendRequests(), { toUserId: userId });
+    await removeAllMatching(this.friendships(), { userIds: userId });
+    await removeAllMatching(this.blocks(), { blockerUserId: userId });
+    await removeAllMatching(this.blocks(), { blockedUserId: userId });
+    await removeAllMatching(this.notifications(), { userId });
+    await removeAllMatching(this.notifications(), { actorUserId: userId });
+    await removeAllMatching(this.invitations(), { inviterUserId: userId });
+    await removeAllMatching(this.invitations(), { inviteeUserId: userId });
+    await removeAllMatching(this.syncEvents(), { userId });
   }
 
   private async getDocument<T>(collection: CloudCollection<T>, id: string): Promise<T | null> {
@@ -295,6 +295,19 @@ async function listAll<T>(collection: CloudCollection<T>): Promise<T[]> {
     items.push(...page.data);
     if (page.data.length < 100) return items;
     offset += page.data.length;
+  }
+}
+
+async function removeAllMatching<T extends { id: string }>(
+  collection: CloudCollection<T>,
+  query: Record<string, unknown>,
+): Promise<number> {
+  let removed = 0;
+  while (true) {
+    const page = await collection.where(query).limit(20).get();
+    if (page.data.length === 0) return removed;
+    for (const document of page.data) await collection.doc(document.id).remove();
+    removed += page.data.length;
   }
 }
 

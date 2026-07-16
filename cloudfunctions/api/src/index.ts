@@ -444,6 +444,8 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
             }),
           ),
         );
+      case 'trip.clearArchived':
+        return success(requestId, await write(() => service.clearArchivedTrips(user.id)));
       default:
         return failure(requestId, 'UNKNOWN_ACTION', '无法识别该操作。');
     }

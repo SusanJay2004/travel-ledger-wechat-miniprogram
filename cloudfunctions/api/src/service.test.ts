@@ -247,6 +247,34 @@ describe('LedgerService solo flow', () => {
     });
   });
 
+  it('clears archived trips in bounded server batches', async () => {
+    for (let index = 0; index < 21; index += 1) {
+      const trip = await service.createTrip(user, { name: `清理行程${index}` });
+      const completed = await service.completeTrip(user.id, {
+        tripId: trip.id,
+        expectedVersion: trip.version,
+        ignoreInvalidBills: false,
+      });
+      await service.archiveTrip(user.id, {
+        tripId: trip.id,
+        expectedVersion: completed.version,
+      });
+    }
+    expect((await repository.getUser(user.id))?.homeTripCount).toBe(0);
+
+    await expect(service.clearArchivedTrips(user.id)).resolves.toEqual({
+      conflictCount: 0,
+      remainingCount: 1,
+      removedCount: 20,
+    });
+    await expect(service.clearArchivedTrips(user.id)).resolves.toEqual({
+      conflictCount: 0,
+      remainingCount: 0,
+      removedCount: 1,
+    });
+    expect((await repository.getUser(user.id))?.homeTripCount).toBe(0);
+  });
+
   it('reopens a completed trip and clears completion metadata', async () => {
     const trip = await service.createTrip(user, { name: '重新出发' });
     const completed = await service.completeTrip(user.id, {

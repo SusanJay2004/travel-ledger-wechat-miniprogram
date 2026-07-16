@@ -96,6 +96,7 @@ export function isWriteAction(action: string): boolean {
     'trip.archive',
     'trip.restore',
     'trip.removeArchived',
+    'trip.clearArchived',
     'social.sendFriendRequest',
     'social.respondFriendRequest',
     'social.deleteFriend',

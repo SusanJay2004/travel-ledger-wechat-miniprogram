@@ -82,6 +82,7 @@ class MemoryCloudCollection<T> implements CloudCollection<T> {
 describe('IdempotencyService', () => {
   it('classifies every ledger mutation including date deletion as a write', () => {
     expect(isWriteAction('trip.deleteDate')).toBe(true);
+    expect(isWriteAction('trip.clearArchived')).toBe(true);
     expect(isWriteAction('trip.calculate')).toBe(false);
   });
   it('returns the stored response without executing a duplicate request', async () => {

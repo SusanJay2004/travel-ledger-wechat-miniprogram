@@ -119,6 +119,12 @@ export interface RemoveArchivedTripInput {
   expectedVersion: number;
 }
 
+export interface ClearArchivedTripsResult {
+  conflictCount: number;
+  remainingCount: number;
+  removedCount: number;
+}
+
 export class LedgerService {
   constructor(
     private readonly repository: Repository,
@@ -796,6 +802,32 @@ export class LedgerService {
         : item,
     );
     return this.saveTrip(trip, userId, { members }, 'member.detached', 'member', userId);
+  }
+
+  async clearArchivedTrips(userId: string): Promise<ClearArchivedTripsResult> {
+    const batch = (await this.listArchivedTrips(userId)).slice(0, 20);
+    let conflictCount = 0;
+    let removedCount = 0;
+    for (const trip of batch) {
+      try {
+        await this.removeArchivedTrip(userId, {
+          tripId: trip.id,
+          expectedVersion: trip.version,
+        });
+        removedCount += 1;
+      } catch (error: unknown) {
+        if (error instanceof BusinessError && error.code === 'VERSION_CONFLICT') {
+          conflictCount += 1;
+          continue;
+        }
+        throw error;
+      }
+    }
+    return {
+      conflictCount,
+      remainingCount: (await this.listArchivedTrips(userId)).length,
+      removedCount,
+    };
   }
 
   private async editableTrip(userId: string, tripId: string, expectedVersion: number) {

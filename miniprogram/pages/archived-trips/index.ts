@@ -22,6 +22,12 @@ interface ArchivedMethods {
   loadTrips(): Promise<void>;
 }
 
+interface ClearArchivedResponse {
+  conflictCount: number;
+  remainingCount: number;
+  removedCount: number;
+}
+
 Page<ArchivedData, ArchivedMethods>({
   data: {
     errorMessage: '',
@@ -113,13 +119,22 @@ Page<ArchivedData, ArchivedMethods>({
     });
     if (!result.confirm) return;
     try {
-      for (const trip of this.data.trips) {
-        await callApi('trip.removeArchived', {
-          tripId: trip.id,
-          expectedVersion: trip.version,
-        });
+      let removedCount = 0;
+      let remainingCount = this.data.trips.length;
+      for (let batch = 0; batch < 60 && remainingCount > 0; batch += 1) {
+        const response = await callApi<ClearArchivedResponse>('trip.clearArchived');
+        removedCount += response.removedCount;
+        remainingCount = response.remainingCount;
+        if (response.removedCount === 0) break;
       }
       await this.loadTrips();
+      void wx.showToast({
+        icon: 'none',
+        title:
+          remainingCount === 0
+            ? `已清空 ${removedCount} 段行程`
+            : `已移除 ${removedCount} 段，请稍后继续`,
+      });
     } catch (error: unknown) {
       if (isVersionConflict(error)) {
         await showVersionConflictAndRefresh(() => this.loadTrips());

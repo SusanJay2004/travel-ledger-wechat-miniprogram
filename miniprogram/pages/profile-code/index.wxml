@@ -1,0 +1,16 @@
+<view class="page-shell code-page">
+  <view wx:if="{{loading}}" class="surface-card code-card">
+    <view class="skeleton code-skeleton"></view>
+  </view>
+  <view wx:elif="{{errorMessage}}" class="error-panel surface-card">
+    <view class="error-banner">{{errorMessage}}</view>
+    <button class="secondary-button" bindtap="loadCode">重新生成</button>
+  </view>
+  <view wx:else class="surface-card code-card">
+    <view class="code-name">{{profile.displayName}}</view>
+    <view class="code-id">ID {{profile.publicId}}</view>
+    <image class="profile-code" src="{{fileId}}" mode="aspectFit" show-menu-by-longpress />
+    <view class="code-hint">微信扫一扫，向我发送好友申请</view>
+    <button class="secondary-button copy-button" bindtap="handleCopyId">复制账号 ID</button>
+  </view>
+</view>

@@ -94,6 +94,10 @@ describe('SocialService collaboration gates', () => {
     await social.blockUser(alice.id, bob.id);
     expect(await social.listFriends(alice.id)).toEqual([]);
     expect(await social.searchByPublicId(bob.id, alice.publicId)).toBeNull();
+    expect((await social.listBlockedUsers(alice.id)).map((item) => item.userId)).toEqual([bob.id]);
+    await social.unblockUser(alice.id, bob.id);
+    expect(await social.listBlockedUsers(alice.id)).toEqual([]);
+    expect(await social.searchByPublicId(bob.id, alice.publicId)).not.toBeNull();
   });
 
   it('allows an unreferenced member to leave but protects referenced debt history', async () => {

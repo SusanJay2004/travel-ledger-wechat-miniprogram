@@ -10,7 +10,8 @@
     "pages/archived-trips/index",
     "pages/profile-editor/index",
     "pages/trip-invite/index",
-    "pages/trip-activity/index"
+    "pages/trip-activity/index",
+    "pages/profile-code/index"
   ],
   "sitemapLocation": "sitemap.json",
   "style": "v2",

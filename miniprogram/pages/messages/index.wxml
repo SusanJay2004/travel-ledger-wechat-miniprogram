@@ -10,7 +10,7 @@
 
   <block wx:else>
     <view class="message-tabs">
-      <view class="message-tab {{activeTab === 'notifications' ? 'message-tab--active' : ''}}" data-tab="notifications" bindtap="switchTab">通知</view>
+      <view class="message-tab {{activeTab === 'notifications' ? 'message-tab--active' : ''}}" data-tab="notifications" bindtap="switchTab">通知<text wx:if="{{unreadCount > 0}}" class="tab-badge">{{unreadCount > 99 ? '99+' : unreadCount}}</text></view>
       <view class="message-tab {{activeTab === 'friends' ? 'message-tab--active' : ''}}" data-tab="friends" bindtap="switchTab">好友</view>
     </view>
 
@@ -22,12 +22,12 @@
         <view class="empty-state__mark">信</view>
         <view class="empty-state__title">还没有新通知</view>
       </view>
-      <view wx:for="{{notifications}}" wx:key="id" class="notification-card surface-card">
+      <view wx:for="{{notifications}}" wx:key="id" class="notification-card surface-card {{item.readAt === null ? 'notification-card--unread' : ''}}" data-notification-id="{{item.id}}" data-unread="{{item.readAt === null}}" bindtap="handleNotificationRead">
         <view class="notification-card__title">{{item.title}}</view>
         <view class="notification-card__body">{{item.body}}</view>
         <view wx:if="{{item.readAt === null && (item.requestId || item.invitationId)}}" class="notification-actions">
-          <button class="notice-button notice-button--muted" data-notification-id="{{item.id}}" data-request-id="{{item.requestId}}" data-invitation-id="{{item.invitationId}}" data-accept="{{false}}" bindtap="handleNotificationAction">拒绝</button>
-          <button class="notice-button" data-notification-id="{{item.id}}" data-request-id="{{item.requestId}}" data-invitation-id="{{item.invitationId}}" data-accept="{{true}}" bindtap="handleNotificationAction">同意</button>
+          <button class="notice-button notice-button--muted" data-notification-id="{{item.id}}" data-request-id="{{item.requestId}}" data-invitation-id="{{item.invitationId}}" data-accept="{{false}}" catchtap="handleNotificationAction">拒绝</button>
+          <button class="notice-button" data-notification-id="{{item.id}}" data-request-id="{{item.requestId}}" data-invitation-id="{{item.invitationId}}" data-accept="{{true}}" catchtap="handleNotificationAction">同意</button>
         </view>
       </view>
     </view>
@@ -46,11 +46,19 @@
         <button class="add-friend" bindtap="handleAddFriend">添加</button>
       </view>
       <view class="section-label">我的好友 {{friends.length}}</view>
-      <view wx:for="{{friends}}" wx:key="userId" class="friend-card surface-card">
+      <view wx:for="{{friends}}" wx:key="userId" class="friend-card surface-card" data-user-id="{{item.userId}}" data-display-name="{{item.displayName}}" bindlongpress="handleFriendManage">
         <view>
           <view class="friend-card__name">{{item.displayName}}</view>
           <view class="friend-card__id">ID {{item.publicId}}</view>
         </view>
+      </view>
+      <view wx:if="{{blockedUsers.length > 0}}" class="section-label">黑名单 {{blockedUsers.length}}</view>
+      <view wx:for="{{blockedUsers}}" wx:key="userId" class="friend-card surface-card">
+        <view>
+          <view class="friend-card__name">{{item.displayName}}</view>
+          <view class="friend-card__id">ID {{item.publicId}}</view>
+        </view>
+        <button class="unblock-button" data-user-id="{{item.userId}}" bindtap="handleUnblock">解除</button>
       </view>
     </view>
   </block>

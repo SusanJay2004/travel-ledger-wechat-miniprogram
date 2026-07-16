@@ -81,6 +81,7 @@ export class IdempotencyService {
 export function isWriteAction(action: string): boolean {
   return new Set([
     'session.updateProfile',
+    'session.qrCode',
     'trip.create',
     'trip.rename',
     'trip.addDate',
@@ -97,6 +98,7 @@ export function isWriteAction(action: string): boolean {
     'social.respondFriendRequest',
     'social.deleteFriend',
     'social.blockUser',
+    'social.unblockUser',
     'social.markNotificationRead',
     'social.inviteToTrip',
     'social.leaveTrip',

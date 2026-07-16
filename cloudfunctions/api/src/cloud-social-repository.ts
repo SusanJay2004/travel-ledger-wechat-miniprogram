@@ -74,8 +74,21 @@ export class CloudSocialRepository implements SocialRepository {
     return forward.data.length > 0 || reverse.data.length > 0;
   }
 
+  async getBlock(blockerUserId: string, blockedUserId: string) {
+    const result = await this.blocks().where({ blockerUserId, blockedUserId }).limit(1).get();
+    return result.data[0] ?? null;
+  }
+
+  async listBlocks(blockerUserId: string) {
+    return (await this.blocks().where({ blockerUserId }).limit(100).get()).data;
+  }
+
   async createBlock(block: BlockDocument) {
     await this.blocks().add({ data: withDocumentId(block) });
+  }
+
+  async deleteBlock(blockId: string) {
+    await this.blocks().doc(blockId).remove();
   }
 
   async createNotification(notification: NotificationDocument) {

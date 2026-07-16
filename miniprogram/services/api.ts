@@ -121,6 +121,11 @@ export interface FriendView extends PublicUserProfile {
   friendshipId: string;
 }
 
+export interface BlockedUserView extends PublicUserProfile {
+  blockId: string;
+  blockedAt: string;
+}
+
 export interface AppNotification {
   id: string;
   type:

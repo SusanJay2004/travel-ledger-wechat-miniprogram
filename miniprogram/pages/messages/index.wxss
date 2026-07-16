@@ -26,6 +26,15 @@
   color: var(--color-primary);
 }
 
+.tab-badge {
+  background: var(--color-danger);
+  border-radius: 18rpx;
+  color: #fff;
+  font-size: 18rpx;
+  margin-left: 10rpx;
+  padding: 2rpx 9rpx;
+}
+
 .messages-skeleton {
   height: 180rpx;
 }
@@ -47,6 +56,10 @@
   font-weight: 750;
 }
 
+.notification-card--unread {
+  border-left: 7rpx solid var(--color-accent);
+}
+
 .notification-card__body,
 .friend-card__signature {
   color: var(--color-muted);
@@ -64,7 +77,8 @@
 
 .notice-button,
 .add-friend,
-.search-button {
+.search-button,
+.unblock-button {
   background: var(--color-primary);
   border-radius: 15rpx;
   color: #fff;
@@ -79,6 +93,15 @@
 .add-friend::after,
 .search-button::after {
   border: 0;
+}
+
+.unblock-button::after {
+  border: 0;
+}
+
+.unblock-button {
+  background: #eceae4;
+  color: var(--color-muted);
 }
 
 .notice-button--muted {

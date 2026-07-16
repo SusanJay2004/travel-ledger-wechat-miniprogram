@@ -10,6 +10,7 @@ export interface UserDocument {
   displayName: string;
   signature: string;
   avatarUrl: string | null;
+  qrCodeFileId?: string | null;
   status: 'active' | 'deleted';
   createdAt: string;
   updatedAt: string;

@@ -1,0 +1,37 @@
+.code-page {
+  padding-top: 60rpx;
+}
+
+.code-card,
+.error-panel {
+  padding: 42rpx 34rpx;
+  text-align: center;
+}
+
+.code-name {
+  font-size: 36rpx;
+  font-weight: 750;
+}
+
+.code-id {
+  color: var(--color-primary);
+  font-size: 23rpx;
+  margin-top: 10rpx;
+}
+
+.profile-code,
+.code-skeleton {
+  height: 500rpx;
+  margin: 30rpx auto 10rpx;
+  width: 500rpx;
+}
+
+.code-hint {
+  color: var(--color-muted);
+  font-size: 24rpx;
+  margin-top: 18rpx;
+}
+
+.copy-button {
+  margin-top: 34rpx;
+}

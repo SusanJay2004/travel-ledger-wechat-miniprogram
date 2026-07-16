@@ -26,6 +26,13 @@
   </view>
 
   <view class="menu-card surface-card">
+    <view wx:if="{{collaborationEnabled}}" class="menu-item menu-item--border" bindtap="handleProfileCode" hover-class="menu-item--pressed">
+      <view>
+        <view class="menu-item__title">我的二维码</view>
+        <view class="menu-item__description">让朋友扫码发送好友申请</view>
+      </view>
+      <view class="menu-item__arrow">›</view>
+    </view>
     <view class="menu-item" bindtap="handleArchivedTrips" hover-class="menu-item--pressed">
       <view>
         <view class="menu-item__title">已完结行程</view>

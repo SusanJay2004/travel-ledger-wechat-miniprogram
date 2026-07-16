@@ -1,4 +1,5 @@
 import { callApi, type SessionProfile } from '../../services/api';
+import { getSessionProfile, updateCachedSessionProfile } from '../../services/session';
 
 interface ProfileEditorData {
   avatarUrl: string;
@@ -36,7 +37,7 @@ Page<ProfileEditorData, ProfileEditorMethods>({
 
   async loadProfile() {
     try {
-      const profile = await callApi<SessionProfile>('session.bootstrap');
+      const profile = await getSessionProfile();
       this.setData({
         avatarUrl: profile.avatarUrl ?? '',
         displayName: profile.displayName,
@@ -76,11 +77,12 @@ Page<ProfileEditorData, ProfileEditorMethods>({
       const avatarUrl = this.data.avatarChanged
         ? await this.uploadAvatar(this.data.avatarUrl)
         : this.data.avatarUrl || null;
-      await callApi('session.updateProfile', {
+      const updated = await callApi<SessionProfile>('session.updateProfile', {
         displayName,
         signature: this.data.signature.trim() || '这个人很懒，什么也没留下～',
         avatarUrl,
       });
+      updateCachedSessionProfile(updated);
       void wx.navigateBack();
     } catch (error: unknown) {
       this.setData({ errorMessage: toMessage(error), saving: false });

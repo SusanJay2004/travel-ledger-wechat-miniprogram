@@ -22,6 +22,17 @@ interface CloudSdk {
   database(): CloudDatabase;
   getWXContext(): CloudContext;
   init(options: { env: symbol }): void;
+  openapi: {
+    wxacode: {
+      getUnlimited(options: {
+        scene: string;
+        page: string;
+        checkPath: boolean;
+        envVersion: 'develop' | 'trial' | 'release';
+      }): Promise<{ buffer?: Buffer }>;
+    };
+  };
+  uploadFile(options: { cloudPath: string; fileContent: Buffer }): Promise<{ fileID: string }>;
 }
 
 // wx-server-sdk is installed by the cloud function workspace and loaded by the cloud runtime.
@@ -44,12 +55,13 @@ export async function main(event: ApiEvent): Promise<unknown> {
   const publisher = new EventPublisher(socialRepository, repository);
   const idempotency = new IdempotencyService(database, systemClock);
   const service = new LedgerService(repository, systemClock, secureIdGenerator, publisher);
+  const productMode = process.env['PRODUCT_MODE'] === 'collaboration' ? 'collaboration' : 'solo';
   const social = new SocialService(
     repository,
     socialRepository,
     systemClock,
     secureIdGenerator,
-    process.env['PRODUCT_MODE'] === 'collaboration' ? 'collaboration' : 'solo',
+    productMode,
     publisher,
   );
 
@@ -62,6 +74,43 @@ export async function main(event: ApiEvent): Promise<unknown> {
     switch (action) {
       case 'session.bootstrap':
         return success(requestId, publicProfile(user));
+      case 'session.qrCode': {
+        return success(
+          requestId,
+          await write(async () => {
+            if (productMode !== 'collaboration') {
+              throw new BusinessError('FEATURE_DISABLED', '当前发布版本未开放好友二维码。');
+            }
+            if (user.qrCodeFileId !== undefined && user.qrCodeFileId !== null) {
+              return { fileId: user.qrCodeFileId };
+            }
+            const code = await cloud.openapi.wxacode.getUnlimited({
+              scene: `u=${user.publicId}`,
+              page: 'pages/messages/index',
+              checkPath: false,
+              envVersion:
+                process.env['MINIPROGRAM_ENV_VERSION'] === 'release'
+                  ? 'release'
+                  : process.env['MINIPROGRAM_ENV_VERSION'] === 'trial'
+                    ? 'trial'
+                    : 'develop',
+            });
+            if (code.buffer === undefined) {
+              throw new BusinessError(
+                'QR_CODE_FAILED',
+                '暂时无法生成个人二维码，请稍后重试。',
+                true,
+              );
+            }
+            const uploaded = await cloud.uploadFile({
+              cloudPath: `profile-codes/${user.id}.png`,
+              fileContent: code.buffer,
+            });
+            await repository.updateUser({ ...user, qrCodeFileId: uploaded.fileID });
+            return { fileId: uploaded.fileID };
+          }),
+        );
+      }
       case 'session.updateProfile': {
         const updated = await write(() =>
           service.updateProfile(user, {
@@ -105,6 +154,13 @@ export async function main(event: ApiEvent): Promise<unknown> {
       case 'social.blockUser':
         await write(() =>
           social.blockUser(user.id, requiredString(event.payload, 'blockedUserId')),
+        );
+        return success(requestId, null);
+      case 'social.listBlocked':
+        return success(requestId, await social.listBlockedUsers(user.id));
+      case 'social.unblockUser':
+        await write(() =>
+          social.unblockUser(user.id, requiredString(event.payload, 'blockedUserId')),
         );
         return success(requestId, null);
       case 'social.listNotifications':

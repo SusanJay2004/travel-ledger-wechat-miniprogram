@@ -21,7 +21,10 @@ export interface SocialRepository {
   deleteFriendship(friendshipId: string): Promise<void>;
 
   isBlockedEither(userA: string, userB: string): Promise<boolean>;
+  getBlock(blockerUserId: string, blockedUserId: string): Promise<BlockDocument | null>;
+  listBlocks(blockerUserId: string): Promise<readonly BlockDocument[]>;
   createBlock(block: BlockDocument): Promise<void>;
+  deleteBlock(blockId: string): Promise<void>;
 
   createNotification(notification: NotificationDocument): Promise<void>;
   listNotifications(userId: string): Promise<readonly NotificationDocument[]>;
@@ -106,8 +109,25 @@ export class MemorySocialRepository implements SocialRepository {
     );
   }
 
+  async getBlock(blockerUserId: string, blockedUserId: string) {
+    const item = [...this.blocks.values()].find(
+      (block) => block.blockerUserId === blockerUserId && block.blockedUserId === blockedUserId,
+    );
+    return cloneOrNull(item);
+  }
+
+  async listBlocks(blockerUserId: string) {
+    return [...this.blocks.values()]
+      .filter((block) => block.blockerUserId === blockerUserId)
+      .map((block) => structuredClone(block));
+  }
+
   async createBlock(block: BlockDocument) {
     this.blocks.set(block.id, structuredClone(block));
+  }
+
+  async deleteBlock(blockId: string) {
+    this.blocks.delete(blockId);
   }
 
   async createNotification(notification: NotificationDocument) {

@@ -13,6 +13,7 @@
 - `openId`：微信环境内用户身份，只允许云端读取。
 - `publicId`：10 位公开搜索 ID。
 - `displayName`、`signature`、`avatarUrl`：用户资料。
+- `qrCodeFileId`：协作版按公开 ID 生成并缓存的个人小程序码文件 ID；场景参数不包含 `OpenID`。
 - `status`、`createdAt`、`updatedAt`：生命周期字段。
 
 唯一索引：`openId`、`publicId`。

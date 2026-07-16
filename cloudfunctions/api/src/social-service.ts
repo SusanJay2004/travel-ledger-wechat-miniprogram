@@ -31,6 +31,11 @@ export interface FriendView extends PublicUserProfile {
   friendshipId: string;
 }
 
+export interface BlockedUserView extends PublicUserProfile {
+  blockId: string;
+  blockedAt: string;
+}
+
 export class SocialService {
   constructor(
     private readonly repository: Repository,
@@ -94,7 +99,7 @@ export class SocialService {
       respondedAt: null,
     };
     await this.social.createFriendRequest(request);
-    await this.social.createNotification(
+    await this.bestEffortNotification(
       notification(this.ids, now, {
         userId: target.id,
         type: 'friend_request',
@@ -151,7 +156,7 @@ export class SocialService {
         userIds,
         createdAt: now.toISOString(),
       });
-      await this.social.createNotification(
+      await this.bestEffortNotification(
         notification(this.ids, now, {
           userId: request.fromUserId,
           type: 'friend_accepted',
@@ -193,15 +198,46 @@ export class SocialService {
   async blockUser(userId: string, blockedUserId: string): Promise<void> {
     this.assertCollaboration();
     assertBusiness(userId !== blockedUserId, 'CANNOT_BLOCK_SELF', '不能拉黑自己。');
+    const target = await this.repository.getUser(blockedUserId);
+    assertBusiness(
+      target !== null && target.status === 'active',
+      'USER_NOT_FOUND',
+      '找不到该用户。',
+    );
     const now = this.clock.now();
     const friendship = await this.social.getFriendship(userId, blockedUserId);
     if (friendship !== null) await this.social.deleteFriendship(friendship.id);
+    if ((await this.social.getBlock(userId, blockedUserId)) !== null) return;
     await this.social.createBlock({
       id: this.ids.entityId('blk'),
       blockerUserId: userId,
       blockedUserId,
       createdAt: now.toISOString(),
     });
+  }
+
+  async listBlockedUsers(userId: string): Promise<readonly BlockedUserView[]> {
+    this.assertCollaboration();
+    const blocks = await this.social.listBlocks(userId);
+    const views = await Promise.all(
+      blocks.map(async (block) => {
+        const user = await this.repository.getUser(block.blockedUserId);
+        if (user === null) return null;
+        return {
+          ...publicProfile(user),
+          blockId: block.id,
+          blockedAt: block.createdAt,
+        };
+      }),
+    );
+    return views.filter((view): view is BlockedUserView => view !== null);
+  }
+
+  async unblockUser(userId: string, blockedUserId: string): Promise<void> {
+    this.assertCollaboration();
+    const block = await this.social.getBlock(userId, blockedUserId);
+    assertBusiness(block !== null, 'BLOCK_NOT_FOUND', '该用户不在黑名单中。');
+    await this.social.deleteBlock(block.id);
   }
 
   async listNotifications(userId: string): Promise<readonly NotificationDocument[]> {
@@ -268,7 +304,7 @@ export class SocialService {
       respondedAt: null,
     };
     await this.social.createInvitation(invitation);
-    await this.social.createNotification(
+    await this.bestEffortNotification(
       notification(this.ids, now, {
         userId: inviteeUserId,
         type: 'trip_invitation',
@@ -323,7 +359,7 @@ export class SocialService {
       currentUser.id,
     );
     for (const memberId of next.memberIds) {
-      await this.social.createNotification(
+      await this.bestEffortNotification(
         notification(this.ids, now, {
           userId: memberId,
           type: 'member_left',
@@ -409,7 +445,7 @@ export class SocialService {
         currentUser.id,
       );
       for (const memberId of trip.memberIds) {
-        await this.social.createNotification(
+        await this.bestEffortNotification(
           notification(this.ids, now, {
             userId: memberId,
             type: 'member_joined',
@@ -429,6 +465,19 @@ export class SocialService {
     };
     await this.social.updateInvitation(updated);
     return updated;
+  }
+
+  private async bestEffortNotification(item: NotificationDocument): Promise<void> {
+    try {
+      await this.social.createNotification(item);
+    } catch {
+      console.error('notification-publish-failed', {
+        notificationId: item.id,
+        type: item.type,
+        userId: item.userId,
+        tripId: item.tripId,
+      });
+    }
   }
 
   private assertCollaboration(): void {

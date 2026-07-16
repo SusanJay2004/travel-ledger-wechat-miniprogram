@@ -28,7 +28,7 @@
 | 双模式前后端门禁                               | 本地已证实；发布门禁待定   | 云端 `PRODUCT_MODE`、会话下发、页面入口                | 微信类目确认后锁定发布模式         |
 | 幂等、乐观并发、显式冲突 UX、限流、内容安全    | 本地已证实；真接口待证实   | API/幂等/限流/冲突合并/内容安全测试                    | 多真机并发编辑与微信内容安全       |
 | 实时同步、审计与失败投影修复                   | 本地已证实；云端待演练     | outbox、维护修复和确定性 ID 测试                       | 人为断投影后真实云维护重放         |
-| 30 天备份、恢复手册、180 天审计                | 本地实现；演练待完成       | backup/maintenance 测试与运维文档                      | 云存储备份、隔离恢复和告警         |
+| 30 天备份、恢复手册、180 天审计                | 本地实现；演练待完成       | 页级 manifest、失败文件清理、备份/维护测试与运维文档   | 云存储备份、隔离恢复和告警         |
 | 88rpx、核心 WCAG AA、字体放大适配              | 本地令牌已证实；真机待证实 | accessibility 测试和 WXSS                              | 常见 iOS/Android 尺寸截图验收      |
 | 应用头像与底栏品牌图标                         | 本地素材已完成；平台待确认 | `assets/brand`、`miniprogram/assets/tabbar`            | 后台上传、圆形/圆角裁切与真机显示  |
 | CI 与公开仓库敏感信息扫描                      | 本地已证实；GitHub 待运行  | `.github/workflows/ci.yml`、`npm run security:secrets` | 创建 remote 后观察首个 Actions     |
@@ -57,7 +57,7 @@ npm run build
 npm audit --audit-level=critical
 ```
 
-最近本地结果为 23 个测试文件、122 项测试通过，三个云函数构建成功，无 critical 依赖公告。微信官方 `wx-server-sdk 4.0.2` 仍带 5 high + 1 moderate 上游公告，处置规则见 `dependency-security.md`，因此依赖发布门禁仍未通过。
+最近本地结果为 23 个测试文件、123 项测试通过，三个云函数构建成功，无 critical 依赖公告。微信官方 `wx-server-sdk 4.0.2` 仍带 5 high + 1 moderate 上游公告，处置规则见 `dependency-security.md`，因此依赖发布门禁仍未通过。
 
 ## 真实环境与发布阻断
 

@@ -21,3 +21,20 @@ export function pagePath(prefix: string, collection: string, page: number): stri
 export function expiresAt(now: Date, retentionDays = 30): string {
   return new Date(now.getTime() + retentionDays * 24 * 60 * 60 * 1000).toISOString();
 }
+
+export interface BackupManifestState {
+  collections: Readonly<Record<string, { documents: number; pages: number }>>;
+  fileIds: readonly string[];
+}
+
+export function appendBackupProgress(
+  state: BackupManifestState,
+  collectionName: string,
+  fileIds: readonly string[],
+  summary: { documents: number; pages: number },
+): BackupManifestState {
+  return {
+    collections: { ...state.collections, [collectionName]: summary },
+    fileIds: [...state.fileIds, ...fileIds],
+  };
+}

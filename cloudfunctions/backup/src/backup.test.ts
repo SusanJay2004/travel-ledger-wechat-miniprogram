@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { BACKUP_COLLECTIONS, backupPrefix, expiresAt, pagePath } from './backup';
+import {
+  BACKUP_COLLECTIONS,
+  appendBackupProgress,
+  backupPrefix,
+  expiresAt,
+  pagePath,
+} from './backup';
 
 describe('backup helpers', () => {
   it('uses UTC day partitions and stable padded page paths', () => {
@@ -21,5 +27,26 @@ describe('backup helpers', () => {
 
   it('uses a 30-day backup retention by default', () => {
     expect(expiresAt(new Date('2026-07-17T00:00:00.000Z'))).toBe('2026-08-16T00:00:00.000Z');
+  });
+
+  it('retains every uploaded page in progress state for failed-backup cleanup', () => {
+    const first = appendBackupProgress(
+      { collections: {}, fileIds: [] },
+      'users',
+      ['cloud://backup/users/0', 'cloud://backup/users/1'],
+      { documents: 101, pages: 2 },
+    );
+    const second = appendBackupProgress(first, 'trips', ['cloud://backup/trips/0'], {
+      documents: 20,
+      pages: 1,
+    });
+
+    expect(second).toEqual({
+      collections: {
+        users: { documents: 101, pages: 2 },
+        trips: { documents: 20, pages: 1 },
+      },
+      fileIds: ['cloud://backup/users/0', 'cloud://backup/users/1', 'cloud://backup/trips/0'],
+    });
   });
 });

@@ -2,6 +2,8 @@
 
 `cloudfunctions/backup` 每天导出权威集合为 gzip 压缩 JSON，并保存到客户端不可读的 `private-backups/` 云存储路径。每次备份在 `backup_manifests` 留下状态、集合页数、文档数和 30 天到期时间。
 
+每上传一页即更新运行中的 manifest；若后续页面或集合失败，失败 manifest 仍保留全部已上传文件 ID，30 天到期清理不会遗留无法追踪的孤儿备份。过期清理每次按 20 条循环，直到所有到期 manifest 及文件均删除。
+
 不备份可重建或短期数据：`sync_events`、`idempotency_records`、`rate_limit_records`。头像与个人二维码属于云存储文件，生产环境还需启用云开发存储版本/回收策略或平台快照；数据库导出不等于文件备份。
 
 ## 安全要求

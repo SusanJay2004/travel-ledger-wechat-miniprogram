@@ -1,6 +1,12 @@
 import { gzipSync } from 'node:zlib';
 
-import { BACKUP_COLLECTIONS, backupPrefix, expiresAt, pagePath } from './backup';
+import {
+  BACKUP_COLLECTIONS,
+  appendBackupProgress,
+  backupPrefix,
+  expiresAt,
+  pagePath,
+} from './backup';
 
 interface QueryResult<T> {
   data: T[];
@@ -74,19 +80,29 @@ export async function main(): Promise<BackupManifest> {
   await purgeExpiredBackups(db, now.toISOString());
   await manifests.add({ data: manifest });
 
+  let progress = { collections: {}, fileIds: [] } as {
+    collections: Record<string, { documents: number; pages: number }>;
+    fileIds: string[];
+  };
   try {
-    const collections: Record<string, { documents: number; pages: number }> = {};
-    const fileIds: string[] = [];
     for (const collectionName of BACKUP_COLLECTIONS) {
-      const backedUp = await backupCollection(db, collectionName, prefix);
-      collections[collectionName] = backedUp.summary;
-      fileIds.push(...backedUp.fileIds);
+      await backupCollection(db, collectionName, prefix, async (fileId, summary) => {
+        progress = appendBackupProgress(
+          progress,
+          collectionName,
+          [fileId],
+          summary,
+        ) as typeof progress;
+        await manifests.doc(backupId).set({
+          data: { ...manifest, collections: progress.collections, fileIds: progress.fileIds },
+        });
+      });
     }
     const completed: BackupManifest = {
       ...manifest,
       status: 'completed',
-      collections,
-      fileIds,
+      collections: progress.collections,
+      fileIds: progress.fileIds,
       completedAt: new Date().toISOString(),
     };
     const manifestFileId = await writeManifestFile(completed);
@@ -94,14 +110,16 @@ export async function main(): Promise<BackupManifest> {
     await manifests.doc(backupId).set({ data: persisted });
     console.info('backup-complete', {
       backupId,
-      collections: Object.keys(collections).length,
-      documents: Object.values(collections).reduce((sum, item) => sum + item.documents, 0),
+      collections: Object.keys(progress.collections).length,
+      documents: Object.values(progress.collections).reduce((sum, item) => sum + item.documents, 0),
     });
     return persisted;
   } catch (error: unknown) {
     const failed: BackupManifest = {
       ...manifest,
       status: 'failed',
+      collections: progress.collections,
+      fileIds: progress.fileIds,
       completedAt: new Date().toISOString(),
       errorCode: errorCode(error),
     };
@@ -113,7 +131,7 @@ export async function main(): Promise<BackupManifest> {
     if (failedManifestFileId !== null) {
       await manifests
         .doc(backupId)
-        .set({ data: { ...failed, fileIds: [failedManifestFileId] } })
+        .set({ data: { ...failed, fileIds: [...failed.fileIds, failedManifestFileId] } })
         .catch(() => undefined);
     }
     console.error('backup-failed', { backupId, errorCode: failed.errorCode });
@@ -122,16 +140,20 @@ export async function main(): Promise<BackupManifest> {
 }
 
 async function purgeExpiredBackups(db: Database, nowIso: string): Promise<void> {
-  const expired = await db
-    .collection<BackupManifest>('backup_manifests')
-    .where({ expiresAt: db.command.lt(nowIso) })
-    .limit(20)
-    .get();
-  for (const manifest of expired.data) {
-    if (manifest.fileIds.length > 0) {
-      await cloud.deleteFile({ fileList: [...manifest.fileIds] });
+  while (true) {
+    const expired = await db
+      .collection<BackupManifest>('backup_manifests')
+      .where({ expiresAt: db.command.lt(nowIso) })
+      .limit(20)
+      .get();
+    if (expired.data.length === 0) return;
+    for (const manifest of expired.data) {
+      if (manifest.fileIds.length > 0) {
+        await cloud.deleteFile({ fileList: [...manifest.fileIds] });
+      }
+      await db.collection<BackupManifest>('backup_manifests').where({ _id: manifest.id }).remove();
     }
-    await db.collection<BackupManifest>('backup_manifests').where({ _id: manifest.id }).remove();
+    if (expired.data.length < 20) return;
   }
 }
 
@@ -139,6 +161,7 @@ async function backupCollection(
   db: Database,
   collectionName: string,
   prefix: string,
+  onPageUploaded: (fileId: string, summary: { documents: number; pages: number }) => Promise<void>,
 ): Promise<{
   summary: { documents: number; pages: number };
   fileIds: readonly string[];
@@ -161,6 +184,7 @@ async function backupCollection(
     fileIds.push(uploaded.fileID);
     documents += result.data.length;
     page += 1;
+    await onPageUploaded(uploaded.fileID, { documents, pages: page });
     if (result.data.length < 100) break;
   }
   return { summary: { documents, pages: page }, fileIds };

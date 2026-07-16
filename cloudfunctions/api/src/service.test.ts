@@ -100,6 +100,7 @@ describe('LedgerService solo flow', () => {
     const settlement = await service.calculate(user.id, trip.id);
     expect(settlement.includedCents).toBe(0);
     expect(settlement.ignoredBillIds).toHaveLength(1);
+    expect(settlement.ignoredCents).toBe(30_000);
     expect(settlement.result.transfers).toEqual([]);
   });
 

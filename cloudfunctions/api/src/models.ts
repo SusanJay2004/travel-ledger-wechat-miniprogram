@@ -186,6 +186,7 @@ export interface TripDocument {
   settlementCache?: {
     result: SettlementResult;
     ignoredBillIds: readonly string[];
+    ignoredCents: number;
     includedCents: number;
     ledgerRevision: number;
     calculatedAt: string;

@@ -610,14 +610,21 @@ export class LedgerService {
   ): Promise<{
     result: SettlementResult;
     ignoredBillIds: readonly string[];
+    ignoredCents: number;
     includedCents: number;
     ledgerRevision: number;
   }> {
     const trip = await this.getTrip(userId, tripId);
     if (trip.settlementCache?.ledgerRevision === trip.ledgerRevision) {
+      const ignoredBillIds = [...trip.settlementCache.ignoredBillIds];
       return {
         result: structuredClone(trip.settlementCache.result),
-        ignoredBillIds: [...trip.settlementCache.ignoredBillIds],
+        ignoredBillIds,
+        ignoredCents:
+          trip.settlementCache.ignoredCents ??
+          trip.bills
+            .filter((bill) => bill.deletedAt === null && ignoredBillIds.includes(bill.id))
+            .reduce((sum, bill) => sum + bill.amountCents, 0),
         includedCents: trip.settlementCache.includedCents,
         ledgerRevision: trip.settlementCache.ledgerRevision,
       };
@@ -628,6 +635,7 @@ export class LedgerService {
     const calculated = {
       result: calculateSettlement(valid),
       ignoredBillIds: ignored.map((bill) => bill.id),
+      ignoredCents: ignored.reduce((sum, bill) => sum + bill.amountCents, 0),
       includedCents: valid.reduce((sum, bill) => sum + bill.amountCents, 0),
       ledgerRevision: trip.ledgerRevision,
     };
@@ -663,6 +671,7 @@ export class LedgerService {
         settlementCache: {
           result: calculateSettlement(valid),
           ignoredBillIds: ignored.map((bill) => bill.id),
+          ignoredCents: ignored.reduce((sum, bill) => sum + bill.amountCents, 0),
           includedCents: valid.reduce((sum, bill) => sum + bill.amountCents, 0),
           ledgerRevision: trip.ledgerRevision + 1,
           calculatedAt: timestamp,

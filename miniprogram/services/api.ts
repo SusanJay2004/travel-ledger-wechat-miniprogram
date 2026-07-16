@@ -94,6 +94,7 @@ export interface SettlementResponse {
     minimumTransferCount: number;
   };
   ignoredBillIds: readonly string[];
+  ignoredCents: number;
   includedCents: number;
   ledgerRevision: number;
 }

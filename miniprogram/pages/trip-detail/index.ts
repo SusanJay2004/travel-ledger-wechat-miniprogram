@@ -7,6 +7,7 @@ import {
 } from '../../services/api';
 import { runtimeConfig } from '../../config/runtime';
 import { watchTripSync, type SyncSubscription } from '../../services/sync';
+import { firstInvalidBill, settlementSummary } from '../../services/settlement-view';
 import { getConnectivitySnapshot } from '../../services/connectivity';
 import {
   formatCacheTime,
@@ -359,9 +360,7 @@ Page<DetailData, DetailMethods>({
   async handleSettle() {
     const trip = this.data.trip;
     if (trip === null) return;
-    const firstInvalid = trip.bills.find(
-      (bill) => bill.deletedAt === null && bill.validationCodes.length > 0,
-    );
+    const firstInvalid = firstInvalidBill(trip);
     if (firstInvalid !== undefined) {
       const decision = await wx.showModal({
         title: `${trip.invalidBillCount} 笔账单待完善`,
@@ -379,22 +378,7 @@ Page<DetailData, DetailMethods>({
     }
     try {
       const settlement = await callApi<SettlementResponse>('trip.calculate', { tripId: trip.id });
-      const nameById = Object.fromEntries(
-        trip.members.map((member) => [member.userId, member.displayNameSnapshot]),
-      );
-      const lines = settlement.result.transfers.map(
-        (transfer) =>
-          `${nameById[transfer.fromMemberId] ?? '成员'} 给 ${nameById[transfer.toMemberId] ?? '成员'} ${formatCents(transfer.amountCents)}`,
-      );
-      const summary = [
-        ...(lines.length > 0 ? lines : ['大家已经结清，无需转账。']),
-        '',
-        `纳入 ${formatCents(settlement.includedCents)}`,
-        settlement.ignoredBillIds.length > 0
-          ? `已忽略 ${settlement.ignoredBillIds.length} 笔待完善账单`
-          : '没有忽略账单',
-        `账本版本 ${settlement.ledgerRevision}`,
-      ].join('\n');
+      const summary = settlementSummary(trip, settlement);
       const result = await wx.showModal({
         title: '最简分账方案',
         content: summary,

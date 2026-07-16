@@ -55,4 +55,18 @@ describe('bill validation', () => {
       }),
     ).toEqual([]);
   });
+
+  it('rejects an individual payer amount above the bill ceiling', () => {
+    const codes = validateBill({
+      title: '异常金额',
+      amountCents: 100,
+      participants: [{ memberId: 'A', displayName: 'A', shares: 1 }],
+      payers: [
+        { memberId: 'A', displayName: 'A', paidCents: 1_000_000_000 },
+        { memberId: 'B', displayName: 'B', paidCents: -999_999_900 },
+      ],
+    }).map((issue) => issue.code);
+
+    expect(codes).toContain('PAYER_AMOUNT_INVALID');
+  });
 });

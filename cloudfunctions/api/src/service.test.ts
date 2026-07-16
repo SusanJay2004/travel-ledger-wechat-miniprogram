@@ -516,7 +516,7 @@ describe('LedgerService solo flow', () => {
       date: '2026-07-10',
       expectedVersion: dated.version,
       bill: {
-        title: '午餐',
+        title: '  午餐  ',
         amountCents: 100,
         participants: [{ memberId: user.id, displayName: '伪造参与人', shares: 1 }],
         payers: [{ memberId: user.id, displayName: '伪造付款人', paidCents: 100 }],
@@ -525,6 +525,7 @@ describe('LedgerService solo flow', () => {
 
     expect(added.bills[0]?.participants[0]?.displayName).toBe(user.displayName);
     expect(added.bills[0]?.payers[0]?.displayName).toBe(user.displayName);
+    expect(added.bills[0]?.title).toBe('午餐');
   });
 
   it('enforces the 100 home-trip limit at the service boundary', async () => {

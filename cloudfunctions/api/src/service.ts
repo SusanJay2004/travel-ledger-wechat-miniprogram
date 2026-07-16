@@ -863,7 +863,7 @@ function validateBillForTrip(trip: TripDocument, bill: BillInput) {
 function billWithTrustedMemberNames(trip: TripDocument, bill: BillInput): BillInput {
   const names = new Map(trip.members.map((member) => [member.userId, member.displayNameSnapshot]));
   return {
-    title: bill.title,
+    title: bill.title.trim(),
     amountCents: bill.amountCents,
     participants: bill.participants.map((participant) => ({
       memberId: participant.memberId,

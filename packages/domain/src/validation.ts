@@ -74,7 +74,11 @@ export function validateBill(input: BillInput): readonly ValidationIssue[] {
       issues.push({ code: 'PAYER_DUPLICATE', path: `payers.${index}.memberId` });
     }
     payerIds.add(payer.memberId);
-    if (!Number.isSafeInteger(payer.paidCents) || payer.paidCents < 0) {
+    if (
+      !Number.isSafeInteger(payer.paidCents) ||
+      payer.paidCents < 0 ||
+      payer.paidCents > LIMITS.maxBillAmountCents
+    ) {
       issues.push({ code: 'PAYER_AMOUNT_INVALID', path: `payers.${index}.paidCents` });
     } else {
       paidSum += payer.paidCents;

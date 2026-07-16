@@ -132,7 +132,9 @@ export class MemorySocialRepository implements SocialRepository {
   }
 
   async createNotification(notification: NotificationDocument) {
-    this.notifications.set(notification.id, structuredClone(notification));
+    if (!this.notifications.has(notification.id)) {
+      this.notifications.set(notification.id, structuredClone(notification));
+    }
   }
 
   async listNotifications(userId: string) {

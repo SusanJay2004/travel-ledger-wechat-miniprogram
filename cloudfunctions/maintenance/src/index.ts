@@ -1,4 +1,5 @@
 import { cleanTrip, type MaintenanceBill, type MaintenanceMember } from './maintenance';
+import { buildProjectionDocuments, type RepairTrip, type RepairUser } from './projection-repair';
 
 interface DbCommand {
   lt(value: string): unknown;
@@ -13,6 +14,11 @@ interface UpdateResult {
 }
 
 interface Collection<T> {
+  add(options: { data: T }): Promise<unknown>;
+  doc(id: string): {
+    get(): Promise<{ data: T }>;
+    set(options: { data: T }): Promise<unknown>;
+  };
   get(): Promise<QueryResult<T>>;
   limit(value: number): Collection<T>;
   skip(value: number): Collection<T>;
@@ -26,8 +32,9 @@ interface Database {
   command: DbCommand;
 }
 
-interface MaintenanceTripDocument {
+interface MaintenanceTripDocument extends RepairTrip {
   id: string;
+  name: string;
   memberIds: readonly string[];
   members: readonly (MaintenanceMember & { userId: string })[];
   bills: readonly (MaintenanceBill & { id: string })[];
@@ -64,9 +71,12 @@ export async function main(): Promise<Record<string, number>> {
     expiredTokensRemoved: 0,
     expiredSocialRecordsRemoved: 0,
     oldSyncEventsRemoved: 0,
+    oldAuditLogsRemoved: 0,
     orphanTripsRemoved: 0,
     tripsUpdated: 0,
     conflictsSkipped: 0,
+    projectionsRepaired: 0,
+    projectionFailures: 0,
   };
 
   for (const collection of ['idempotency_records', 'rate_limit_records']) {
@@ -86,9 +96,14 @@ export async function main(): Promise<Record<string, number>> {
   );
   const syncCutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
   summary.oldSyncEventsRemoved += await removeExpired(db, 'sync_events', 'createdAt', syncCutoff);
+  const auditCutoff = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000).toISOString();
+  summary.oldAuditLogsRemoved += await removeExpired(db, 'audit_logs', 'createdAt', auditCutoff);
 
   const trips = await listAll(db.collection<MaintenanceTripDocument>('trips'));
   for (const trip of trips) {
+    const projectionSummary = await repairTripProjections(db, trip);
+    summary.projectionsRepaired += projectionSummary.repaired;
+    summary.projectionFailures += projectionSummary.failed;
     const cleaned = cleanTrip(trip, now);
     if (!cleaned.changed && !cleaned.orphaned) continue;
     if (cleaned.orphaned) {
@@ -122,6 +137,88 @@ export async function main(): Promise<Record<string, number>> {
 
   console.info('maintenance-complete', summary);
   return summary;
+}
+
+async function repairTripProjections(
+  db: Database,
+  trip: MaintenanceTripDocument,
+): Promise<{ repaired: number; failed: number }> {
+  const pending = trip.projectionOutbox ?? [];
+  if (pending.length === 0) return { repaired: 0, failed: 0 };
+  const userIds = [...new Set(pending.flatMap((projection) => projection.targetUserIds))];
+  const users = new Map<string, RepairUser>();
+  for (const userId of userIds) {
+    try {
+      const user = await db.collection<RepairUser>('users').doc(userId).get();
+      users.set(userId, user.data);
+    } catch {
+      // Missing users keep their outbox entry for manual review or later account repair.
+    }
+  }
+  const retained = [];
+  let repaired = 0;
+  let failed = 0;
+  for (const projection of pending) {
+    const documents = buildProjectionDocuments(trip, projection, users);
+    try {
+      await createProjectionIfMissing(db, 'audit_logs', documents.auditLog);
+      for (const event of documents.syncEvents) {
+        await createProjectionIfMissing(db, 'sync_events', event);
+      }
+      for (const notification of documents.notifications) {
+        await createProjectionIfMissing(db, 'notifications', notification);
+      }
+      if (documents.missingUserIds.length > 0) {
+        retained.push(projection);
+        failed += 1;
+      } else {
+        repaired += 1;
+      }
+    } catch {
+      retained.push(projection);
+      failed += 1;
+    }
+  }
+  if (retained.length !== pending.length) {
+    const updated = await db
+      .collection<MaintenanceTripDocument>('trips')
+      .where({ _id: trip.id, version: trip.version })
+      .update({ data: { projectionOutbox: retained } });
+    if (updated.stats?.updated !== 1) return { repaired: 0, failed: pending.length };
+  }
+  return { repaired, failed };
+}
+
+async function createProjectionIfMissing(
+  db: Database,
+  collectionName: string,
+  document: Record<string, unknown>,
+): Promise<void> {
+  const id = String(document['_id']);
+  const collection = db.collection<Record<string, unknown>>(collectionName);
+  try {
+    await collection.doc(id).get();
+    return;
+  } catch (error: unknown) {
+    if (!isNotFoundError(error)) throw error;
+  }
+  try {
+    await collection.add({ data: document });
+  } catch (error: unknown) {
+    try {
+      await collection.doc(id).get();
+      return;
+    } catch {
+      throw error;
+    }
+  }
+}
+
+function isNotFoundError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const code = 'errCode' in error ? String(error.errCode) : '';
+  const message = 'message' in error ? String(error.message).toLowerCase() : '';
+  return code.includes('DOCUMENT_NOT_FOUND') || message.includes('not found');
 }
 
 async function removeExpired(

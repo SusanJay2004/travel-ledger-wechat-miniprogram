@@ -5,6 +5,7 @@ export const LIMITS = {
   activeTripsPerUser: 100,
   billsPerTrip: 100,
   retainedBillsPerTrip: 500,
+  projectionBacklogPerTrip: 1000,
   membersPerTrip: 20,
   publicIdLength: 10,
   billTitleCodePoints: 12,

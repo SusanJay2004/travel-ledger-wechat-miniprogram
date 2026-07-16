@@ -15,6 +15,8 @@ import type { SocialRepository } from './social-repository';
 import type { TripChangePublisher } from './service';
 
 const noopPublisher: TripChangePublisher = {
+  prepareTripCreated: (after) => after,
+  prepareTripChange: (_before, after) => after,
   publishTripCreated: async () => undefined,
   publishTripChange: async () => undefined,
 };
@@ -349,9 +351,7 @@ export class SocialService {
       updatedBy: currentUser.id,
       updatedAt: now.toISOString(),
     };
-    const saved = await this.repository.replaceTrip(next, trip.version);
-    if (!saved) throw new BusinessError('VERSION_CONFLICT', '行程已被修改，请刷新后重试。');
-    await this.publisher.publishTripChange(
+    const prepared = this.publisher.prepareTripChange(
       trip,
       next,
       'member.left',
@@ -359,19 +359,17 @@ export class SocialService {
       'member',
       currentUser.id,
     );
-    for (const memberId of next.memberIds) {
-      await this.bestEffortNotification(
-        notification(this.ids, now, {
-          userId: memberId,
-          type: 'member_left',
-          actorUserId: currentUser.id,
-          tripId: trip.id,
-          title: '成员退出行程',
-          body: `${currentUser.displayName} 已退出“${trip.name}”`,
-        }),
-      );
-    }
-    return next;
+    const saved = await this.repository.replaceTrip(prepared, trip.version);
+    if (!saved) throw new BusinessError('VERSION_CONFLICT', '行程已被修改，请刷新后重试。');
+    await this.publisher.publishTripChange(
+      trip,
+      prepared,
+      'member.left',
+      currentUser.id,
+      'member',
+      currentUser.id,
+    );
+    return prepared;
   }
 
   async respondTripInvitation(
@@ -436,9 +434,7 @@ export class SocialService {
         updatedBy: currentUser.id,
         updatedAt: now.toISOString(),
       };
-      const saved = await this.repository.replaceTrip(next, trip.version);
-      if (!saved) throw new BusinessError('VERSION_CONFLICT', '行程已被修改，请重新处理邀请。');
-      await this.publisher.publishTripChange(
+      const prepared = this.publisher.prepareTripChange(
         trip,
         next,
         'member.joined',
@@ -446,19 +442,16 @@ export class SocialService {
         'member',
         currentUser.id,
       );
-      for (const memberId of trip.memberIds) {
-        await this.bestEffortNotification(
-          notification(this.ids, now, {
-            userId: memberId,
-            type: 'member_joined',
-            actorUserId: currentUser.id,
-            tripId: trip.id,
-            invitationId: invitation.id,
-            title: '新成员加入行程',
-            body: `${currentUser.displayName} 已加入“${trip.name}”`,
-          }),
-        );
-      }
+      const saved = await this.repository.replaceTrip(prepared, trip.version);
+      if (!saved) throw new BusinessError('VERSION_CONFLICT', '行程已被修改，请重新处理邀请。');
+      await this.publisher.publishTripChange(
+        trip,
+        prepared,
+        'member.joined',
+        currentUser.id,
+        'member',
+        currentUser.id,
+      );
     }
     const updated: TripInvitationDocument = {
       ...invitation,

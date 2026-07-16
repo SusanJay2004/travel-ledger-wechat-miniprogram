@@ -100,6 +100,25 @@ export interface AuditLogDocument {
   createdAt: string;
 }
 
+export interface ProjectionOutboxEntry {
+  id: string;
+  action: string;
+  actorUserId: string;
+  entityType: AuditLogDocument['entityType'];
+  entityId: string;
+  beforeVersion: number;
+  afterVersion: number;
+  ledgerRevision: number;
+  targetUserIds: readonly string[];
+  notification?: {
+    type: NotificationType;
+    title: string;
+    body: string;
+    targetUserIds: readonly string[];
+  };
+  createdAt: string;
+}
+
 export interface IdempotencyRecordDocument {
   id: string;
   ownerOpenId: string;
@@ -167,6 +186,7 @@ export interface TripDocument {
     ledgerRevision: number;
     calculatedAt: string;
   } | null;
+  projectionOutbox?: readonly ProjectionOutboxEntry[];
   createdBy: string;
   createdAt: string;
   updatedBy: string;

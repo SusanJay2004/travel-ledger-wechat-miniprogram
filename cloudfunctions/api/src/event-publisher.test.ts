@@ -28,7 +28,7 @@ describe('EventPublisher', () => {
       1,
       users.map((user) => user.id),
     );
-    const after = {
+    const changed = {
       ...before,
       version: 2,
       ledgerRevision: 1,
@@ -36,6 +36,14 @@ describe('EventPublisher', () => {
     };
 
     const publisher = new EventPublisher(social, repository);
+    const after = publisher.prepareTripChange(
+      before,
+      changed,
+      'bill.created',
+      'alice',
+      'bill',
+      'bill-1',
+    );
     await publisher.publishTripChange(before, after, 'bill.created', 'alice', 'bill', 'bill-1');
 
     expect(await social.listAuditLogs(after.id)).toEqual([
@@ -56,8 +64,15 @@ describe('EventPublisher', () => {
     const social = new MemorySocialRepository();
     await repository.createUser(createUser('alice', 'openid-alice'));
     const before = createTrip(1, ['alice']);
-    const after = { ...before, version: 2, ledgerRevision: 1 };
     const publisher = new EventPublisher(social, repository);
+    const after = publisher.prepareTripChange(
+      before,
+      { ...before, version: 2, ledgerRevision: 1 },
+      'date.created',
+      'alice',
+      'date',
+      '2026-07-10',
+    );
 
     await publisher.publishTripChange(before, after, 'date.created', 'alice', 'date', '2026-07-10');
     await publisher.publishTripChange(before, after, 'date.created', 'alice', 'date', '2026-07-10');
@@ -76,6 +91,75 @@ describe('EventPublisher', () => {
     await expect(
       publisher.publishTripChange(before, after, 'trip.renamed', 'alice', 'trip', after.id),
     ).resolves.toBeUndefined();
+  });
+
+  it('stores an outbox entry before commit and clears it after every projection succeeds', async () => {
+    const repository = new MemoryRepository();
+    const social = new MemorySocialRepository();
+    await repository.createUser(createUser('alice', 'openid-alice'));
+    const publisher = new EventPublisher(social, repository);
+    const before = createTrip(1, ['alice']);
+    await repository.createTrip(before);
+    const after = publisher.prepareTripChange(
+      before,
+      { ...before, version: 2, ledgerRevision: 1 },
+      'bill.created',
+      'alice',
+      'bill',
+      'bill-1',
+    );
+    expect(after.projectionOutbox).toHaveLength(1);
+    await repository.replaceTrip(after, before.version);
+
+    await publisher.publishTripChange(before, after, 'bill.created', 'alice', 'bill', 'bill-1');
+
+    expect((await repository.getTrip(before.id))?.projectionOutbox).toEqual([]);
+    expect(await social.listAuditLogs(before.id)).toHaveLength(1);
+    expect(social.listSyncEventsForTest()).toHaveLength(1);
+  });
+
+  it('retains an outbox entry when a projection fails for later maintenance replay', async () => {
+    const repository = new MemoryRepository();
+    await repository.createUser(createUser('alice', 'openid-alice'));
+    const before = createTrip(1, ['alice']);
+    await repository.createTrip(before);
+    const publisher = new EventPublisher(new FailingSocialRepository(), repository);
+    const after = publisher.prepareTripChange(
+      before,
+      { ...before, version: 2, ledgerRevision: 1 },
+      'bill.created',
+      'alice',
+      'bill',
+      'bill-1',
+    );
+    await repository.replaceTrip(after, before.version);
+
+    await publisher.publishTripChange(before, after, 'bill.created', 'alice', 'bill', 'bill-1');
+
+    expect((await repository.getTrip(before.id))?.projectionOutbox).toHaveLength(1);
+  });
+
+  it('does not reset an existing lifecycle notification to unread when replayed', async () => {
+    const repository = new MemoryRepository();
+    const social = new MemorySocialRepository();
+    await repository.createUser(createUser('alice', 'openid-alice'));
+    const before = createTrip(1, ['alice']);
+    const publisher = new EventPublisher(social, repository);
+    const after = publisher.prepareTripChange(
+      before,
+      { ...before, status: 'completed', version: 2, ledgerRevision: 1 },
+      'trip.completed',
+      'alice',
+      'trip',
+      before.id,
+    );
+
+    await publisher.publishTripChange(before, after, 'trip.completed', 'alice', 'trip', before.id);
+    const notification = (await social.listNotifications('alice'))[0]!;
+    await social.markNotificationRead(notification.id, 'alice', '2026-07-10T09:00:00.000Z');
+    await publisher.publishTripChange(before, after, 'trip.completed', 'alice', 'trip', before.id);
+
+    expect((await social.listNotifications('alice'))[0]?.readAt).toBe('2026-07-10T09:00:00.000Z');
   });
 });
 

@@ -7,6 +7,7 @@ import { secureIdGenerator, systemClock } from './generators';
 import { IdempotencyService, isWriteAction } from './idempotency';
 import { LedgerService } from './service';
 import { RateLimiter } from './rate-limit';
+import { successResponse } from './response';
 import { SocialService } from './social-service';
 
 interface ApiEvent {
@@ -420,7 +421,7 @@ async function deleteUserFiles(user: Awaited<ReturnType<LedgerService['bootstrap
 }
 
 function success<T>(requestId: string, data: T) {
-  return { ok: true as const, requestId, data };
+  return successResponse(requestId, data);
 }
 
 function failure(

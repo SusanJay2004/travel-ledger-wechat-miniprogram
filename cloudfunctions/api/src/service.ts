@@ -25,6 +25,15 @@ import type { Repository } from './repository';
 import type { SocialRepository } from './social-repository';
 
 export interface TripChangePublisher {
+  prepareTripCreated(after: TripDocument, actorUserId: string): TripDocument;
+  prepareTripChange(
+    before: TripDocument,
+    after: TripDocument,
+    action: string,
+    actorUserId: string,
+    entityType: 'trip' | 'date' | 'bill' | 'member',
+    entityId: string,
+  ): TripDocument;
   publishTripCreated(after: TripDocument, actorUserId: string): Promise<void>;
   publishTripChange(
     before: TripDocument,
@@ -37,6 +46,8 @@ export interface TripChangePublisher {
 }
 
 const noopPublisher: TripChangePublisher = {
+  prepareTripCreated: (after) => after,
+  prepareTripChange: (_before, after) => after,
   publishTripCreated: async () => undefined,
   publishTripChange: async () => undefined,
 };
@@ -239,13 +250,21 @@ export class LedgerService {
       ) {
         continue;
       }
-      const replaced = await this.repository.replaceTrip(next, trip.version);
+      const prepared = this.publisher.prepareTripChange(
+        trip,
+        next,
+        'member.account_deleted',
+        user.id,
+        'member',
+        user.id,
+      );
+      const replaced = await this.repository.replaceTrip(prepared, trip.version);
       if (!replaced) {
         throw new BusinessError('VERSION_CONFLICT', '有行程正在被修改，请稍后重新确认注销。', true);
       }
       await this.publisher.publishTripChange(
         trip,
-        next,
+        prepared,
         'member.account_deleted',
         user.id,
         'member',
@@ -321,9 +340,10 @@ export class LedgerService {
       completedAt: null,
       completedBy: null,
     };
-    await this.repository.createTrip(trip);
-    await this.publisher.publishTripCreated(trip, user.id);
-    return trip;
+    const prepared = this.publisher.prepareTripCreated(trip, user.id);
+    await this.repository.createTrip(prepared);
+    await this.publisher.publishTripCreated(prepared, user.id);
+    return prepared;
   }
 
   async renameTrip(userId: string, input: RenameTripInput): Promise<TripDocument> {
@@ -754,12 +774,20 @@ export class LedgerService {
       updatedBy: userId,
       updatedAt: this.clock.now().toISOString(),
     };
-    const replaced = await this.repository.replaceTrip(next, trip.version);
+    const prepared = this.publisher.prepareTripChange(
+      trip,
+      next,
+      action,
+      userId,
+      entityType,
+      entityId,
+    );
+    const replaced = await this.repository.replaceTrip(prepared, trip.version);
     if (!replaced) {
       throw new BusinessError('VERSION_CONFLICT', '行程已被其他成员修改，请刷新后重试。');
     }
-    await this.publisher.publishTripChange(trip, next, action, userId, entityType, entityId);
-    return next;
+    await this.publisher.publishTripChange(trip, prepared, action, userId, entityType, entityId);
+    return prepared;
   }
 }
 

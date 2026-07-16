@@ -11,6 +11,7 @@ import { LedgerService } from './service';
 import { RateLimiter } from './rate-limit';
 import { successResponse } from './response';
 import { SocialService } from './social-service';
+import { CloudTripInvitationAcceptance } from './trip-invitation-transaction';
 
 export interface ApiEvent {
   action?: unknown;
@@ -104,6 +105,7 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
     secureIdGenerator,
     productMode,
     publisher,
+    new CloudTripInvitationAcceptance(database),
   );
 
   try {

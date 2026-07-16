@@ -13,6 +13,7 @@ import type {
 import type { Repository } from './repository';
 import type { SocialRepository } from './social-repository';
 import type { TripChangePublisher } from './service';
+import type { TripInvitationAcceptance } from './trip-invitation-transaction';
 
 const noopPublisher: TripChangePublisher = {
   prepareTripCreated: (after) => after,
@@ -46,6 +47,7 @@ export class SocialService {
     private readonly ids: IdGenerator,
     private readonly mode: ProductMode,
     private readonly publisher: TripChangePublisher = noopPublisher,
+    private readonly invitationAcceptance: TripInvitationAcceptance,
   ) {}
 
   async searchByPublicId(
@@ -473,12 +475,16 @@ export class SocialService {
         'member',
         currentUser.id,
       );
-      const saved = await this.repository.replaceTripWithHomeCapacity(
-        prepared,
-        trip.version,
-        { [currentUser.id]: 1 },
-        LIMITS.activeTripsPerUser,
-      );
+      const updated: TripInvitationDocument = {
+        ...invitation,
+        status: 'accepted',
+        respondedAt: now.toISOString(),
+      };
+      const saved = await this.invitationAcceptance.commit({
+        invitation: updated,
+        nextTrip: prepared,
+        expectedTripVersion: trip.version,
+      });
       if (saved === 'capacity_exceeded') {
         throw new BusinessError('TRIP_LIMIT_REACHED', '你的首页行程已满，暂时无法接受邀请。');
       }
@@ -488,6 +494,27 @@ export class SocialService {
       if (saved === 'version_conflict') {
         throw new BusinessError('VERSION_CONFLICT', '行程已被修改，请重新处理邀请。');
       }
+      if (saved === 'invitation_conflict') {
+        throw new BusinessError('INVITATION_PROCESSED', '该邀请已经处理。');
+      }
+      if (saved === 'invitation_expired') {
+        throw new BusinessError('INVITATION_EXPIRED', '该邀请已过期。');
+      }
+      if (saved === 'trip_unavailable') {
+        throw new BusinessError('TRIP_UNAVAILABLE', '该行程已无法加入。');
+      }
+      if (saved === 'inviter_left') {
+        throw new BusinessError('INVITER_LEFT_TRIP', '邀请人已不在该行程中，无法再接受邀请。');
+      }
+      if (saved === 'authorization_changed') {
+        throw new BusinessError('INVITATION_UNAVAILABLE', '该邀请当前不可用。');
+      }
+      if (saved === 'already_member') {
+        throw new BusinessError('ALREADY_TRIP_MEMBER', '你已经在该行程中。');
+      }
+      if (saved === 'member_limit_reached') {
+        throw new BusinessError('MEMBER_LIMIT_REACHED', '行程成员已满。');
+      }
       await this.publisher.publishTripChange(
         trip,
         prepared,
@@ -496,6 +523,7 @@ export class SocialService {
         'member',
         currentUser.id,
       );
+      return updated;
     }
     const updated: TripInvitationDocument = {
       ...invitation,

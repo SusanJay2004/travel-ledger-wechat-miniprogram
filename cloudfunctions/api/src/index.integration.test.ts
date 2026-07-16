@@ -194,6 +194,151 @@ describe('cloud API command integration', () => {
     expect(cloud.database.documents('users')[0]).toMatchObject({ homeTripCount: 100 });
     expect(cloud.database.documents('trips')).toHaveLength(1);
   });
+
+  it('rolls back trip membership and capacity when invitation status cannot commit', async () => {
+    const previousMode = process.env['PRODUCT_MODE'];
+    process.env['PRODUCT_MODE'] = 'collaboration';
+    try {
+      const cloud = createMemoryCloudSdk('openid-alice');
+      const alice = successData(
+        await command(cloud.sdk, 'session.bootstrap', {}, 'atomic-invite-alice'),
+      ) as { userId: string; publicId: string };
+      cloud.setOpenId('openid-bob');
+      const bob = successData(
+        await command(cloud.sdk, 'session.bootstrap', {}, 'atomic-invite-bob'),
+      ) as { userId: string; publicId: string };
+
+      cloud.setOpenId('openid-alice');
+      await command(
+        cloud.sdk,
+        'social.sendFriendRequest',
+        { publicId: bob.publicId },
+        'atomic-friend-send',
+      );
+      const friendNotification = cloud.database
+        .documents('notifications')
+        .find((item) => item['type'] === 'friend_request')!;
+      cloud.setOpenId('openid-bob');
+      await command(
+        cloud.sdk,
+        'social.respondFriendRequest',
+        { requestId: friendNotification['requestId'], accept: true },
+        'atomic-friend-accept',
+      );
+
+      cloud.setOpenId('openid-alice');
+      const created = successData(
+        await command(cloud.sdk, 'trip.create', { name: '原子邀请' }, 'atomic-trip-create'),
+      ) as { tripId: string };
+      await command(
+        cloud.sdk,
+        'social.inviteToTrip',
+        { tripId: created.tripId, inviteeUserId: bob.userId },
+        'atomic-trip-invite',
+      );
+      const tripNotification = cloud.database
+        .documents('notifications')
+        .find((item) => item['type'] === 'trip_invitation')!;
+
+      cloud.setOpenId('openid-bob');
+      cloud.database.failNextSet('trip_invitations');
+      const response = await command(
+        cloud.sdk,
+        'social.respondTripInvitation',
+        { invitationId: tripNotification['invitationId'], accept: true },
+        'atomic-trip-accept',
+      );
+
+      expect(response).toMatchObject({ ok: false, error: { code: 'INTERNAL_ERROR' } });
+      expect(cloud.database.documents('trips')[0]?.['memberIds']).toEqual([alice.userId]);
+      expect(
+        cloud.database.documents('users').find((item) => item['id'] === bob.userId),
+      ).toMatchObject({ homeTripCount: 0 });
+      expect(cloud.database.documents('trip_invitations')[0]).toMatchObject({ status: 'pending' });
+    } finally {
+      if (previousMode === undefined) delete process.env['PRODUCT_MODE'];
+      else process.env['PRODUCT_MODE'] = previousMode;
+    }
+  });
+
+  it('admits an invitee only once when the same invitation is accepted concurrently', async () => {
+    const previousMode = process.env['PRODUCT_MODE'];
+    process.env['PRODUCT_MODE'] = 'collaboration';
+    try {
+      const cloud = createMemoryCloudSdk('openid-concurrent-alice');
+      const alice = successData(
+        await command(cloud.sdk, 'session.bootstrap', {}, 'concurrent-invite-alice'),
+      ) as { userId: string };
+      cloud.setOpenId('openid-concurrent-bob');
+      const bob = successData(
+        await command(cloud.sdk, 'session.bootstrap', {}, 'concurrent-invite-bob'),
+      ) as { userId: string; publicId: string };
+
+      cloud.setOpenId('openid-concurrent-alice');
+      await command(
+        cloud.sdk,
+        'social.sendFriendRequest',
+        { publicId: bob.publicId },
+        'concurrent-friend-send',
+      );
+      const requestId = cloud.database
+        .documents('friend_requests')
+        .find((item) => item['toUserId'] === bob.userId)?.['id'];
+      cloud.setOpenId('openid-concurrent-bob');
+      await command(
+        cloud.sdk,
+        'social.respondFriendRequest',
+        { requestId, accept: true },
+        'concurrent-friend-accept',
+      );
+
+      cloud.setOpenId('openid-concurrent-alice');
+      const created = successData(
+        await command(cloud.sdk, 'trip.create', { name: '并发接受邀请' }, 'concurrent-trip-create'),
+      ) as { tripId: string };
+      await command(
+        cloud.sdk,
+        'social.inviteToTrip',
+        { tripId: created.tripId, inviteeUserId: bob.userId },
+        'concurrent-trip-invite',
+      );
+      const invitationId = cloud.database.documents('trip_invitations')[0]?.['id'];
+
+      cloud.setOpenId('openid-concurrent-bob');
+      const responses = await Promise.all([
+        command(
+          cloud.sdk,
+          'social.respondTripInvitation',
+          { invitationId, accept: true },
+          'concurrent-accept-first',
+        ),
+        command(
+          cloud.sdk,
+          'social.respondTripInvitation',
+          { invitationId, accept: true },
+          'concurrent-accept-second',
+        ),
+      ]);
+
+      expect(responses.filter((response) => response['ok'] === true)).toHaveLength(1);
+      expect(responses.find((response) => response['ok'] === false)).toMatchObject({
+        error: { code: 'INVITATION_PROCESSED' },
+      });
+      expect(cloud.database.documents('trips')[0]?.['memberIds']).toEqual([
+        alice.userId,
+        bob.userId,
+      ]);
+      expect(
+        cloud.database.documents('users').find((item) => item['id'] === bob.userId),
+      ).toMatchObject({ homeTripCount: 1 });
+      expect(cloud.database.documents('trip_invitations')[0]).toMatchObject({
+        status: 'accepted',
+      });
+    } finally {
+      if (previousMode === undefined) delete process.env['PRODUCT_MODE'];
+      else process.env['PRODUCT_MODE'] = previousMode;
+    }
+  });
 });
 
 async function command(

@@ -5,6 +5,7 @@ import { MemoryRepository } from './repository';
 import { LedgerService } from './service';
 import { MemorySocialRepository } from './social-repository';
 import { SocialService } from './social-service';
+import { MemoryTripInvitationAcceptance } from './trip-invitation-transaction';
 
 class TestClock implements Clock {
   private current = new Date('2026-07-10T08:00:00.000Z');
@@ -54,14 +55,30 @@ describe('SocialService collaboration gates', () => {
     ids = new TestIds();
     clock = new TestClock();
     ledger = new LedgerService(repository, clock, ids);
-    social = new SocialService(repository, socialRepository, clock, ids, 'collaboration');
+    social = new SocialService(
+      repository,
+      socialRepository,
+      clock,
+      ids,
+      'collaboration',
+      undefined,
+      new MemoryTripInvitationAcceptance(repository, socialRepository),
+    );
     alice = await ledger.bootstrapSession('openid-alice');
     bob = await ledger.bootstrapSession('openid-bob');
     carol = await ledger.bootstrapSession('openid-carol');
   });
 
   it('rejects every social operation from the solo server mode', async () => {
-    const solo = new SocialService(repository, socialRepository, new TestClock(), ids, 'solo');
+    const solo = new SocialService(
+      repository,
+      socialRepository,
+      new TestClock(),
+      ids,
+      'solo',
+      undefined,
+      new MemoryTripInvitationAcceptance(repository, socialRepository),
+    );
     await expect(solo.listFriends(alice.id)).rejects.toMatchObject({ code: 'FEATURE_DISABLED' });
     await expect(solo.sendFriendRequest(alice, bob.publicId)).rejects.toMatchObject({
       code: 'FEATURE_DISABLED',

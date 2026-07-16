@@ -11,16 +11,24 @@ type Document = Record<string, unknown>;
 
 export class MemoryCloudDatabase implements CloudDatabase {
   private readonly collections = new Map<string, Map<string, Document>>();
+  private readonly setFailures = new Set<string>();
   private transactionQueue: Promise<void> = Promise.resolve();
 
   collection<T>(name: string): CloudCollection<T> {
     const documents = this.collections.get(name) ?? new Map<string, Document>();
     this.collections.set(name, documents);
-    return new MemoryCollection<T>(documents);
+    return new MemoryCollection<T>(documents, name, (collectionName) => {
+      if (!this.setFailures.delete(collectionName)) return;
+      throw new Error(`injected ${collectionName} set failure`);
+    });
   }
 
   documents(name: string): readonly Document[] {
     return [...(this.collections.get(name)?.values() ?? [])].map((value) => structuredClone(value));
+  }
+
+  failNextSet(collectionName: string): void {
+    this.setFailures.add(collectionName);
   }
 
   runTransaction(
@@ -85,7 +93,11 @@ class MemoryCollection<T> implements CloudCollection<T> {
   private offset = 0;
   private maximum = Number.POSITIVE_INFINITY;
 
-  constructor(private readonly documents: Map<string, Document>) {}
+  constructor(
+    private readonly documents: Map<string, Document>,
+    private readonly collectionName: string,
+    private readonly beforeSet: (collectionName: string) => void,
+  ) {}
 
   async add(options: { data: T }): Promise<void> {
     const document = toDocument(options.data);
@@ -106,6 +118,7 @@ class MemoryCollection<T> implements CloudCollection<T> {
         this.documents.delete(id);
       },
       set: async (options: { data: T }) => {
+        this.beforeSet(this.collectionName);
         this.documents.set(id, { ...structuredClone(toDocument(options.data)), _id: id });
       },
     };
@@ -154,7 +167,7 @@ class MemoryCollection<T> implements CloudCollection<T> {
   }
 
   private clone(): MemoryCollection<T> {
-    const copy = new MemoryCollection<T>(this.documents);
+    const copy = new MemoryCollection<T>(this.documents, this.collectionName, this.beforeSet);
     copy.query = this.query;
     copy.offset = this.offset;
     copy.maximum = this.maximum;

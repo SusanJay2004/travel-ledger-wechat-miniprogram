@@ -122,4 +122,85 @@ describe('calculateSettlement', () => {
     expect(result.transfers.reduce((sum, transfer) => sum + transfer.amountCents, 0)).toBe(190_000);
     expect(durationMs).toBeLessThan(2_000);
   }, 5_000);
+
+  it('matches an independent exhaustive minimum for deterministic small random balances', () => {
+    const random = mulberry32(0x5eed2026);
+    for (let sample = 0; sample < 120; sample += 1) {
+      const memberCount = 2 + Math.floor(random() * 7);
+      const paid = Array.from({ length: memberCount }, () => Math.floor(random() * 500));
+      const total = paid.reduce((sum, value) => sum + value, 0);
+      if (total === 0) {
+        sample -= 1;
+        continue;
+      }
+      const bill: BillInput = {
+        title: `随机${sample}`,
+        amountCents: total,
+        participants: Array.from({ length: memberCount }, (_, index) => ({
+          ...member(`M${index}`),
+          shares: 1,
+        })),
+        payers: paid
+          .map((paidCents, index) => ({ ...member(`M${index}`), paidCents }))
+          .filter((payer) => payer.paidCents > 0),
+      };
+
+      const result = calculateSettlement([bill]);
+      const nonZeroBalances = result.balances.filter((balance) => balance.netCents !== 0);
+      expect(result.minimumTransferCount).toBe(
+        exhaustiveMinimumTransferCount(nonZeroBalances.map((balance) => balance.netCents)),
+      );
+      const transferNet = new Map(result.balances.map((balance) => [balance.memberId, 0]));
+      for (const transfer of result.transfers) {
+        transferNet.set(
+          transfer.fromMemberId,
+          (transferNet.get(transfer.fromMemberId) ?? 0) - transfer.amountCents,
+        );
+        transferNet.set(
+          transfer.toMemberId,
+          (transferNet.get(transfer.toMemberId) ?? 0) + transfer.amountCents,
+        );
+      }
+      expect(result.balances.map((balance) => transferNet.get(balance.memberId) ?? 0)).toEqual(
+        result.balances.map((balance) => balance.netCents),
+      );
+    }
+  });
 });
+
+function exhaustiveMinimumTransferCount(balances: readonly number[]): number {
+  if (balances.length === 0) return 0;
+  const fullMask = (1 << balances.length) - 1;
+  const sums = new Int32Array(fullMask + 1);
+  for (let mask = 1; mask <= fullMask; mask += 1) {
+    const bit = mask & -mask;
+    const index = 31 - Math.clz32(bit);
+    sums[mask] = sums[mask ^ bit]! + balances[index]!;
+  }
+  const maximumGroups = new Int8Array(fullMask + 1);
+  maximumGroups.fill(-1);
+  maximumGroups[0] = 0;
+  for (let mask = 1; mask <= fullMask; mask += 1) {
+    const firstBit = mask & -mask;
+    for (let subset = mask; subset > 0; subset = (subset - 1) & mask) {
+      if ((subset & firstBit) === 0 || sums[subset] !== 0) continue;
+      const remainderGroups = maximumGroups[mask ^ subset]!;
+      if (remainderGroups >= 0) {
+        maximumGroups[mask] = Math.max(maximumGroups[mask]!, remainderGroups + 1);
+      }
+    }
+  }
+  const groups = maximumGroups[fullMask]!;
+  if (groups < 1) throw new Error('Exhaustive zero-sum partition invariant failed.');
+  return balances.length - groups;
+}
+
+function mulberry32(seed: number): () => number {
+  return () => {
+    seed |= 0;
+    seed = (seed + 0x6d2b79f5) | 0;
+    let value = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value;
+    return ((value ^ (value >>> 14)) >>> 0) / 4_294_967_296;
+  };
+}

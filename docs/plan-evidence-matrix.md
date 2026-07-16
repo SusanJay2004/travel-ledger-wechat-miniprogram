@@ -32,6 +32,7 @@
 | 88rpx、核心 WCAG AA、字体放大适配              | 本地令牌已证实；真机待证实 | accessibility 测试和 WXSS                              | 常见 iOS/Android 尺寸截图验收      |
 | 应用头像与底栏品牌图标                         | 本地素材已完成；平台待确认 | `assets/brand`、`miniprogram/assets/tabbar`            | 后台上传、圆形/圆角裁切与真机显示  |
 | CI 与公开仓库敏感信息扫描                      | 本地已证实；GitHub 待运行  | `.github/workflows/ci.yml`、`npm run security:secrets` | 创建 remote 后观察首个 Actions     |
+| 后台资料、双模式审核说明与截图清单             | 本地文案已完成；平台待确认 | `docs/store-listing.md`                                | 真实主体、类目、后台填写和审核     |
 
 ## 自动化基线
 

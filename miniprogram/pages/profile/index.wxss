@@ -21,7 +21,7 @@
 .avatar {
   align-items: center;
   background: #d8dddb;
-  color: #65706d;
+  color: #596460;
   display: flex;
   font-size: 42rpx;
   font-weight: 700;
@@ -123,6 +123,6 @@
 }
 
 .menu-item__arrow {
-  color: #9da5a2;
+  color: var(--color-muted);
   font-size: 44rpx;
 }

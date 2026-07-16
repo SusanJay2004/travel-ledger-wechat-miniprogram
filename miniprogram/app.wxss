@@ -1,12 +1,12 @@
 page {
   --color-bg: #f7f4ec;
   --color-surface: #fffcf6;
-  --color-primary: #167d73;
+  --color-primary: #0f6e65;
   --color-primary-soft: #dff1ed;
-  --color-accent: #e3a33e;
-  --color-danger: #c84b4b;
+  --color-accent: #7f4e04;
+  --color-danger: #a53838;
   --color-text: #27312f;
-  --color-muted: #75807d;
+  --color-muted: #5f6a67;
   --color-line: #e8e3d8;
   --radius-card: 28rpx;
   --shadow-card: 0 10rpx 34rpx rgba(52, 66, 62, 0.08);

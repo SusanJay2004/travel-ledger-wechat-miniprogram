@@ -83,7 +83,7 @@ Page<ArchivedData, ArchivedMethods>({
       title: '永久移除这段行程？',
       content: '移除后你无法恢复，但不会影响其他同行人。',
       confirmText: '永久移除',
-      confirmColor: '#C84B4B',
+      confirmColor: '#A53838',
     });
     if (!result.confirm) return;
     try {
@@ -100,7 +100,7 @@ Page<ArchivedData, ArchivedMethods>({
       title: '清空已完结行程？',
       content: `将永久移除当前 ${this.data.trips.length} 段行程，且无法恢复。`,
       confirmText: '确认清空',
-      confirmColor: '#C84B4B',
+      confirmColor: '#A53838',
     });
     if (!result.confirm) return;
     try {

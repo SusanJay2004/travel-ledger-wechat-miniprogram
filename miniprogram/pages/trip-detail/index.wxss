@@ -23,7 +23,7 @@
 }
 
 .detail-head {
-  background: linear-gradient(145deg, #167d73, #236d65);
+  background: linear-gradient(145deg, #0f6e65, #235f59);
   color: #fff;
   margin-top: 20rpx;
   padding: 34rpx;
@@ -204,7 +204,7 @@
   display: flex;
   font-size: 24rpx;
   justify-content: space-between;
-  min-height: 78rpx;
+  min-height: 88rpx;
 }
 
 .restore-small {

@@ -343,7 +343,7 @@ Page<DetailData, DetailMethods>({
         content: '待完善账单不会参与分账。你可以立即修改第一笔，或忽略它们后继续计算。',
         cancelText: '去修改',
         confirmText: '忽略并计算',
-        confirmColor: '#167D73',
+        confirmColor: '#0F6E65',
       });
       if (!decision.confirm) {
         void wx.navigateTo({
@@ -375,7 +375,7 @@ Page<DetailData, DetailMethods>({
         content: summary,
         cancelText: '关闭',
         confirmText: '复制结果',
-        confirmColor: '#167D73',
+        confirmColor: '#0F6E65',
       });
       if (result.confirm) await wx.setClipboardData({ data: summary });
     } catch (error: unknown) {
@@ -510,6 +510,6 @@ function canUseCacheAfter(error: unknown): boolean {
 }
 
 async function confirm(title: string, content: string): Promise<boolean> {
-  const result = await wx.showModal({ title, content, confirmColor: '#167D73' });
+  const result = await wx.showModal({ title, content, confirmColor: '#0F6E65' });
   return result.confirm;
 }

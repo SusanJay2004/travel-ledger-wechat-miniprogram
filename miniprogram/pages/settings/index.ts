@@ -26,7 +26,7 @@ Page<SettingsData, SettingsMethods>({
       title: '退出当前登录？',
       content: '只会清除本机登录状态、离线缓存和未提交草稿；账号与云端行程不会删除。',
       confirmText: '退出登录',
-      confirmColor: '#167D73',
+      confirmColor: '#0F6E65',
     });
     if (!result.confirm) return;
     this.setData({ signingOut: true });
@@ -48,14 +48,14 @@ Page<SettingsData, SettingsMethods>({
       content:
         '你的资料、好友和个人入口将删除；共享账单中的历史身份会匿名化，金额不会改变。此操作不可恢复。',
       confirmText: '继续注销',
-      confirmColor: '#C84B4B',
+      confirmColor: '#A53838',
     });
     if (!first.confirm) return;
     const final = await wx.showModal({
       title: '最后确认',
       content: '注销后再次进入会创建全新账号，无法找回旧行程。确认永久注销吗？',
       confirmText: '永久注销',
-      confirmColor: '#C84B4B',
+      confirmColor: '#A53838',
     });
     if (!final.confirm) return;
     this.setData({ deleting: true });

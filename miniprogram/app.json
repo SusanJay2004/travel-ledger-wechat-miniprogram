@@ -21,7 +21,7 @@
   "tabBar": {
     "backgroundColor": "#FFFCF6",
     "borderStyle": "white",
-    "color": "#75807D",
+    "color": "#5F6A67",
     "list": [
       {
         "pagePath": "pages/home/index",
@@ -36,7 +36,7 @@
         "text": "我的"
       }
     ],
-    "selectedColor": "#167D73"
+    "selectedColor": "#0F6E65"
   },
   "window": {
     "backgroundColor": "#F7F4EC",

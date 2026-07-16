@@ -81,6 +81,9 @@
 
 .legal-link {
   color: var(--color-primary);
+  display: inline-block;
+  line-height: 88rpx;
+  margin: -24rpx 0;
 }
 
 .enter-button {

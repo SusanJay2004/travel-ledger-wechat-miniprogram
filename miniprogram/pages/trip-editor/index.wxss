@@ -35,7 +35,7 @@
 }
 
 .name-input__placeholder {
-  color: #b0b6b3;
+  color: var(--color-muted);
   font-weight: 450;
 }
 

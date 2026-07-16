@@ -25,7 +25,7 @@
 .draft-banner {
   background: #fff3d9;
   border-radius: 18rpx;
-  color: #986319;
+  color: #7f4e04;
   font-size: 22rpx;
   margin-bottom: 20rpx;
   padding: 16rpx 20rpx;
@@ -60,7 +60,7 @@
 
 .text-input {
   font-size: 33rpx;
-  height: 84rpx;
+  min-height: 88rpx;
 }
 
 .money-input {
@@ -74,7 +74,7 @@
 .money-input input {
   flex: 1;
   font-size: 42rpx;
-  height: 84rpx;
+  min-height: 88rpx;
   margin-left: 10rpx;
 }
 

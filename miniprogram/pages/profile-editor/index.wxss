@@ -28,7 +28,7 @@
 .avatar-placeholder {
   align-items: center;
   background: #d8dddb;
-  color: #65706d;
+  color: #596460;
   display: flex;
   font-size: 24rpx;
   justify-content: center;

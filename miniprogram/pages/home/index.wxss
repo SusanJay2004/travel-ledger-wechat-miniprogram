@@ -94,7 +94,8 @@
   max-width: 350rpx;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .trip-card__date,

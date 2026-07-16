@@ -171,7 +171,7 @@ Page<MessageData, MessageMethods>({
           ? '将同时解除好友关系，对方无法搜索或邀请你；可在本页解除。'
           : '共同参与的已有行程不会受到影响。',
         confirmText: blocking ? '确认拉黑' : '确认删除',
-        confirmColor: '#C84B4B',
+        confirmColor: '#A53838',
       });
       if (!result.confirm) return;
       await callApi(blocking ? 'social.blockUser' : 'social.deleteFriend', {

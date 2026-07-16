@@ -1,0 +1,29 @@
+{
+  "appid": "touristappid",
+  "cloudfunctionRoot": "cloudfunctions/",
+  "compileType": "miniprogram",
+  "condition": {},
+  "description": "同行账本微信小程序",
+  "libVersion": "latest",
+  "miniprogramRoot": "miniprogram/",
+  "packOptions": {
+    "ignore": [
+      { "type": "folder", "value": "../coverage" },
+      { "type": "folder", "value": "../docs" },
+      { "type": "folder", "value": "../packages" }
+    ]
+  },
+  "projectname": "同行账本",
+  "setting": {
+    "checkInvalidKey": true,
+    "compileHotReLoad": true,
+    "coverView": true,
+    "es6": true,
+    "minified": true,
+    "postcss": true,
+    "preloadBackgroundData": false,
+    "urlCheck": true
+  },
+  "simulatorType": "wechat",
+  "srcMiniprogramRoot": "miniprogram/"
+}

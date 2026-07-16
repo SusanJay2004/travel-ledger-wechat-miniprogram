@@ -1,0 +1,54 @@
+<view class="page-shell home-page">
+  <view class="home-header">
+    <view>
+      <view class="page-title">同行账本</view>
+      <view class="page-subtitle">把沿途的每一笔，算得清楚又温柔</view>
+    </view>
+    <button class="header-add" bindtap="handleCreateTrip" aria-label="新建行程">＋</button>
+  </view>
+
+  <view wx:if="{{loading}}" class="loading-stack">
+    <view class="skeleton skeleton-year"></view>
+    <view class="skeleton skeleton-card"></view>
+    <view class="skeleton skeleton-card"></view>
+  </view>
+
+  <view wx:elif="{{errorMessage}}" class="error-panel surface-card">
+    <view class="error-banner">{{errorMessage}}</view>
+    <button class="secondary-button" bindtap="handleRetry">重新加载</button>
+  </view>
+
+  <view wx:elif="{{tripGroups.length === 0}}" class="empty-state">
+    <view class="empty-state__mark">⌁</view>
+    <view class="empty-state__title">背上行囊，去见更多的诗和远方~</view>
+    <view class="empty-state__description">从创建第一段行程开始，同行人的每笔花费都会有迹可循。</view>
+    <button class="primary-button empty-create" bindtap="handleCreateTrip">新建行程</button>
+  </view>
+
+  <view wx:else class="trip-groups">
+    <view wx:for="{{tripGroups}}" wx:key="year" class="trip-group">
+      <view class="year-label">{{item.year}}</view>
+      <view
+        wx:for="{{item.trips}}"
+        wx:for-item="trip"
+        wx:key="id"
+        class="trip-card surface-card"
+        data-trip-id="{{trip.id}}"
+        bindtap="handleOpenTrip"
+        hover-class="trip-card--pressed"
+      >
+        <view class="trip-card__main">
+          <view class="trip-card__name">{{trip.name}}</view>
+          <view class="trip-card__date">{{trip.dateText}}</view>
+          <view wx:if="{{trip.invalidBillCount > 0}}" class="trip-card__warning">
+            {{trip.invalidBillCount}} 笔待完善
+          </view>
+        </view>
+        <view class="trip-card__amount">
+          <view class="trip-card__amount-label">总支出</view>
+          <view class="trip-card__amount-value">{{trip.totalText}}</view>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

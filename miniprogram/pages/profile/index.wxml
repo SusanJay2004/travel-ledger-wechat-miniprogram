@@ -1,0 +1,36 @@
+<view class="page-shell profile-page">
+  <view class="page-title">我的</view>
+  <view class="page-subtitle">管理个人资料与已经走完的旅程</view>
+
+  <view wx:if="{{loading}}" class="profile-card surface-card">
+    <view class="skeleton avatar-skeleton"></view>
+    <view class="profile-lines">
+      <view class="skeleton name-skeleton"></view>
+      <view class="skeleton id-skeleton"></view>
+    </view>
+  </view>
+
+  <view wx:elif="{{errorMessage}}" class="error-banner">{{errorMessage}}</view>
+
+  <view wx:else class="profile-card surface-card">
+    <view class="avatar">
+      <image wx:if="{{profile.avatarUrl}}" class="avatar__image" src="{{profile.avatarUrl}}" mode="aspectFill" />
+      <text wx:else>{{profile.displayName.slice(0, 1)}}</text>
+    </view>
+    <view class="profile-lines">
+      <view class="profile-name">{{profile.displayName}}</view>
+      <view class="profile-id">ID {{profile.publicId}}</view>
+      <view class="profile-signature">{{profile.signature}}</view>
+    </view>
+  </view>
+
+  <view class="menu-card surface-card">
+    <view class="menu-item" bindtap="handleArchivedTrips" hover-class="menu-item--pressed">
+      <view>
+        <view class="menu-item__title">已完结行程</view>
+        <view class="menu-item__description">归档、恢复或清理 30 天内的旅程</view>
+      </view>
+      <view class="menu-item__arrow">›</view>
+    </view>
+  </view>
+</view>

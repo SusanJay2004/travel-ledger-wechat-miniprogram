@@ -1,0 +1,7 @@
+coverage
+**/dist
+miniprogram_npm
+node_modules
+package-lock.json
+初始开发计划-个人设想.md
+最终开发计划.md

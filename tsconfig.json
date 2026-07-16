@@ -1,0 +1,8 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/domain" },
+    { "path": "./miniprogram" },
+    { "path": "./cloudfunctions/api" }
+  ]
+}

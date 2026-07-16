@@ -1,0 +1,15 @@
+<view class="page-shell">
+  <view class="page-title">消息</view>
+  <view class="page-subtitle">好友申请、行程邀请与协作动态都会在这里出现</view>
+
+  <view wx:if="{{!collaborationEnabled}}" class="empty-state">
+    <view class="empty-state__mark">信</view>
+    <view class="empty-state__title">当前是单人记账模式</view>
+    <view class="empty-state__description">公开 ID、好友和邀请会在协作版通过平台发布门禁后开放。</view>
+  </view>
+  <view wx:else class="empty-state">
+    <view class="empty-state__mark">信</view>
+    <view class="empty-state__title">还没有新消息</view>
+    <view class="empty-state__description">新的好友申请和行程邀请会及时提醒你。</view>
+  </view>
+</view>

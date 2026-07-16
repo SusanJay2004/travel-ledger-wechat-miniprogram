@@ -1,0 +1,51 @@
+.editor-page {
+  padding-top: 54rpx;
+}
+
+.editor-hero {
+  padding: 20rpx 10rpx 48rpx;
+}
+
+.editor-hero__eyebrow {
+  color: var(--color-primary);
+  font-size: 20rpx;
+  font-weight: 750;
+  letter-spacing: 5rpx;
+  margin-bottom: 18rpx;
+}
+
+.form-card {
+  padding: 34rpx 30rpx;
+}
+
+.field-label {
+  display: block;
+  font-size: 26rpx;
+  font-weight: 650;
+  margin-bottom: 20rpx;
+}
+
+.name-input {
+  border-bottom: 2rpx solid var(--color-primary);
+  box-sizing: border-box;
+  font-size: 36rpx;
+  font-weight: 650;
+  height: 88rpx;
+  width: 100%;
+}
+
+.name-input__placeholder {
+  color: #b0b6b3;
+  font-weight: 450;
+}
+
+.field-hint {
+  color: var(--color-muted);
+  font-size: 22rpx;
+  margin-top: 18rpx;
+}
+
+.submit-button {
+  margin-top: 38rpx;
+  width: 100%;
+}

@@ -1,0 +1,27 @@
+<view class="page-shell editor-page">
+  <view class="editor-hero">
+    <view class="editor-hero__eyebrow">NEW JOURNEY</view>
+    <view class="page-title">给这段旅程起个名字</view>
+    <view class="page-subtitle">后续任何同行人都可以修改，日期和账单可进入行程后再添加。</view>
+  </view>
+
+  <view class="form-card surface-card">
+    <label class="field-label" for="trip-name">行程名称</label>
+    <input
+      id="trip-name"
+      class="name-input"
+      maxlength="20"
+      placeholder="例如：青岛毕业旅行"
+      placeholder-class="name-input__placeholder"
+      value="{{name}}"
+      bindinput="handleNameInput"
+      focus
+    />
+    <view class="field-hint">仅支持中文、英文字母、数字和内部空格</view>
+    <view wx:if="{{errorMessage}}" class="error-banner">{{errorMessage}}</view>
+  </view>
+
+  <button class="primary-button submit-button" loading="{{saving}}" disabled="{{saving}}" bindtap="handleSubmit">
+    {{saving ? '正在创建…' : '创建行程'}}
+  </button>
+</view>

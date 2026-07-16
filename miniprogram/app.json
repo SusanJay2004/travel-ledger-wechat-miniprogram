@@ -1,0 +1,40 @@
+{
+  "entryPagePath": "pages/home/index",
+  "pages": [
+    "pages/home/index",
+    "pages/messages/index",
+    "pages/profile/index",
+    "pages/trip-editor/index",
+    "pages/trip-detail/index"
+  ],
+  "requiredPrivateInfos": ["chooseAvatar"],
+  "sitemapLocation": "sitemap.json",
+  "style": "v2",
+  "tabBar": {
+    "backgroundColor": "#FFFCF6",
+    "borderStyle": "white",
+    "color": "#75807D",
+    "list": [
+      {
+        "pagePath": "pages/home/index",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/messages/index",
+        "text": "消息"
+      },
+      {
+        "pagePath": "pages/profile/index",
+        "text": "我的"
+      }
+    ],
+    "selectedColor": "#167D73"
+  },
+  "window": {
+    "backgroundColor": "#F7F4EC",
+    "backgroundTextStyle": "dark",
+    "navigationBarBackgroundColor": "#FFFCF6",
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "同行账本"
+  }
+}

@@ -1,0 +1,125 @@
+.home-page {
+  padding-top: 42rpx;
+}
+
+.home-header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 34rpx;
+}
+
+.header-add {
+  align-items: center;
+  background: var(--color-primary);
+  border-radius: 22rpx;
+  box-shadow: 0 8rpx 22rpx rgba(22, 125, 115, 0.2);
+  color: #fff;
+  display: flex;
+  font-size: 44rpx;
+  height: 88rpx;
+  justify-content: center;
+  line-height: 1;
+  margin: 0;
+  padding: 0;
+  width: 88rpx;
+}
+
+.header-add::after {
+  border: 0;
+}
+
+.loading-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+  padding-top: 30rpx;
+}
+
+.skeleton-year {
+  height: 42rpx;
+  width: 120rpx;
+}
+
+.skeleton-card {
+  height: 180rpx;
+  width: 100%;
+}
+
+.error-panel {
+  margin-top: 70rpx;
+  padding: 28rpx;
+}
+
+.empty-create {
+  min-width: 260rpx;
+}
+
+.trip-group {
+  margin-bottom: 42rpx;
+}
+
+.year-label {
+  color: var(--color-primary);
+  font-size: 30rpx;
+  font-weight: 700;
+  margin: 0 0 18rpx 8rpx;
+}
+
+.trip-card {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 22rpx;
+  min-height: 142rpx;
+  padding: 28rpx 30rpx;
+  transition:
+    transform 120ms ease,
+    opacity 120ms ease;
+}
+
+.trip-card--pressed {
+  opacity: 0.82;
+  transform: scale(0.985);
+}
+
+.trip-card__main {
+  min-width: 0;
+  padding-right: 24rpx;
+}
+
+.trip-card__name {
+  font-size: 32rpx;
+  font-weight: 700;
+  max-width: 350rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trip-card__date,
+.trip-card__amount-label {
+  color: var(--color-muted);
+  font-size: 23rpx;
+}
+
+.trip-card__date {
+  margin-top: 12rpx;
+}
+
+.trip-card__warning {
+  color: var(--color-accent);
+  font-size: 22rpx;
+  margin-top: 8rpx;
+}
+
+.trip-card__amount {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.trip-card__amount-value {
+  font-size: 32rpx;
+  font-weight: 750;
+  margin-top: 8rpx;
+}

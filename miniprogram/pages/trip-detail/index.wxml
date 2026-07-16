@@ -1,0 +1,18 @@
+<view class="page-shell detail-page">
+  <view class="detail-head surface-card">
+    <view class="detail-head__eyebrow">进行中</view>
+    <view class="detail-head__title">新的旅程</view>
+    <view class="detail-head__meta">待添加日期 · 总支出 ¥0.00</view>
+  </view>
+
+  <view class="empty-state detail-empty">
+    <view class="empty-state__mark">日</view>
+    <view class="empty-state__title">先为旅程添加第一个日期</view>
+    <view class="empty-state__description">同一天发生的账单会自然收拢在一起，回看旅程时一目了然。</view>
+    <button class="secondary-button" bindtap="handleAddDate">添加日期</button>
+  </view>
+
+  <view class="bottom-actions">
+    <button class="primary-button" bindtap="handleSettle">计算分账</button>
+  </view>
+</view>

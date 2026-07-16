@@ -1,0 +1,41 @@
+.detail-page {
+  padding-bottom: 170rpx;
+}
+
+.detail-head {
+  background: linear-gradient(145deg, #167d73, #236d65);
+  color: #fff;
+  margin-top: 20rpx;
+  padding: 34rpx;
+}
+
+.detail-head__eyebrow {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 22rpx;
+}
+
+.detail-head__title {
+  font-size: 39rpx;
+  font-weight: 750;
+  margin-top: 14rpx;
+}
+
+.detail-head__meta {
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 24rpx;
+  margin-top: 18rpx;
+}
+
+.detail-empty {
+  min-height: 52vh;
+}
+
+.bottom-actions {
+  background: rgba(255, 252, 246, 0.96);
+  bottom: 0;
+  box-sizing: border-box;
+  left: 0;
+  padding: 20rpx 28rpx calc(20rpx + env(safe-area-inset-bottom));
+  position: fixed;
+  right: 0;
+}

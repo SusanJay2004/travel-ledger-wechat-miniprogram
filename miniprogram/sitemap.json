@@ -1,0 +1,4 @@
+{
+  "desc": "同行账本页面索引配置",
+  "rules": [{ "action": "allow", "page": "*" }]
+}

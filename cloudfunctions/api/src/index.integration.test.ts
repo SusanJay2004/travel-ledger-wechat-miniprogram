@@ -149,6 +149,29 @@ describe('cloud API command integration', () => {
 
     expect(response).toMatchObject({ ok: false, error: { code: 'REQUEST_INVALID' } });
   });
+
+  it('deletes account files and clears the durable cleanup marker', async () => {
+    const previousMode = process.env['PRODUCT_MODE'];
+    process.env['PRODUCT_MODE'] = 'collaboration';
+    try {
+      const cloud = createMemoryCloudSdk('openid-cleanup');
+      await command(cloud.sdk, 'session.bootstrap', {}, 'cleanup-bootstrap');
+      const generated = await command(cloud.sdk, 'session.qrCode', {}, 'cleanup-qr');
+      const fileId = (successData(generated) as { fileId: string }).fileId;
+
+      const deleted = await command(cloud.sdk, 'session.deleteAccount', {}, 'cleanup-delete');
+
+      expect(deleted).toMatchObject({ ok: true });
+      expect(cloud.deletedFileIds).toContain(fileId);
+      expect(cloud.database.documents('users')[0]).toMatchObject({
+        status: 'deleted',
+        pendingFileDeletionIds: [],
+      });
+    } finally {
+      if (previousMode === undefined) delete process.env['PRODUCT_MODE'];
+      else process.env['PRODUCT_MODE'] = previousMode;
+    }
+  });
 });
 
 async function command(

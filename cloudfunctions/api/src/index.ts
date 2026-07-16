@@ -200,8 +200,10 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
         return success(requestId, publicProfile(updated, productMode));
       }
       case 'session.deleteAccount':
-        await write(() => service.deleteAccount(user, socialRepository));
-        await deleteUserFiles(sdk, user);
+        await write(async () => {
+          await service.deleteAccount(user, socialRepository);
+          await cleanDeletedUserFiles(sdk, repository, user.id);
+        });
         return success(requestId, null);
       case 'social.search':
         return success(
@@ -454,18 +456,26 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
   }
 }
 
-async function deleteUserFiles(
-  sdk: CloudSdk,
-  user: Awaited<ReturnType<LedgerService['bootstrapSession']>>,
-) {
-  const fileList = [user.avatarUrl, user.qrCodeFileId].filter(
-    (value): value is string => typeof value === 'string' && value.startsWith('cloud://'),
-  );
+async function cleanDeletedUserFiles(sdk: CloudSdk, repository: CloudRepository, userId: string) {
+  const user = await repository.getUser(userId);
+  const fileList = user?.pendingFileDeletionIds ?? [];
   if (fileList.length === 0) return;
   try {
-    await sdk.deleteFile({ fileList });
+    await sdk.deleteFile({ fileList: [...fileList] });
+    const cleared = await repository.updateUser(
+      {
+        ...user!,
+        pendingFileDeletionIds: [],
+        version: user!.version + 1,
+        updatedAt: systemClock.now().toISOString(),
+      },
+      user!.version,
+    );
+    if (!cleared) {
+      console.error('account-file-cleanup-conflict', { userId, fileCount: fileList.length });
+    }
   } catch {
-    console.error('account-file-cleanup-failed', { userId: user.id, fileCount: fileList.length });
+    console.error('account-file-cleanup-failed', { userId, fileCount: fileList.length });
   }
 }
 

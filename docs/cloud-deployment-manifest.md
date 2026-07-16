@@ -27,6 +27,7 @@
 | `users`               | 唯一      | `publicId ASC`                              |
 | `users`               | 唯一/稀疏 | `qrSceneToken ASC`                          |
 | `users`               | 普通      | `_id ASC, version ASC`                      |
+| `users`               | 普通      | `status ASC`                                |
 | `trips`               | 普通      | `memberIds ASC`                             |
 | `trips`               | 普通      | `_id ASC, version ASC`                      |
 | `friend_requests`     | 普通      | `fromUserId ASC, toUserId ASC, status ASC`  |

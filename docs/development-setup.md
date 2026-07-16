@@ -21,6 +21,7 @@
    - `users.publicId`：唯一索引。
    - `users.qrSceneToken`：唯一稀疏索引。
    - `users._id + version`：普通组合索引，用于资料和注销的乐观并发更新。
+   - `users.status`：普通索引，用于维护任务重试已注销账号的云文件清理。
    - `trips.memberIds`：普通索引。
    - `trips.version`：普通索引，用于乐观并发更新。
 8. 执行 `npm install`、`npm run check` 和 `npm run build`。

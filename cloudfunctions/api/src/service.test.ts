@@ -184,6 +184,12 @@ describe('LedgerService solo flow', () => {
       tripId: trip.id,
       expectedVersion: completed.version,
     });
+    await expect(
+      service.archiveTrip(user.id, {
+        tripId: trip.id,
+        expectedVersion: archived.version,
+      }),
+    ).rejects.toMatchObject({ code: 'TRIP_NOT_IN_HOME' });
     const archivedMember = archived.members[0];
     expect(archivedMember?.viewState).toBe('archived');
     expect(archivedMember?.purgeAfter).toBe('2026-08-09T08:00:00.000Z');
@@ -478,9 +484,26 @@ describe('LedgerService solo flow', () => {
         payers: [{ memberId: user.id, displayName: user.displayName, paidCents: 100 }],
       },
     });
-    await service.deleteAccount(user, new MemorySocialRepository());
+    const withAvatar = await service.updateProfile(user, {
+      displayName: user.displayName,
+      signature: user.signature,
+      avatarUrl: `cloud://development/avatars/${user.id}/avatar.png`,
+    });
+    const withFiles = {
+      ...withAvatar,
+      qrCodeFileId: `cloud://development/profile-codes/${user.id}/code.png`,
+      version: withAvatar.version + 1,
+    };
+    await repository.updateUser(withFiles, withAvatar.version);
+    await service.deleteAccount(withFiles, new MemorySocialRepository());
 
-    expect((await repository.getUser(user.id))?.qrSceneToken).toBeNull();
+    expect(await repository.getUser(user.id)).toMatchObject({
+      qrSceneToken: null,
+      pendingFileDeletionIds: [
+        `cloud://development/avatars/${user.id}/avatar.png`,
+        `cloud://development/profile-codes/${user.id}/code.png`,
+      ],
+    });
 
     const historical = await repository.getTrip(trip.id);
     expect(historical?.members[0]?.displayNameSnapshot).toBe('已注销用户');
@@ -540,6 +563,74 @@ describe('LedgerService solo flow', () => {
     });
     expect(restored.totalCents).toBe(250);
     expect(restored.bills[0]?.deletedAt).toBeNull();
+  });
+
+  it('preserves historical detached references but rejects them in new bills', async () => {
+    const bob = await service.bootstrapSession('openid-historical-bob');
+    const trip = await service.createTrip(user, { name: '历史成员账单' });
+    const joined = {
+      ...trip,
+      memberIds: [...trip.memberIds, bob.id],
+      members: [
+        ...trip.members,
+        {
+          userId: bob.id,
+          displayNameSnapshot: bob.displayName,
+          joinedAt: clock.now().toISOString(),
+          viewState: 'home' as const,
+          archivedAt: null,
+          purgeAfter: null,
+        },
+      ],
+    };
+    await repository.replaceTrip(joined, trip.version);
+    const dated = await service.addDate(user.id, {
+      tripId: trip.id,
+      date: '2026-07-10',
+      expectedVersion: joined.version,
+    });
+    const billed = await service.addBill(user.id, {
+      tripId: trip.id,
+      date: '2026-07-10',
+      expectedVersion: dated.version,
+      bill: {
+        title: '共同车票',
+        amountCents: 200,
+        participants: [
+          { memberId: user.id, displayName: user.displayName, shares: 1 },
+          { memberId: bob.id, displayName: bob.displayName, shares: 1 },
+        ],
+        payers: [{ memberId: user.id, displayName: user.displayName, paidCents: 200 }],
+      },
+    });
+    const detached = {
+      ...billed,
+      members: billed.members.map((member) =>
+        member.userId === bob.id ? { ...member, viewState: 'detached' as const } : member,
+      ),
+    };
+    await repository.replaceTrip(detached, billed.version);
+
+    const corrected = await service.updateBill(user.id, {
+      tripId: trip.id,
+      billId: billed.bills[0]!.id,
+      date: '2026-07-10',
+      expectedVersion: detached.version,
+      bill: { ...billed.bills[0]!, title: '共同车票更正' },
+    });
+    await expect(
+      service.addBill(user.id, {
+        tripId: trip.id,
+        date: '2026-07-10',
+        expectedVersion: corrected.version,
+        bill: {
+          title: '违规新账单',
+          amountCents: 100,
+          participants: [{ memberId: bob.id, displayName: bob.displayName, shares: 1 }],
+          payers: [{ memberId: user.id, displayName: user.displayName, paidCents: 100 }],
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'MEMBER_NOT_IN_TRIP' });
   });
 
   it('replaces forged bill display names with trusted member snapshots', async () => {

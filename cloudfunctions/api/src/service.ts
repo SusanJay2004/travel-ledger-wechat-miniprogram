@@ -226,6 +226,7 @@ export class LedgerService {
             avatarUrl: null,
             qrCodeFileId: null,
             qrSceneToken: null,
+            pendingFileDeletionIds: accountFileIds(user),
             status: 'deleting',
             version: user.version + 1,
             updatedAt: this.clock.now().toISOString(),
@@ -491,7 +492,7 @@ export class LedgerService {
     const existing = requiredBill(trip, input.billId);
     assertBusiness(existing.deletedAt === null, 'BILL_DELETED', '已删除账单不能直接修改。');
     const normalizedBill = billWithTrustedMemberNames(trip, input.bill);
-    const validationCodes = validateBillForTrip(trip, normalizedBill);
+    const validationCodes = validateBillForTrip(trip, normalizedBill, existing);
     await this.checkTextForUser(userId, 3, input.bill.title);
     const timestamp = this.clock.now().toISOString();
     const replacement: BillDocument = {
@@ -703,6 +704,11 @@ export class LedgerService {
   async archiveTrip(userId: string, input: ArchiveTripInput): Promise<TripDocument> {
     const trip = await this.versionedTrip(userId, input.tripId, input.expectedVersion);
     assertBusiness(trip.status === 'completed', 'TRIP_NOT_COMPLETED', '只有已完结行程可以归档。');
+    assertBusiness(
+      memberFor(trip, userId).viewState === 'home',
+      'TRIP_NOT_IN_HOME',
+      '该行程已经归档。',
+    );
     const now = this.clock.now();
     const members = trip.members.map((member) =>
       member.userId === userId
@@ -859,14 +865,18 @@ function requiredBill(trip: TripDocument, billId: string): BillDocument {
   return bill;
 }
 
-function validateBillForTrip(trip: TripDocument, bill: BillInput) {
+function validateBillForTrip(trip: TripDocument, bill: BillInput, existing?: BillDocument) {
   assertBusiness(
     bill.participants.length <= LIMITS.membersPerTrip &&
       bill.payers.length <= LIMITS.membersPerTrip,
     'BILL_CORE_INVALID',
     `参与人和付款人均不能超过 ${LIMITS.membersPerTrip} 人。`,
   );
-  const memberIds = new Set(trip.memberIds);
+  const memberIds = new Set(
+    trip.members.filter((member) => member.viewState === 'home').map((member) => member.userId),
+  );
+  for (const participant of existing?.participants ?? []) memberIds.add(participant.memberId);
+  for (const payer of existing?.payers ?? []) memberIds.add(payer.memberId);
   for (const participant of bill.participants) {
     assertBusiness(
       memberIds.has(participant.memberId),
@@ -951,4 +961,10 @@ function avatarBelongsToUser(fileId: string, userId: string): boolean {
   if (!fileId.startsWith('cloud://')) return false;
   const cloudPath = fileId.slice('cloud://'.length).split('/').slice(1);
   return cloudPath.length === 3 && cloudPath[0] === 'avatars' && cloudPath[1] === userId;
+}
+
+function accountFileIds(user: UserDocument): readonly string[] {
+  return [...new Set([user.avatarUrl, user.qrCodeFileId])].filter(
+    (value): value is string => typeof value === 'string' && value.startsWith('cloud://'),
+  );
 }

@@ -1,5 +1,6 @@
 import { cleanTrip, type MaintenanceBill, type MaintenanceMember } from './maintenance';
 import { buildProjectionDocuments, type RepairTrip, type RepairUser } from './projection-repair';
+import { cleanDeletedUserFiles, type DeletedUserFileRecord } from './deleted-user-cleanup';
 
 interface DbCommand {
   lt(value: string): unknown;
@@ -48,9 +49,15 @@ interface ExpiringSocialDocument {
   expiresAt: string;
 }
 
+interface DeletedUserDocument extends DeletedUserFileRecord {
+  status: string;
+  updatedAt: string;
+}
+
 interface CloudSdk {
   DYNAMIC_CURRENT_ENV: symbol;
   database(): Database;
+  deleteFile(options: { fileList: string[] }): Promise<unknown>;
   getWXContext(): { OPENID?: string };
   init(options: { env: symbol }): void;
 }
@@ -75,6 +82,8 @@ export async function main(): Promise<Record<string, number>> {
     orphanTripsRemoved: 0,
     tripsUpdated: 0,
     conflictsSkipped: 0,
+    deletedUserFileCleanupFailures: 0,
+    deletedUserFilesRemoved: 0,
     projectionsRepaired: 0,
     projectionFailures: 0,
   };
@@ -98,6 +107,9 @@ export async function main(): Promise<Record<string, number>> {
   summary.oldSyncEventsRemoved += await removeExpired(db, 'sync_events', 'createdAt', syncCutoff);
   const auditCutoff = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000).toISOString();
   summary.oldAuditLogsRemoved += await removeExpired(db, 'audit_logs', 'createdAt', auditCutoff);
+  const fileCleanup = await retryDeletedUserFileCleanup(db);
+  summary.deletedUserFilesRemoved += fileCleanup.removed;
+  summary.deletedUserFileCleanupFailures += fileCleanup.failed;
 
   const trips = await listAll(db.collection<MaintenanceTripDocument>('trips'));
   for (const trip of trips) {
@@ -278,4 +290,34 @@ async function purgeTripRelations(db: Database, tripId: string): Promise<void> {
     db.collection('trip_invitations').where({ tripId }).remove(),
     db.collection('notifications').where({ tripId }).remove(),
   ]);
+}
+
+async function retryDeletedUserFileCleanup(
+  db: Database,
+): Promise<{ failed: number; removed: number }> {
+  const users = await listAll(
+    db.collection<DeletedUserDocument>('users').where({ status: 'deleted' }),
+  );
+  return cleanDeletedUserFiles(
+    users,
+    {
+      deleteFiles: async (fileIds) => {
+        await cloud.deleteFile({ fileList: [...fileIds] });
+      },
+      clearMarker: async (user, updatedAt) => {
+        const updated = await db
+          .collection<DeletedUserDocument>('users')
+          .where({ _id: user.id, version: user.version })
+          .update({
+            data: {
+              pendingFileDeletionIds: [],
+              updatedAt,
+              version: user.version + 1,
+            },
+          });
+        return updated.stats?.updated === 1;
+      },
+    },
+    new Date(),
+  );
 }

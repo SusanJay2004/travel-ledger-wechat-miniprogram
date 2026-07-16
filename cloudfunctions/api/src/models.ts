@@ -12,6 +12,7 @@ export interface UserDocument {
   avatarUrl: string | null;
   qrCodeFileId?: string | null;
   qrSceneToken?: string | null;
+  pendingFileDeletionIds?: readonly string[];
   status: 'active' | 'deleting' | 'deleted';
   version: number;
   createdAt: string;

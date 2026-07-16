@@ -24,16 +24,21 @@ export class MemoryCloudDatabase implements CloudDatabase {
 
 export function createMemoryCloudSdk(openId = 'test-openid'): {
   database: MemoryCloudDatabase;
+  deletedFileIds: readonly string[];
   sdk: CloudSdk;
   setOpenId(value: string | undefined): void;
 } {
   const database = new MemoryCloudDatabase();
+  const deletedFileIds: string[] = [];
   let currentOpenId: string | undefined = openId;
   const context = () => (currentOpenId === undefined ? {} : { OPENID: currentOpenId });
   const sdk: CloudSdk = {
     DYNAMIC_CURRENT_ENV: Symbol('memory'),
     database: () => database,
-    deleteFile: async () => undefined,
+    deleteFile: async ({ fileList }) => {
+      deletedFileIds.push(...fileList);
+      return undefined;
+    },
     getWXContext: context,
     init: () => undefined,
     openapi: {
@@ -48,7 +53,7 @@ export function createMemoryCloudSdk(openId = 'test-openid'): {
     downloadFile: async () => ({ fileContent: Buffer.alloc(0) }),
     uploadFile: async ({ cloudPath }) => ({ fileID: `cloud://memory/${cloudPath}` }),
   };
-  return { database, sdk, setOpenId: (value) => (currentOpenId = value) };
+  return { database, deletedFileIds, sdk, setOpenId: (value) => (currentOpenId = value) };
 }
 
 class MemoryCollection<T> implements CloudCollection<T> {

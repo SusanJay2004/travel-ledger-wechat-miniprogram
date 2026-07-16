@@ -18,10 +18,12 @@ export function sanitizeClientData<T>(value: T): T {
 }
 
 const CLIENT_PRIVATE_KEYS = new Set([
+  '_id',
   'openId',
   'ownerOpenId',
   'pendingFileDeletionIds',
   'projectionOutbox',
+  'pendingKey',
   'qrCodeFileId',
   'qrSceneToken',
   'settlementCache',

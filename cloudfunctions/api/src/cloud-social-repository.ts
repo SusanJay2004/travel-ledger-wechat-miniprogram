@@ -40,7 +40,36 @@ export class CloudSocialRepository implements SocialRepository {
   }
 
   async createFriendRequest(request: FriendRequestDocument) {
-    await this.friendRequests().add({ data: withDocumentId(request) });
+    try {
+      await this.friendRequests().add({ data: withDocumentId(request) });
+      return request;
+    } catch (error: unknown) {
+      if (!isDuplicateError(error) || request.pendingKey === undefined) throw error;
+      const existing = await this.friendRequests()
+        .where({ pendingKey: request.pendingKey })
+        .limit(1)
+        .get();
+      if (existing.data[0] !== undefined) return withoutDocumentId(existing.data[0]);
+      throw error;
+    }
+  }
+
+  async expireFriendRequest(request: FriendRequestDocument, respondedAt: string) {
+    const result = await this.friendRequests()
+      .where({
+        _id: request.id,
+        status: 'pending',
+        pendingKey: request.pendingKey,
+        expiresAt: request.expiresAt,
+      })
+      .update({
+        data: {
+          pendingKey: `resolved_${request.id}`,
+          status: 'expired',
+          respondedAt,
+        },
+      });
+    return result.stats?.updated === 1;
   }
 
   async updateFriendRequest(request: FriendRequestDocument) {
@@ -136,7 +165,36 @@ export class CloudSocialRepository implements SocialRepository {
   }
 
   async createInvitation(invitation: TripInvitationDocument) {
-    await this.invitations().add({ data: withDocumentId(invitation) });
+    try {
+      await this.invitations().add({ data: withDocumentId(invitation) });
+      return invitation;
+    } catch (error: unknown) {
+      if (!isDuplicateError(error) || invitation.pendingKey === undefined) throw error;
+      const existing = await this.invitations()
+        .where({ pendingKey: invitation.pendingKey })
+        .limit(1)
+        .get();
+      if (existing.data[0] !== undefined) return withoutDocumentId(existing.data[0]);
+      throw error;
+    }
+  }
+
+  async expireInvitation(invitation: TripInvitationDocument, respondedAt: string) {
+    const result = await this.invitations()
+      .where({
+        _id: invitation.id,
+        status: 'pending',
+        pendingKey: invitation.pendingKey,
+        expiresAt: invitation.expiresAt,
+      })
+      .update({
+        data: {
+          pendingKey: `resolved_${invitation.id}`,
+          status: 'expired',
+          respondedAt,
+        },
+      });
+    return result.stats?.updated === 1;
   }
 
   async updateInvitation(invitation: TripInvitationDocument) {
@@ -219,6 +277,12 @@ function withDocumentId<T extends { id: string }>(value: T): T & { _id: string }
   return { ...value, _id: value.id };
 }
 
+function withoutDocumentId<T extends { id: string }>(value: T): T {
+  const copy = { ...value } as T & { _id?: string };
+  delete copy._id;
+  return copy;
+}
+
 function deduplicate<T extends { id: string }>(items: readonly T[]): readonly T[] {
   return [...new Map(items.map((item) => [item.id, item])).values()];
 }
@@ -239,4 +303,12 @@ function isNotFoundError(error: unknown): boolean {
   const message = 'message' in error ? String(error.message) : '';
   const code = 'errCode' in error ? String(error.errCode) : '';
   return code.includes('DOCUMENT_NOT_FOUND') || message.toLowerCase().includes('not found');
+}
+
+function isDuplicateError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const message = 'message' in error ? String(error.message).toLowerCase() : '';
+  const code = 'errCode' in error ? String(error.errCode).toLowerCase() : '';
+  const value = `${code} ${message}`;
+  return value.includes('duplicate') || value.includes('already exists') || value.includes('11000');
 }

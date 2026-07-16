@@ -23,6 +23,7 @@ describe('sanitizeClientData', () => {
 
   it('removes private WeChat identity and QR resolution fields recursively', () => {
     const value = {
+      _id: 'internal-document-key',
       openId: 'openid-secret',
       profile: {
         displayName: '旅人',

@@ -446,6 +446,117 @@ describe('cloud API command integration', () => {
       else process.env['PRODUCT_MODE'] = previousMode;
     }
   });
+
+  it('deduplicates concurrent friend requests even when devices use different request ids', async () => {
+    const previousMode = process.env['PRODUCT_MODE'];
+    process.env['PRODUCT_MODE'] = 'collaboration';
+    try {
+      const cloud = createMemoryCloudSdk('openid-request-dedupe-alice');
+      await command(cloud.sdk, 'session.bootstrap', {}, 'request-dedupe-alice');
+      cloud.setOpenId('openid-request-dedupe-bob');
+      const bob = successData(
+        await command(cloud.sdk, 'session.bootstrap', {}, 'request-dedupe-bob'),
+      ) as { publicId: string };
+      cloud.setOpenId('openid-request-dedupe-alice');
+
+      const responses = await Promise.all([
+        command(
+          cloud.sdk,
+          'social.sendFriendRequest',
+          { publicId: bob.publicId },
+          'request-dedupe-first',
+        ),
+        command(
+          cloud.sdk,
+          'social.sendFriendRequest',
+          { publicId: bob.publicId },
+          'request-dedupe-second',
+        ),
+      ]);
+
+      expect(responses.every((response) => response['ok'] === true)).toBe(true);
+      expect(successData(responses[0])).toEqual(successData(responses[1]));
+      expect(cloud.database.documents('friend_requests')).toHaveLength(1);
+      expect(
+        cloud.database
+          .documents('notifications')
+          .filter((item) => item['type'] === 'friend_request'),
+      ).toHaveLength(1);
+    } finally {
+      if (previousMode === undefined) delete process.env['PRODUCT_MODE'];
+      else process.env['PRODUCT_MODE'] = previousMode;
+    }
+  });
+
+  it('deduplicates concurrent invitations and permits a fresh one immediately after expiry', async () => {
+    const previousMode = process.env['PRODUCT_MODE'];
+    process.env['PRODUCT_MODE'] = 'collaboration';
+    try {
+      const setup = await prepareFriendRequest('invitation-dedupe');
+      setup.cloud.setOpenId(setup.bobOpenId);
+      await command(
+        setup.cloud.sdk,
+        'social.respondFriendRequest',
+        { requestId: setup.requestId, accept: true },
+        'invitation-dedupe-friend-accept',
+      );
+      setup.cloud.setOpenId(setup.aliceOpenId);
+      const trip = successData(
+        await command(
+          setup.cloud.sdk,
+          'trip.create',
+          { name: '邀请去重' },
+          'invitation-dedupe-trip',
+        ),
+      ) as { tripId: string };
+
+      const responses = await Promise.all([
+        command(
+          setup.cloud.sdk,
+          'social.inviteToTrip',
+          { tripId: trip.tripId, inviteeUserId: setup.bobUserId },
+          'invitation-dedupe-first',
+        ),
+        command(
+          setup.cloud.sdk,
+          'social.inviteToTrip',
+          { tripId: trip.tripId, inviteeUserId: setup.bobUserId },
+          'invitation-dedupe-second',
+        ),
+      ]);
+      expect(successData(responses[0])).toEqual(successData(responses[1]));
+      expect(setup.cloud.database.documents('trip_invitations')).toHaveLength(1);
+      expect(
+        setup.cloud.database
+          .documents('notifications')
+          .filter((item) => item['type'] === 'trip_invitation'),
+      ).toHaveLength(1);
+
+      const invitations =
+        setup.cloud.database.collection<Record<string, unknown>>('trip_invitations');
+      const expired = setup.cloud.database.documents('trip_invitations')[0]!;
+      await invitations.doc(String(expired['id'])).set({
+        data: { ...expired, expiresAt: '2000-01-01T00:00:00.000Z' },
+      });
+      const fresh = await command(
+        setup.cloud.sdk,
+        'social.inviteToTrip',
+        { tripId: trip.tripId, inviteeUserId: setup.bobUserId },
+        'invitation-dedupe-after-expiry',
+      );
+
+      expect(fresh).toMatchObject({ ok: true });
+      expect(setup.cloud.database.documents('trip_invitations')).toHaveLength(2);
+      const records = setup.cloud.database.documents('trip_invitations');
+      expect(records.filter((item) => item['status'] === 'pending')).toHaveLength(1);
+      expect(records.find((item) => item['status'] === 'expired')?.['pendingKey']).toMatch(
+        /^resolved_/,
+      );
+    } finally {
+      if (previousMode === undefined) delete process.env['PRODUCT_MODE'];
+      else process.env['PRODUCT_MODE'] = previousMode;
+    }
+  });
 });
 
 async function prepareFriendRequest(prefix: string) {

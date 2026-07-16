@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { LIMITS, type ProductMode } from '@travel-ledger/domain';
 
 import { assertBusiness, BusinessError } from './errors';
@@ -104,8 +106,26 @@ export class SocialService {
     if (existing !== null && !isExpired(existing.expiresAt, this.clock.now())) return existing;
 
     const now = this.clock.now();
+    if (existing !== null) {
+      const expired = await this.social.expireFriendRequest(existing, now.toISOString());
+      if (!expired) {
+        const current = await this.social.findPendingFriendRequest(from.id, target.id);
+        if (current !== null && !isExpired(current.expiresAt, now)) return current;
+        assertBusiness(
+          (await this.social.getFriendship(from.id, target.id)) === null,
+          'ALREADY_FRIENDS',
+          '你们已经是好友。',
+        );
+        assertBusiness(
+          !(await this.social.isBlockedEither(from.id, target.id)),
+          'FRIEND_REQUEST_UNAVAILABLE',
+          '暂时无法向该用户发送申请。',
+        );
+      }
+    }
     const request: FriendRequestDocument = {
       id: this.ids.entityId('frq'),
+      pendingKey: pendingRelationKey('friend', from.id, target.id),
       fromUserId: from.id,
       toUserId: target.id,
       status: 'pending',
@@ -113,7 +133,8 @@ export class SocialService {
       expiresAt: addDays(now, 30).toISOString(),
       respondedAt: null,
     };
-    await this.social.createFriendRequest(request);
+    const created = await this.social.createFriendRequest(request);
+    if (created.id !== request.id) return created;
     await this.bestEffortNotification(
       notification(this.ids, now, {
         userId: target.id,
@@ -124,7 +145,7 @@ export class SocialService {
         body: `${from.displayName} 想添加你为好友`,
       }),
     );
-    return request;
+    return created;
   }
 
   async respondFriendRequest(
@@ -156,8 +177,9 @@ export class SocialService {
       '暂时无法处理该申请。',
     );
     const now = this.clock.now();
+    const { pendingKey: _pendingKey, ...resolvedRequest } = request;
     const updated: FriendRequestDocument = {
-      ...request,
+      ...resolvedRequest,
       status: accept ? 'accepted' : 'rejected',
       respondedAt: now.toISOString(),
     };
@@ -418,8 +440,28 @@ export class SocialService {
       '找不到被邀请人。',
     );
     const now = this.clock.now();
+    if (existing !== null) {
+      const expired = await this.social.expireInvitation(existing, now.toISOString());
+      if (!expired) {
+        const current = await this.social.findPendingInvitation(tripId, inviteeUserId);
+        if (current !== null && !isExpired(current.expiresAt, now)) return current;
+        const latestTrip = await this.requiredTripForMember(inviter.id, tripId);
+        assertBusiness(
+          latestTrip.status === 'active' && !latestTrip.memberIds.includes(inviteeUserId),
+          'TRIP_UNAVAILABLE',
+          '该行程已无法邀请这位好友。',
+        );
+        assertBusiness(
+          (await this.social.getFriendship(inviter.id, inviteeUserId)) !== null &&
+            !(await this.social.isBlockedEither(inviter.id, inviteeUserId)),
+          'INVITATION_UNAVAILABLE',
+          '暂时无法邀请该用户。',
+        );
+      }
+    }
     const invitation: TripInvitationDocument = {
       id: this.ids.entityId('inv'),
+      pendingKey: pendingRelationKey('trip', tripId, inviteeUserId),
       tripId,
       inviterUserId: inviter.id,
       inviteeUserId,
@@ -428,7 +470,8 @@ export class SocialService {
       expiresAt: addDays(now, 7).toISOString(),
       respondedAt: null,
     };
-    await this.social.createInvitation(invitation);
+    const created = await this.social.createInvitation(invitation);
+    if (created.id !== invitation.id) return created;
     await this.bestEffortNotification(
       notification(this.ids, now, {
         userId: inviteeUserId,
@@ -440,7 +483,7 @@ export class SocialService {
         body: `${inviter.displayName} 邀请你加入“${trip.name}”`,
       }),
     );
-    return invitation;
+    return created;
   }
 
   async leaveTrip(currentUser: UserDocument, tripId: string): Promise<TripDocument> {
@@ -587,8 +630,9 @@ export class SocialService {
         'member',
         currentUser.id,
       );
+      const { pendingKey: _pendingKey, ...resolvedInvitation } = invitation;
       const updated: TripInvitationDocument = {
-        ...invitation,
+        ...resolvedInvitation,
         status: 'accepted',
         respondedAt: now.toISOString(),
       };
@@ -637,8 +681,9 @@ export class SocialService {
       );
       return updated;
     }
+    const { pendingKey: _pendingKey, ...resolvedInvitation } = invitation;
     const updated: TripInvitationDocument = {
-      ...invitation,
+      ...resolvedInvitation,
       status: 'rejected',
       respondedAt: now.toISOString(),
     };
@@ -699,6 +744,11 @@ function addDays(date: Date, days: number): Date {
 
 function isExpired(expiresAt: string, now: Date): boolean {
   return new Date(expiresAt).getTime() <= now.getTime();
+}
+
+function pendingRelationKey(kind: 'friend' | 'trip', first: string, second: string): string {
+  const parts = kind === 'friend' ? [first, second].sort() : [first, second];
+  return `${kind}_${createHash('sha256').update(parts.join(':')).digest('hex').slice(0, 32)}`;
 }
 
 function notification(

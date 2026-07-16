@@ -103,6 +103,7 @@ class MemoryCollection<T> implements CloudCollection<T> {
     const document = toDocument(options.data);
     const id = documentId(document);
     if (this.documents.has(id)) throw new Error('duplicate document');
+    assertUnique(this.collectionName, this.documents, document);
     this.documents.set(id, structuredClone(document));
   }
 
@@ -119,7 +120,9 @@ class MemoryCollection<T> implements CloudCollection<T> {
       },
       set: async (options: { data: T }) => {
         this.beforeSet(this.collectionName);
-        this.documents.set(id, { ...structuredClone(toDocument(options.data)), _id: id });
+        const document = { ...structuredClone(toDocument(options.data)), _id: id };
+        assertUnique(this.collectionName, this.documents, document, id);
+        this.documents.set(id, document);
       },
     };
   }
@@ -150,7 +153,9 @@ class MemoryCollection<T> implements CloudCollection<T> {
     let updated = 0;
     for (const [id, document] of this.documents) {
       if (!matches(document, this.query)) continue;
-      this.documents.set(id, { ...document, ...structuredClone(toDocument(options.data)) });
+      const next = { ...document, ...structuredClone(toDocument(options.data)) };
+      assertUnique(this.collectionName, this.documents, next, id);
+      this.documents.set(id, next);
       updated += 1;
     }
     return { stats: { updated } };
@@ -216,4 +221,26 @@ function matches(document: Document, query: Record<string, unknown> | null): boo
     if (Array.isArray(actual)) return actual.includes(expected);
     return actual === expected;
   });
+}
+
+function assertUnique(
+  collectionName: string,
+  documents: ReadonlyMap<string, Document>,
+  candidate: Document,
+  excludedId?: string,
+): void {
+  const fields =
+    collectionName === 'users'
+      ? ['openId', 'publicId', 'qrSceneToken']
+      : collectionName === 'friend_requests' || collectionName === 'trip_invitations'
+        ? ['pendingKey']
+        : [];
+  for (const field of fields) {
+    const value = candidate[field];
+    if (value === undefined || value === null) continue;
+    const duplicate = [...documents.entries()].some(
+      ([id, document]) => id !== excludedId && document[field] === value,
+    );
+    if (duplicate) throw new Error(`duplicate ${collectionName}.${field}`);
+  }
 }

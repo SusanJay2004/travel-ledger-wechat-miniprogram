@@ -31,12 +31,14 @@
 | `trips`               | 普通      | `memberIds ASC`                             |
 | `trips`               | 普通      | `_id ASC, version ASC`                      |
 | `friend_requests`     | 普通      | `fromUserId ASC, toUserId ASC, status ASC`  |
+| `friend_requests`     | 唯一/稀疏 | `pendingKey ASC`                            |
 | `friend_requests`     | 普通      | `toUserId ASC, createdAt DESC`              |
 | `friendships`         | 普通      | `userIds ASC`                               |
 | `blocks`              | 普通      | `blockerUserId ASC, blockedUserId ASC`      |
 | `notifications`       | 普通      | `userId ASC, createdAt DESC`                |
 | `notifications`       | 普通      | `tripId ASC`                                |
 | `trip_invitations`    | 普通      | `tripId ASC, inviteeUserId ASC, status ASC` |
+| `trip_invitations`    | 唯一/稀疏 | `pendingKey ASC`                            |
 | `sync_events`         | 普通      | `userId ASC, tripId ASC, createdAt DESC`    |
 | `audit_logs`          | 普通      | `tripId ASC, createdAt DESC`                |
 | `idempotency_records` | 普通      | `expiresAt ASC`                             |

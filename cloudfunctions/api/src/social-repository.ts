@@ -12,7 +12,8 @@ export interface SocialRepository {
   getFriendRequest(requestId: string): Promise<FriendRequestDocument | null>;
   findPendingFriendRequest(userA: string, userB: string): Promise<FriendRequestDocument | null>;
   listFriendRequests(userId: string): Promise<readonly FriendRequestDocument[]>;
-  createFriendRequest(request: FriendRequestDocument): Promise<void>;
+  createFriendRequest(request: FriendRequestDocument): Promise<FriendRequestDocument>;
+  expireFriendRequest(request: FriendRequestDocument, respondedAt: string): Promise<boolean>;
   updateFriendRequest(request: FriendRequestDocument): Promise<void>;
 
   getFriendship(userA: string, userB: string): Promise<FriendshipDocument | null>;
@@ -36,7 +37,8 @@ export interface SocialRepository {
     inviteeUserId: string,
   ): Promise<TripInvitationDocument | null>;
   listInvitations(userId: string): Promise<readonly TripInvitationDocument[]>;
-  createInvitation(invitation: TripInvitationDocument): Promise<void>;
+  createInvitation(invitation: TripInvitationDocument): Promise<TripInvitationDocument>;
+  expireInvitation(invitation: TripInvitationDocument, respondedAt: string): Promise<boolean>;
   updateInvitation(invitation: TripInvitationDocument): Promise<void>;
 
   createSyncEvent(event: SyncEventDocument): Promise<void>;
@@ -75,7 +77,33 @@ export class MemorySocialRepository implements SocialRepository {
   }
 
   async createFriendRequest(request: FriendRequestDocument) {
+    if (request.pendingKey !== undefined) {
+      const existing = [...this.friendRequests.values()].find(
+        (item) => item.pendingKey === request.pendingKey,
+      );
+      if (existing !== undefined) return structuredClone(existing);
+    }
     this.friendRequests.set(request.id, structuredClone(request));
+    return structuredClone(request);
+  }
+
+  async expireFriendRequest(request: FriendRequestDocument, respondedAt: string) {
+    const current = this.friendRequests.get(request.id);
+    if (
+      current === undefined ||
+      current.status !== 'pending' ||
+      current.pendingKey !== request.pendingKey ||
+      current.expiresAt !== request.expiresAt
+    ) {
+      return false;
+    }
+    this.friendRequests.set(request.id, {
+      ...current,
+      pendingKey: `resolved_${request.id}`,
+      status: 'expired',
+      respondedAt,
+    });
+    return true;
   }
 
   async updateFriendRequest(request: FriendRequestDocument) {
@@ -175,7 +203,33 @@ export class MemorySocialRepository implements SocialRepository {
   }
 
   async createInvitation(invitation: TripInvitationDocument) {
+    if (invitation.pendingKey !== undefined) {
+      const existing = [...this.invitations.values()].find(
+        (item) => item.pendingKey === invitation.pendingKey,
+      );
+      if (existing !== undefined) return structuredClone(existing);
+    }
     this.invitations.set(invitation.id, structuredClone(invitation));
+    return structuredClone(invitation);
+  }
+
+  async expireInvitation(invitation: TripInvitationDocument, respondedAt: string) {
+    const current = this.invitations.get(invitation.id);
+    if (
+      current === undefined ||
+      current.status !== 'pending' ||
+      current.pendingKey !== invitation.pendingKey ||
+      current.expiresAt !== invitation.expiresAt
+    ) {
+      return false;
+    }
+    this.invitations.set(invitation.id, {
+      ...current,
+      pendingKey: `resolved_${invitation.id}`,
+      status: 'expired',
+      respondedAt,
+    });
+    return true;
   }
 
   async updateInvitation(invitation: TripInvitationDocument) {

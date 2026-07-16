@@ -14,6 +14,7 @@ import type { Repository } from './repository';
 import type { SocialRepository } from './social-repository';
 import type { TripChangePublisher } from './service';
 import type { TripInvitationAcceptance } from './trip-invitation-transaction';
+import type { FriendRequestTransition } from './friend-request-transaction';
 
 const noopPublisher: TripChangePublisher = {
   prepareTripCreated: (after) => after,
@@ -48,6 +49,7 @@ export class SocialService {
     private readonly mode: ProductMode,
     private readonly publisher: TripChangePublisher = noopPublisher,
     private readonly invitationAcceptance: TripInvitationAcceptance,
+    private readonly friendRequestTransition: FriendRequestTransition,
   ) {}
 
   async searchByPublicId(
@@ -159,16 +161,20 @@ export class SocialService {
       status: accept ? 'accepted' : 'rejected',
       respondedAt: now.toISOString(),
     };
-    if (
-      accept &&
-      (await this.social.getFriendship(request.fromUserId, request.toUserId)) === null
-    ) {
-      const userIds = [request.fromUserId, request.toUserId].sort() as [string, string];
-      await this.social.createFriendship({
-        id: this.ids.entityId('fri'),
-        userIds,
-        createdAt: now.toISOString(),
-      });
+    const outcome = await this.friendRequestTransition.commit({ request: updated });
+    if (outcome === 'request_conflict') {
+      throw new BusinessError('FRIEND_REQUEST_PROCESSED', '该好友申请已经处理。');
+    }
+    if (outcome === 'request_expired') {
+      throw new BusinessError('FRIEND_REQUEST_EXPIRED', '该好友申请已过期。');
+    }
+    if (outcome === 'authorization_changed') {
+      throw new BusinessError('FRIEND_REQUEST_UNAVAILABLE', '暂时无法处理该申请。');
+    }
+    if (outcome === 'user_inactive') {
+      throw new BusinessError('FRIEND_REQUEST_UNAVAILABLE', '对方账号当前不可用。');
+    }
+    if (accept) {
       await this.bestEffortNotification(
         notification(this.ids, now, {
           userId: request.fromUserId,
@@ -180,7 +186,6 @@ export class SocialService {
         }),
       );
     }
-    await this.social.updateFriendRequest(updated);
     return updated;
   }
 
@@ -634,10 +639,16 @@ export class SocialService {
     }
     const updated: TripInvitationDocument = {
       ...invitation,
-      status: accept ? 'accepted' : 'rejected',
+      status: 'rejected',
       respondedAt: now.toISOString(),
     };
-    await this.social.updateInvitation(updated);
+    const rejected = await this.invitationAcceptance.reject(updated);
+    if (rejected === 'invitation_conflict') {
+      throw new BusinessError('INVITATION_PROCESSED', '该邀请已经处理。');
+    }
+    if (rejected === 'invitation_expired') {
+      throw new BusinessError('INVITATION_EXPIRED', '该邀请已过期。');
+    }
     return updated;
   }
 

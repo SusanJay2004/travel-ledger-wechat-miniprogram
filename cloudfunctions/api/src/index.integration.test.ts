@@ -339,7 +339,168 @@ describe('cloud API command integration', () => {
       else process.env['PRODUCT_MODE'] = previousMode;
     }
   });
+
+  it('rolls back friendship creation when friend request status cannot commit', async () => {
+    const previousMode = process.env['PRODUCT_MODE'];
+    process.env['PRODUCT_MODE'] = 'collaboration';
+    try {
+      const setup = await prepareFriendRequest('friend-rollback');
+      setup.cloud.setOpenId(setup.bobOpenId);
+      setup.cloud.database.failNextSet('friend_requests');
+
+      const response = await command(
+        setup.cloud.sdk,
+        'social.respondFriendRequest',
+        { requestId: setup.requestId, accept: true },
+        'friend-rollback-accept',
+      );
+
+      expect(response).toMatchObject({ ok: false, error: { code: 'INTERNAL_ERROR' } });
+      expect(setup.cloud.database.documents('friendships')).toEqual([]);
+      expect(setup.cloud.database.documents('friend_requests')[0]).toMatchObject({
+        status: 'pending',
+      });
+    } finally {
+      if (previousMode === undefined) delete process.env['PRODUCT_MODE'];
+      else process.env['PRODUCT_MODE'] = previousMode;
+    }
+  });
+
+  it('accepts the same friend request only once under concurrent taps', async () => {
+    const previousMode = process.env['PRODUCT_MODE'];
+    process.env['PRODUCT_MODE'] = 'collaboration';
+    try {
+      const setup = await prepareFriendRequest('friend-race');
+      setup.cloud.setOpenId(setup.bobOpenId);
+
+      const responses = await Promise.all([
+        command(
+          setup.cloud.sdk,
+          'social.respondFriendRequest',
+          { requestId: setup.requestId, accept: true },
+          'friend-race-first',
+        ),
+        command(
+          setup.cloud.sdk,
+          'social.respondFriendRequest',
+          { requestId: setup.requestId, accept: true },
+          'friend-race-second',
+        ),
+      ]);
+
+      expect(responses.filter((response) => response['ok'] === true)).toHaveLength(1);
+      expect(responses.find((response) => response['ok'] === false)).toMatchObject({
+        error: { code: 'FRIEND_REQUEST_PROCESSED' },
+      });
+      expect(setup.cloud.database.documents('friendships')).toHaveLength(1);
+      expect(setup.cloud.database.documents('friend_requests')[0]).toMatchObject({
+        status: 'accepted',
+      });
+    } finally {
+      if (previousMode === undefined) delete process.env['PRODUCT_MODE'];
+      else process.env['PRODUCT_MODE'] = previousMode;
+    }
+  });
+
+  it('keeps invitation, membership and capacity consistent in an accept-reject race', async () => {
+    const previousMode = process.env['PRODUCT_MODE'];
+    process.env['PRODUCT_MODE'] = 'collaboration';
+    try {
+      const setup = await prepareTripInvitation('invitation-race');
+      setup.cloud.setOpenId(setup.bobOpenId);
+
+      const responses = await Promise.all([
+        command(
+          setup.cloud.sdk,
+          'social.respondTripInvitation',
+          { invitationId: setup.invitationId, accept: true },
+          'invitation-race-accept',
+        ),
+        command(
+          setup.cloud.sdk,
+          'social.respondTripInvitation',
+          { invitationId: setup.invitationId, accept: false },
+          'invitation-race-reject',
+        ),
+      ]);
+
+      expect(responses.filter((response) => response['ok'] === true)).toHaveLength(1);
+      expect(responses.find((response) => response['ok'] === false)).toMatchObject({
+        error: { code: 'INVITATION_PROCESSED' },
+      });
+      const invitation = setup.cloud.database.documents('trip_invitations')[0]!;
+      const trip = setup.cloud.database.documents('trips')[0]!;
+      const bob = setup.cloud.database
+        .documents('users')
+        .find((item) => item['id'] === setup.bobUserId)!;
+      if (invitation['status'] === 'accepted') {
+        expect(trip['memberIds']).toEqual([setup.aliceUserId, setup.bobUserId]);
+        expect(bob).toMatchObject({ homeTripCount: 1 });
+      } else {
+        expect(invitation['status']).toBe('rejected');
+        expect(trip['memberIds']).toEqual([setup.aliceUserId]);
+        expect(bob).toMatchObject({ homeTripCount: 0 });
+      }
+    } finally {
+      if (previousMode === undefined) delete process.env['PRODUCT_MODE'];
+      else process.env['PRODUCT_MODE'] = previousMode;
+    }
+  });
 });
+
+async function prepareFriendRequest(prefix: string) {
+  const aliceOpenId = `openid-${prefix}-alice`;
+  const bobOpenId = `openid-${prefix}-bob`;
+  const cloud = createMemoryCloudSdk(aliceOpenId);
+  const alice = successData(
+    await command(cloud.sdk, 'session.bootstrap', {}, `${prefix}-alice-bootstrap`),
+  ) as { userId: string };
+  cloud.setOpenId(bobOpenId);
+  const bob = successData(
+    await command(cloud.sdk, 'session.bootstrap', {}, `${prefix}-bob-bootstrap`),
+  ) as { userId: string; publicId: string };
+  cloud.setOpenId(aliceOpenId);
+  await command(
+    cloud.sdk,
+    'social.sendFriendRequest',
+    { publicId: bob.publicId },
+    `${prefix}-send`,
+  );
+  const requestId = String(cloud.database.documents('friend_requests')[0]?.['id']);
+  return {
+    aliceOpenId,
+    aliceUserId: alice.userId,
+    bobOpenId,
+    bobUserId: bob.userId,
+    cloud,
+    requestId,
+  };
+}
+
+async function prepareTripInvitation(prefix: string) {
+  const setup = await prepareFriendRequest(prefix);
+  setup.cloud.setOpenId(setup.bobOpenId);
+  await command(
+    setup.cloud.sdk,
+    'social.respondFriendRequest',
+    { requestId: setup.requestId, accept: true },
+    `${prefix}-friend-accept`,
+  );
+  setup.cloud.setOpenId(setup.aliceOpenId);
+  const created = successData(
+    await command(setup.cloud.sdk, 'trip.create', { name: '邀请竞态' }, `${prefix}-trip-create`),
+  ) as { tripId: string };
+  await command(
+    setup.cloud.sdk,
+    'social.inviteToTrip',
+    { tripId: created.tripId, inviteeUserId: setup.bobUserId },
+    `${prefix}-trip-invite`,
+  );
+  return {
+    ...setup,
+    invitationId: String(setup.cloud.database.documents('trip_invitations')[0]?.['id']),
+  };
+}
 
 async function command(
   sdk: Parameters<typeof handleApiEvent>[1],

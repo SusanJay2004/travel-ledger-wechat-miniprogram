@@ -6,6 +6,7 @@ import { LedgerService } from './service';
 import { MemorySocialRepository } from './social-repository';
 import { SocialService } from './social-service';
 import { MemoryTripInvitationAcceptance } from './trip-invitation-transaction';
+import { MemoryFriendRequestTransition } from './friend-request-transaction';
 
 class TestClock implements Clock {
   private current = new Date('2026-07-10T08:00:00.000Z');
@@ -63,6 +64,7 @@ describe('SocialService collaboration gates', () => {
       'collaboration',
       undefined,
       new MemoryTripInvitationAcceptance(repository, socialRepository),
+      new MemoryFriendRequestTransition(repository, socialRepository),
     );
     alice = await ledger.bootstrapSession('openid-alice');
     bob = await ledger.bootstrapSession('openid-bob');
@@ -78,6 +80,7 @@ describe('SocialService collaboration gates', () => {
       'solo',
       undefined,
       new MemoryTripInvitationAcceptance(repository, socialRepository),
+      new MemoryFriendRequestTransition(repository, socialRepository),
     );
     await expect(solo.listFriends(alice.id)).rejects.toMatchObject({ code: 'FEATURE_DISABLED' });
     await expect(solo.sendFriendRequest(alice, bob.publicId)).rejects.toMatchObject({
@@ -110,6 +113,7 @@ describe('SocialService collaboration gates', () => {
       'collaboration',
       undefined,
       new MemoryTripInvitationAcceptance(repository, failingRepository),
+      new MemoryFriendRequestTransition(repository, failingRepository),
     );
     const friendRequest = await failingSocial.sendFriendRequest(alice, bob.publicId);
     await failingSocial.respondFriendRequest(bob, friendRequest.id, true);

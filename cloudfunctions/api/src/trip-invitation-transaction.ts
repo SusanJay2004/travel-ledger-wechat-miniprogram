@@ -26,6 +26,9 @@ export interface TripInvitationAcceptanceInput {
 
 export interface TripInvitationAcceptance {
   commit(input: TripInvitationAcceptanceInput): Promise<TripInvitationAcceptanceOutcome>;
+  reject(
+    invitation: TripInvitationDocument,
+  ): Promise<'saved' | 'invitation_conflict' | 'invitation_expired'>;
 }
 
 export class CloudTripInvitationAcceptance implements TripInvitationAcceptance {
@@ -140,6 +143,34 @@ export class CloudTripInvitationAcceptance implements TripInvitationAcceptance {
     });
     return outcome;
   }
+
+  async reject(
+    invitation: TripInvitationDocument,
+  ): Promise<'saved' | 'invitation_conflict' | 'invitation_expired'> {
+    let outcome: 'saved' | 'invitation_conflict' | 'invitation_expired' = 'invitation_conflict';
+    await this.db.runTransaction(async (transaction) => {
+      const reference = transaction
+        .collection<TripInvitationDocument>('trip_invitations')
+        .doc(invitation.id);
+      const current = (await reference.get()).data;
+      if (
+        current.status !== 'pending' ||
+        current.tripId !== invitation.tripId ||
+        current.inviterUserId !== invitation.inviterUserId ||
+        current.inviteeUserId !== invitation.inviteeUserId
+      ) {
+        outcome = 'invitation_conflict';
+        return;
+      }
+      if (invitation.respondedAt === null || current.expiresAt <= invitation.respondedAt) {
+        outcome = 'invitation_expired';
+        return;
+      }
+      outcome = 'saved';
+      await reference.set({ data: withoutDocumentId(invitation) });
+    });
+    return outcome;
+  }
 }
 
 export class MemoryTripInvitationAcceptance implements TripInvitationAcceptance {
@@ -186,6 +217,18 @@ export class MemoryTripInvitationAcceptance implements TripInvitationAcceptance 
     );
     if (saved !== 'saved') return saved;
     await this.social.updateInvitation(input.invitation);
+    return 'saved';
+  }
+
+  async reject(
+    invitation: TripInvitationDocument,
+  ): Promise<'saved' | 'invitation_conflict' | 'invitation_expired'> {
+    const current = await this.social.getInvitation(invitation.id);
+    if (current === null || current.status !== 'pending') return 'invitation_conflict';
+    if (invitation.respondedAt === null || current.expiresAt <= invitation.respondedAt) {
+      return 'invitation_expired';
+    }
+    await this.social.updateInvitation(invitation);
     return 'saved';
   }
 }

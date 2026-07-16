@@ -82,6 +82,7 @@ class MemoryCollection<T> implements Collection<T> {
   }
 
   async remove(): Promise<{ stats: { removed: number } }> {
+    this.database.consumeRemoveFailure(this.name);
     const records = this.database.records(this.name);
     const ids = [...records.entries()]
       .filter(([, document]) => this.matches(document))
@@ -110,6 +111,7 @@ class MemoryCollection<T> implements Collection<T> {
 class MemoryDatabase implements Database {
   readonly command = { lt: (value: string) => value };
   private readonly collections = new Map<string, Map<string, Document>>();
+  private readonly removeFailures = new Set<string>();
 
   collection<T>(name: string): Collection<T> {
     return new MemoryCollection<T>(this, name);
@@ -127,6 +129,15 @@ class MemoryDatabase implements Database {
   seed(name: string, document: Document): void {
     const id = String(document._id ?? document.id);
     this.records(name).set(id, structuredClone(document));
+  }
+
+  failNextRemove(name: string): void {
+    this.removeFailures.add(name);
+  }
+
+  consumeRemoveFailure(name: string): void {
+    if (!this.removeFailures.delete(name)) return;
+    throw new Error(`injected ${name} remove failure`);
   }
 
   read<T>(name: string, id: string): T {
@@ -252,5 +263,39 @@ describe('maintainTrip', () => {
     expect(persisted.settlementCache).toEqual({ ledgerRevision: 4 });
     expect(persisted.bills).toHaveLength(2);
     expect(persisted.projectionOutbox).toHaveLength(1000);
+  });
+
+  it('keeps an orphan trip discoverable until every related collection is cleaned', async () => {
+    const orphan = trip({
+      bills: [],
+      members: [
+        {
+          userId: 'alice',
+          viewState: 'detached',
+          archivedAt: now.toISOString(),
+          purgeAfter: now.toISOString(),
+        },
+      ],
+    });
+    database.seed('trips', { _id: orphan.id, ...orphan });
+    database.seed('audit_logs', { _id: 'audit-1', id: 'audit-1', tripId: orphan.id });
+    database.seed('notifications', {
+      _id: 'notification-1',
+      id: 'notification-1',
+      tripId: orphan.id,
+    });
+    database.failNextRemove('audit_logs');
+
+    await expect(maintainTrip(database, orphan, now)).rejects.toThrow(
+      'injected audit_logs remove failure',
+    );
+    expect(database.records('trips').has(orphan.id)).toBe(true);
+
+    await expect(maintainTrip(database, orphan, now)).resolves.toMatchObject({
+      orphanTripsRemoved: 1,
+    });
+    expect(database.records('trips').has(orphan.id)).toBe(false);
+    expect(database.records('audit_logs')).toHaveLength(0);
+    expect(database.records('notifications')).toHaveLength(0);
   });
 });

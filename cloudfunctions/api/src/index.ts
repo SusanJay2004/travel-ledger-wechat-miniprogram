@@ -14,6 +14,7 @@ import { SocialService } from './social-service';
 import { CloudTripInvitationAcceptance } from './trip-invitation-transaction';
 import { CloudFriendRequestTransition } from './friend-request-transaction';
 import { CloudSocialRelationshipTransition } from './social-relationship-transaction';
+import { deleteFilesCompletely, type DeleteFileResultItem } from './file-deletion';
 
 export interface ApiEvent {
   action?: unknown;
@@ -28,7 +29,9 @@ interface CloudContext {
 export interface CloudSdk {
   DYNAMIC_CURRENT_ENV: symbol;
   database(): CloudDatabase;
-  deleteFile(options: { fileList: string[] }): Promise<unknown>;
+  deleteFile(options: { fileList: string[] }): Promise<{
+    fileList: readonly DeleteFileResultItem[];
+  }>;
   getWXContext(): CloudContext;
   init(options: { env: symbol }): void;
   openapi: {
@@ -187,7 +190,7 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
                 );
               }
             } catch (error: unknown) {
-              await sdk.deleteFile({ fileList: [uploaded.fileID] }).catch(() => undefined);
+              await deleteFilesCompletely(sdk, [uploaded.fileID]).catch(() => undefined);
               if (error instanceof BusinessError) throw error;
               throw new BusinessError('QR_CODE_FAILED', '二维码资料保存失败，请稍后重试。', true);
             }
@@ -469,7 +472,7 @@ async function cleanDeletedUserFiles(sdk: CloudSdk, repository: CloudRepository,
   const fileList = user?.pendingFileDeletionIds ?? [];
   if (fileList.length === 0) return;
   try {
-    await sdk.deleteFile({ fileList: [...fileList] });
+    await deleteFilesCompletely(sdk, fileList);
     const cleared = await repository.updateUser(
       {
         ...user!,

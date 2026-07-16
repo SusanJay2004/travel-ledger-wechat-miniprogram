@@ -7,33 +7,37 @@ import {
   expiresAt,
   pagePath,
 } from './backup';
+import { assertScheduledTrigger, type TriggerContext } from './trigger-auth';
+import { deleteFilesCompletely, type DeleteFileResultItem } from './file-deletion';
 
 interface QueryResult<T> {
   data: T[];
 }
 
-interface Collection<T> {
+export interface Collection<T> {
   add(options: { data: T }): Promise<unknown>;
   doc(id: string): {
     set(options: { data: T }): Promise<unknown>;
   };
   get(): Promise<QueryResult<T>>;
   limit(value: number): Collection<T>;
-  skip(value: number): Collection<T>;
+  orderBy(field: string, direction: 'asc' | 'desc'): Collection<T>;
   where(query: Record<string, unknown>): Collection<T>;
   remove(): Promise<{ stats?: { removed?: number } }>;
 }
 
-interface Database {
+export interface Database {
   collection<T>(name: string): Collection<T>;
-  command: { lt(value: string): unknown };
+  command: { gt(value: string): unknown; lt(value: string): unknown };
 }
 
 interface CloudSdk {
   DYNAMIC_CURRENT_ENV: symbol;
   database(): Database;
-  deleteFile(options: { fileList: string[] }): Promise<unknown>;
-  getWXContext(): { OPENID?: string };
+  deleteFile(options: { fileList: string[] }): Promise<{
+    fileList: readonly DeleteFileResultItem[];
+  }>;
+  getWXContext(): TriggerContext;
   init(options: { env: symbol }): void;
   uploadFile(options: { cloudPath: string; fileContent: Buffer }): Promise<{ fileID: string }>;
 }
@@ -56,10 +60,7 @@ const cloud = require('wx-server-sdk') as CloudSdk;
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 
 export async function main(): Promise<BackupManifest> {
-  const callerOpenId = cloud.getWXContext().OPENID;
-  if (callerOpenId !== undefined && callerOpenId.length > 0) {
-    throw new Error('backup function only accepts trusted trigger events');
-  }
+  assertScheduledTrigger(cloud.getWXContext());
   const db = cloud.database();
   const now = new Date();
   const backupId = `bak_${now.getTime().toString(36)}`;
@@ -149,7 +150,7 @@ async function purgeExpiredBackups(db: Database, nowIso: string): Promise<void> 
     if (expired.data.length === 0) return;
     for (const manifest of expired.data) {
       if (manifest.fileIds.length > 0) {
-        await cloud.deleteFile({ fileList: [...manifest.fileIds] });
+        await deleteFilesCompletely(cloud, manifest.fileIds);
       }
       await db.collection<BackupManifest>('backup_manifests').where({ _id: manifest.id }).remove();
     }
@@ -157,11 +158,12 @@ async function purgeExpiredBackups(db: Database, nowIso: string): Promise<void> 
   }
 }
 
-async function backupCollection(
+export async function backupCollection(
   db: Database,
   collectionName: string,
   prefix: string,
   onPageUploaded: (fileId: string, summary: { documents: number; pages: number }) => Promise<void>,
+  storage: Pick<CloudSdk, 'uploadFile'> = cloud,
 ): Promise<{
   summary: { documents: number; pages: number };
   fileIds: readonly string[];
@@ -169,21 +171,27 @@ async function backupCollection(
   let documents = 0;
   const fileIds: string[] = [];
   let page = 0;
+  let cursor: string | null = null;
   while (true) {
-    const result = await db
-      .collection<Record<string, unknown>>(collectionName)
-      .skip(documents)
-      .limit(100)
-      .get();
+    let query = db.collection<Record<string, unknown>>(collectionName).orderBy('_id', 'asc');
+    if (cursor !== null) query = query.where({ _id: db.command.gt(cursor) });
+    const result = await query.limit(100).get();
     if (result.data.length === 0) break;
+    const lastId = result.data.at(-1)?.['_id'];
+    if (typeof lastId !== 'string' || lastId.length === 0) {
+      throw Object.assign(new Error('backup document is missing a stable _id cursor'), {
+        code: 'BACKUP_CURSOR_INVALID',
+      });
+    }
     const payload = gzipSync(Buffer.from(JSON.stringify(result.data), 'utf8'));
-    const uploaded = await cloud.uploadFile({
+    const uploaded = await storage.uploadFile({
       cloudPath: pagePath(prefix, collectionName, page),
       fileContent: payload,
     });
     fileIds.push(uploaded.fileID);
     documents += result.data.length;
     page += 1;
+    cursor = lastId;
     await onPageUploaded(uploaded.fileID, { documents, pages: page });
     if (result.data.length < 100) break;
   }

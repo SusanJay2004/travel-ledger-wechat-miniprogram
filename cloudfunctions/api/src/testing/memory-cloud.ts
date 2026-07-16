@@ -69,7 +69,7 @@ export function createMemoryCloudSdk(openId = 'test-openid'): {
     database: () => database,
     deleteFile: async ({ fileList }) => {
       deletedFileIds.push(...fileList);
-      return undefined;
+      return { fileList: fileList.map((fileID) => ({ fileID, status: 0 })) };
     },
     getWXContext: context,
     init: () => undefined,

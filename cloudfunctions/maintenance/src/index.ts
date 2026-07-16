@@ -6,6 +6,8 @@ import {
   type RepairUser,
 } from './projection-repair';
 import { cleanDeletedUserFiles, type DeletedUserFileRecord } from './deleted-user-cleanup';
+import { assertScheduledTrigger, type TriggerContext } from './trigger-auth';
+import { deleteFilesCompletely, type DeleteFileResultItem } from './file-deletion';
 
 interface DbCommand {
   lt(value: string): unknown;
@@ -64,8 +66,10 @@ interface DeletedUserDocument extends DeletedUserFileRecord {
 interface CloudSdk {
   DYNAMIC_CURRENT_ENV: symbol;
   database(): Database;
-  deleteFile(options: { fileList: string[] }): Promise<unknown>;
-  getWXContext(): { OPENID?: string };
+  deleteFile(options: { fileList: string[] }): Promise<{
+    fileList: readonly DeleteFileResultItem[];
+  }>;
+  getWXContext(): TriggerContext;
   init(options: { env: symbol }): void;
 }
 
@@ -82,10 +86,7 @@ const cloud = require('wx-server-sdk') as CloudSdk;
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
 
 export async function main(): Promise<Record<string, number>> {
-  const callerOpenId = cloud.getWXContext().OPENID;
-  if (callerOpenId !== undefined && callerOpenId.length > 0) {
-    throw new Error('maintenance function only accepts trusted trigger events');
-  }
+  assertScheduledTrigger(cloud.getWXContext());
   const db = cloud.database();
   const now = new Date();
   const nowIso = now.toISOString();
@@ -165,13 +166,15 @@ export async function maintainTrip(
   const cleaned = cleanTrip(currentTrip, now);
   if (!cleaned.changed && !cleaned.orphaned) return result;
   if (cleaned.orphaned) {
+    // No current member can legitimately mutate a fully detached trip. Remove its
+    // relations first so a partial failure leaves the trip discoverable for retry.
+    await purgeTripRelations(db, currentTrip.id);
     const removed = await db
       .collection<MaintenanceTripDocument>('trips')
       .where({ _id: currentTrip.id, version: currentTrip.version })
       .remove();
     if (removed.stats?.removed === 1) {
       result.orphanTripsRemoved += 1;
-      await purgeTripRelations(db, currentTrip.id);
     } else {
       result.conflictsSkipped += 1;
     }
@@ -333,11 +336,7 @@ async function removeExpired(
   field: string,
   cutoff: string,
 ): Promise<number> {
-  const result = await db
-    .collection(collectionName)
-    .where({ [field]: db.command.lt(cutoff) })
-    .remove();
-  return result.stats?.removed ?? 0;
+  return removeAllMatching(db, collectionName, { [field]: db.command.lt(cutoff) });
 }
 
 async function purgeExpiredSocial(
@@ -379,11 +378,25 @@ async function listAll<T>(collection: Collection<T>): Promise<T[]> {
 
 async function purgeTripRelations(db: Database, tripId: string): Promise<void> {
   await Promise.all([
-    db.collection('audit_logs').where({ tripId }).remove(),
-    db.collection('sync_events').where({ tripId }).remove(),
-    db.collection('trip_invitations').where({ tripId }).remove(),
-    db.collection('notifications').where({ tripId }).remove(),
+    removeAllMatching(db, 'audit_logs', { tripId }),
+    removeAllMatching(db, 'sync_events', { tripId }),
+    removeAllMatching(db, 'trip_invitations', { tripId }),
+    removeAllMatching(db, 'notifications', { tripId }),
   ]);
+}
+
+async function removeAllMatching(
+  db: Database,
+  collectionName: string,
+  query: Record<string, unknown>,
+): Promise<number> {
+  let removed = 0;
+  while (true) {
+    const result = await db.collection(collectionName).where(query).remove();
+    const count = result.stats?.removed ?? 0;
+    removed += count;
+    if (count === 0) return removed;
+  }
 }
 
 async function retryDeletedUserFileCleanup(
@@ -396,7 +409,7 @@ async function retryDeletedUserFileCleanup(
     users,
     {
       deleteFiles: async (fileIds) => {
-        await cloud.deleteFile({ fileList: [...fileIds] });
+        await deleteFilesCompletely(cloud, fileIds);
       },
       clearMarker: async (user, updatedAt) => {
         const updated = await db

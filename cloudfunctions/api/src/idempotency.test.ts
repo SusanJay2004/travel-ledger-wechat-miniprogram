@@ -18,6 +18,10 @@ class MemoryCloudDatabase implements CloudDatabase {
   collection<T>(_name: string): CloudCollection<T> {
     return new MemoryCloudCollection<T>(this);
   }
+
+  async runTransaction(): Promise<never> {
+    throw new Error('not used by idempotency tests');
+  }
 }
 
 class MemoryCloudCollection<T> implements CloudCollection<T> {

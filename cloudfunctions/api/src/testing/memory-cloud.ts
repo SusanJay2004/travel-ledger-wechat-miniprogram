@@ -1,6 +1,8 @@
 import type {
   CloudCollection,
   CloudDatabase,
+  CloudDocumentReference,
+  CloudTransaction,
   QueryResult,
   UpdateResult,
 } from '../cloud-repository';
@@ -10,6 +12,7 @@ type Document = Record<string, unknown>;
 
 export class MemoryCloudDatabase implements CloudDatabase {
   private readonly collections = new Map<string, Map<string, Document>>();
+  private transactionQueue: Promise<void> = Promise.resolve();
 
   collection<T>(name: string): CloudCollection<T> {
     const documents = this.collections.get(name) ?? new Map<string, Document>();
@@ -19,6 +22,34 @@ export class MemoryCloudDatabase implements CloudDatabase {
 
   documents(name: string): readonly Document[] {
     return [...(this.collections.get(name)?.values() ?? [])].map((value) => structuredClone(value));
+  }
+
+  runTransaction(
+    callback: (transaction: CloudTransaction) => void | Promise<unknown>,
+  ): Promise<unknown> {
+    const run = this.transactionQueue.then(async () => {
+      const snapshot = cloneCollections(this.collections);
+      const transaction: CloudTransaction = {
+        get: async <T>(document: CloudDocumentReference<T>) => {
+          const result = await document.get();
+          return { data: () => result.data };
+        },
+        set: async <T>(document: CloudDocumentReference<T>, data: T) => {
+          await document.set({ data });
+        },
+      };
+      try {
+        return await callback(transaction);
+      } catch (error: unknown) {
+        restoreCollections(this.collections, snapshot);
+        throw error;
+      }
+    });
+    this.transactionQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
   }
 }
 
@@ -72,6 +103,7 @@ class MemoryCollection<T> implements CloudCollection<T> {
 
   doc(id: string) {
     return {
+      id,
       get: async () => {
         const document = this.documents.get(id);
         if (document === undefined) throw new Error('document not found');
@@ -81,7 +113,7 @@ class MemoryCollection<T> implements CloudCollection<T> {
         this.documents.delete(id);
       },
       set: async (options: { data: T }) => {
-        this.documents.set(id, structuredClone(toDocument(options.data)));
+        this.documents.set(id, { ...structuredClone(toDocument(options.data)), _id: id });
       },
     };
   }
@@ -139,6 +171,25 @@ class MemoryCollection<T> implements CloudCollection<T> {
   private matches(): Document[] {
     return [...this.documents.values()].filter((document) => matches(document, this.query));
   }
+}
+
+function cloneCollections(
+  collections: ReadonlyMap<string, Map<string, Document>>,
+): Map<string, Map<string, Document>> {
+  return new Map(
+    [...collections].map(([name, documents]) => [
+      name,
+      new Map([...documents].map(([id, document]) => [id, structuredClone(document)])),
+    ]),
+  );
+}
+
+function restoreCollections(
+  collections: Map<string, Map<string, Document>>,
+  snapshot: ReadonlyMap<string, Map<string, Document>>,
+): void {
+  collections.clear();
+  for (const [name, documents] of snapshot) collections.set(name, documents);
 }
 
 function toDocument(value: unknown): Document {

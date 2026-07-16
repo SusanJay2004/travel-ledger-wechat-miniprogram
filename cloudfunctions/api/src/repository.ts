@@ -12,7 +12,18 @@ export interface Repository {
   listTripsForUser(userId: string): Promise<readonly TripDocument[]>;
   getTrip(tripId: string): Promise<TripDocument | null>;
   createTrip(trip: TripDocument): Promise<void>;
+  createTripWithHomeCapacity(
+    trip: TripDocument,
+    userId: string,
+    limit: number,
+  ): Promise<'saved' | 'capacity_exceeded'>;
   replaceTrip(trip: TripDocument, expectedVersion: number): Promise<boolean>;
+  replaceTripWithHomeCapacity(
+    trip: TripDocument,
+    expectedVersion: number,
+    homeCountDeltas: Readonly<Record<string, number>>,
+    limit: number,
+  ): Promise<'saved' | 'version_conflict' | 'capacity_exceeded'>;
 }
 
 export class MemoryRepository implements Repository {
@@ -76,11 +87,52 @@ export class MemoryRepository implements Repository {
     this.trips.set(trip.id, structuredClone(trip));
   }
 
+  async createTripWithHomeCapacity(
+    trip: TripDocument,
+    userId: string,
+    limit: number,
+  ): Promise<'saved' | 'capacity_exceeded'> {
+    const user = this.users.get(userId);
+    if (user === undefined) throw new Error('USER_NOT_FOUND');
+    if (user.homeTripCount >= limit) return 'capacity_exceeded';
+    if (this.trips.has(trip.id)) throw new Error('DUPLICATE_TRIP');
+    this.users.set(userId, {
+      ...user,
+      homeTripCount: user.homeTripCount + 1,
+      version: user.version + 1,
+    });
+    this.trips.set(trip.id, structuredClone(trip));
+    return 'saved';
+  }
+
   async replaceTrip(trip: TripDocument, expectedVersion: number): Promise<boolean> {
     const current = this.trips.get(trip.id);
     if (current === undefined || current.version !== expectedVersion) return false;
     this.trips.set(trip.id, structuredClone(trip));
     return true;
+  }
+
+  async replaceTripWithHomeCapacity(
+    trip: TripDocument,
+    expectedVersion: number,
+    homeCountDeltas: Readonly<Record<string, number>>,
+    limit: number,
+  ): Promise<'saved' | 'version_conflict' | 'capacity_exceeded'> {
+    const current = this.trips.get(trip.id);
+    if (current === undefined || current.version !== expectedVersion) return 'version_conflict';
+    const updates = new Map<string, UserDocument>();
+    for (const [userId, delta] of Object.entries(homeCountDeltas)) {
+      if (delta === 0) continue;
+      const user = this.users.get(userId);
+      if (user === undefined) throw new Error('USER_NOT_FOUND');
+      const homeTripCount = user.homeTripCount + delta;
+      if (homeTripCount < 0) throw new Error('HOME_TRIP_COUNT_UNDERFLOW');
+      if (homeTripCount > limit) return 'capacity_exceeded';
+      updates.set(userId, { ...user, homeTripCount, version: user.version + 1 });
+    }
+    for (const [userId, user] of updates) this.users.set(userId, structuredClone(user));
+    this.trips.set(trip.id, structuredClone(trip));
+    return 'saved';
   }
 }
 

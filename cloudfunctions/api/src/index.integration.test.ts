@@ -172,6 +172,28 @@ describe('cloud API command integration', () => {
       else process.env['PRODUCT_MODE'] = previousMode;
     }
   });
+
+  it('atomically admits only one of two concurrent trips at the 100-trip boundary', async () => {
+    const cloud = createMemoryCloudSdk('openid-capacity-race');
+    const bootstrap = await command(cloud.sdk, 'session.bootstrap', {}, 'capacity-race-bootstrap');
+    const profile = successData(bootstrap) as { userId: string };
+    const users = cloud.database.collection<Record<string, unknown>>('users');
+    const stored = cloud.database.documents('users')[0]!;
+    await users.doc(profile.userId).set({
+      data: { ...stored, homeTripCount: 99, version: Number(stored['version']) + 1 },
+    });
+
+    const results = await Promise.all([
+      command(cloud.sdk, 'trip.create', { name: '并发甲' }, 'capacity-race-first'),
+      command(cloud.sdk, 'trip.create', { name: '并发乙' }, 'capacity-race-second'),
+    ]);
+
+    expect(results.filter((result) => result['ok'] === true)).toHaveLength(1);
+    const failure = results.find((result) => result['ok'] === false);
+    expect((failure?.['error'] as { code?: string } | undefined)?.code).toBe('TRIP_LIMIT_REACHED');
+    expect(cloud.database.documents('users')[0]).toMatchObject({ homeTripCount: 100 });
+    expect(cloud.database.documents('trips')).toHaveLength(1);
+  });
 });
 
 async function command(

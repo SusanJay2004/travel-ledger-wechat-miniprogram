@@ -27,6 +27,8 @@
 8. 执行 `npm install`、`npm run check` 和 `npm run build`。
 9. 在开发者工具中上传并部署 `cloudfunctions/api`，选择“云端安装依赖”。
 
+当前项目尚无生产数据，用户的 `homeTripCount` 在首次登录时从 0 初始化。若未来从旧版本升级，部署事务容量版本前必须暂停写入，按每个用户 `viewState=home` 的行程数回填并抽样核对，不能直接以 0 覆盖。
+
 ## 云函数环境变量
 
 - `PRODUCT_MODE=solo|collaboration`：默认 `solo`，只有协作发布门禁通过后才可启用完整社交功能。

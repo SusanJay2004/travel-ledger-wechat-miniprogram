@@ -184,6 +184,7 @@ describe('LedgerService solo flow', () => {
       tripId: trip.id,
       expectedVersion: completed.version,
     });
+    expect((await repository.getUser(user.id))?.homeTripCount).toBe(0);
     await expect(
       service.archiveTrip(user.id, {
         tripId: trip.id,
@@ -201,6 +202,7 @@ describe('LedgerService solo flow', () => {
       expectedVersion: archived.version,
     });
     expect(restored.members[0]?.viewState).toBe('home');
+    expect((await repository.getUser(user.id))?.homeTripCount).toBe(1);
     expect(await service.listTrips(user.id)).toHaveLength(1);
   });
 
@@ -291,8 +293,11 @@ describe('LedgerService solo flow', () => {
       tripId: trip.id,
       expectedVersion: completed.version,
     });
-    const countHomeTrips = vi.spyOn(repository, 'countHomeTrips');
-    countHomeTrips.mockResolvedValueOnce(100);
+    const archivedUser = (await repository.getUser(user.id))!;
+    await repository.updateUser(
+      { ...archivedUser, homeTripCount: 100, version: archivedUser.version + 1 },
+      archivedUser.version,
+    );
     await expect(
       service.reopenTrip(user.id, {
         tripId: trip.id,
@@ -300,7 +305,11 @@ describe('LedgerService solo flow', () => {
       }),
     ).rejects.toMatchObject({ code: 'MEMBER_TRIP_LIMIT_REACHED' });
 
-    countHomeTrips.mockResolvedValueOnce(99);
+    const fullUser = (await repository.getUser(user.id))!;
+    await repository.updateUser(
+      { ...fullUser, homeTripCount: 99, version: fullUser.version + 1 },
+      fullUser.version,
+    );
     const reopened = await service.reopenTrip(user.id, {
       tripId: trip.id,
       expectedVersion: archived.version,
@@ -484,7 +493,8 @@ describe('LedgerService solo flow', () => {
         payers: [{ memberId: user.id, displayName: user.displayName, paidCents: 100 }],
       },
     });
-    const withAvatar = await service.updateProfile(user, {
+    const currentUser = (await repository.getUser(user.id))!;
+    const withAvatar = await service.updateProfile(currentUser, {
       displayName: user.displayName,
       signature: user.signature,
       avatarUrl: `cloud://development/avatars/${user.id}/avatar.png`,
@@ -658,9 +668,9 @@ describe('LedgerService solo flow', () => {
   });
 
   it('enforces the 100 home-trip limit at the service boundary', async () => {
-    const count = vi.spyOn(repository, 'countHomeTrips');
-    count.mockResolvedValueOnce(100);
-    await expect(service.createTrip(user, { name: '超额行程' })).rejects.toMatchObject({
+    const fullUser = { ...user, homeTripCount: 100, version: user.version + 1 };
+    await repository.updateUser(fullUser, user.version);
+    await expect(service.createTrip(fullUser, { name: '超额行程' })).rejects.toMatchObject({
       code: 'TRIP_LIMIT_REACHED',
     });
   });

@@ -13,11 +13,14 @@
 - `openId`：微信环境内用户身份，只允许云端读取。
 - `publicId`：10 位公开搜索 ID。
 - `displayName`、`signature`、`avatarUrl`：用户资料。
+- `homeTripCount`：首页行程的原子容量计数；创建、邀请加入、恢复、重开、归档和退出均与行程文档在同一云数据库事务中增减。
 - `avatarUrl` 必须位于 `avatars/<当前内部用户ID>/`，并由云存储“创建者本人写入/删除”规则与云端路径校验共同保护，不能引用其他账号文件。
 - `qrCodeFileId`、`qrSceneToken`：协作版个人小程序码文件和 20 位随机不透明场景令牌；二维码不包含公开 ID、内部 ID 或 `OpenID`，云端解析后只返回可申请好友的公开资料。
 - `status`、`version`、`createdAt`、`updatedAt`：生命周期与乐观并发字段。资料、二维码和注销均按 `version` 条件更新，避免并发请求覆盖注销状态。
 
 唯一索引：`openId`、`publicId`、稀疏 `qrSceneToken`；普通索引：`_id + version`、`status`。
+
+首页 100 条上限不能通过“先查询数量、再写行程”实现，因为并发请求会同时通过。服务端以 `users.homeTripCount` 为事务内计数器：事务读取用户和行程版本，校验增量后同时写入；账号资料更新也递增同一用户版本，避免覆盖计数。部署到已有数据的环境前必须先按 `members.viewState == home` 回填并核对计数；当前首次开发环境无历史生产数据，可从 0 初始化。
 
 ## `trips`
 

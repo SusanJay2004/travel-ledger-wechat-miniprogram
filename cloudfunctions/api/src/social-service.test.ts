@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { Clock, IdGenerator, UserDocument } from './models';
 import { MemoryRepository } from './repository';
@@ -98,6 +98,7 @@ describe('SocialService collaboration gates', () => {
     const joined = await ledger.getTrip(bob.id, trip.id);
     expect(joined.memberIds).toEqual([alice.id, bob.id]);
     expect(joined.members[1]?.displayNameSnapshot).toBe(bob.displayName);
+    expect((await repository.getUser(bob.id))?.homeTripCount).toBe(1);
   });
 
   it('makes blocking remove friendship and hide exact ID search', async () => {
@@ -134,6 +135,7 @@ describe('SocialService collaboration gates', () => {
     await social.respondTripInvitation(bob, invitation.id, true);
     const left = await social.leaveTrip(bob, trip.id);
     expect(left.memberIds).toEqual([alice.id]);
+    expect((await repository.getUser(bob.id))?.homeTripCount).toBe(0);
 
     const secondTrip = await ledger.createTrip(alice, { name: '账单保护' });
     const secondInvitation = await social.inviteToTrip(alice, secondTrip.id, bob.id);
@@ -186,8 +188,11 @@ describe('SocialService collaboration gates', () => {
     const trip = await ledger.createTrip(alice, { name: '容量检查' });
     const invitation = await social.inviteToTrip(alice, trip.id, bob.id);
 
-    const countHomeTrips = vi.spyOn(repository, 'countHomeTrips');
-    countHomeTrips.mockResolvedValueOnce(100);
+    const storedBob = (await repository.getUser(bob.id))!;
+    await repository.updateUser(
+      { ...storedBob, homeTripCount: 100, version: storedBob.version + 1 },
+      storedBob.version,
+    );
     await expect(social.respondTripInvitation(bob, invitation.id, true)).rejects.toMatchObject({
       code: 'TRIP_LIMIT_REACHED',
     });

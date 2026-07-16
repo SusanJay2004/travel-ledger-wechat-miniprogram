@@ -22,6 +22,10 @@ class MemoryDb implements CloudDatabase {
   collection<T>(_name: string): CloudCollection<T> {
     return new MemoryCollection<T>(this);
   }
+
+  async runTransaction(): Promise<never> {
+    throw new Error('not used by rate-limit tests');
+  }
 }
 
 class MemoryCollection<T> implements CloudCollection<T> {

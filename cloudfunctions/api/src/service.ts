@@ -148,6 +148,7 @@ export class LedgerService {
         avatarUrl: null,
         qrCodeFileId: null,
         qrSceneToken: null,
+        homeTripCount: 0,
         status: 'active',
         version: 1,
         createdAt: timestamp,
@@ -308,6 +309,7 @@ export class LedgerService {
         ...deleting,
         openId: `deleted:${user.id}`,
         publicId: `DEL${user.id.slice(-7).toUpperCase()}`,
+        homeTripCount: 0,
         status: 'deleted',
         version: deleting.version + 1,
       },
@@ -347,13 +349,6 @@ export class LedgerService {
     const name = input.name.trim();
     assertBusiness(isValidTripName(name), 'TRIP_NAME_INVALID', '行程名称格式不正确。');
     await this.contentSecurity.checkText(user.openId, 3, name);
-    const homeCount = await this.repository.countHomeTrips(user.id);
-    assertBusiness(
-      homeCount < LIMITS.activeTripsPerUser,
-      'TRIP_LIMIT_REACHED',
-      `首页最多保留 ${LIMITS.activeTripsPerUser} 条行程。`,
-    );
-
     const timestamp = this.clock.now().toISOString();
     const member: TripMemberDocument = {
       userId: user.id,
@@ -383,7 +378,16 @@ export class LedgerService {
       completedBy: null,
     };
     const prepared = this.publisher.prepareTripCreated(trip, user.id);
-    await this.repository.createTrip(prepared);
+    const saved = await this.repository.createTripWithHomeCapacity(
+      prepared,
+      user.id,
+      LIMITS.activeTripsPerUser,
+    );
+    assertBusiness(
+      saved === 'saved',
+      'TRIP_LIMIT_REACHED',
+      `首页最多保留 ${LIMITS.activeTripsPerUser} 条行程。`,
+    );
     await this.publisher.publishTripCreated(prepared, user.id);
     return prepared;
   }
@@ -670,23 +674,12 @@ export class LedgerService {
   async reopenTrip(userId: string, input: ReopenTripInput): Promise<TripDocument> {
     const trip = await this.versionedTrip(userId, input.tripId, input.expectedVersion);
     assertBusiness(trip.status === 'completed', 'TRIP_NOT_COMPLETED', '该行程尚未完结。');
-    for (const member of trip.members) {
-      if (member.viewState === 'archived') {
-        const homeCount = await this.repository.countHomeTrips(member.userId);
-        assertBusiness(
-          homeCount < LIMITS.activeTripsPerUser,
-          'MEMBER_TRIP_LIMIT_REACHED',
-          '有同行人的首页已满，暂时无法重新开启。',
-          { memberId: member.userId },
-        );
-      }
-    }
     const members = trip.members.map((member) =>
       member.viewState === 'archived'
         ? { ...member, viewState: 'home' as const, archivedAt: null, purgeAfter: null }
         : member,
     );
-    return this.saveTrip(
+    return this.saveTripWithHomeCapacity(
       trip,
       userId,
       {
@@ -698,6 +691,13 @@ export class LedgerService {
       'trip.reopened',
       'trip',
       trip.id,
+      Object.fromEntries(
+        trip.members
+          .filter((member) => member.viewState === 'archived')
+          .map((member) => [member.userId, 1]),
+      ),
+      'MEMBER_TRIP_LIMIT_REACHED',
+      '有同行人的首页已满，暂时无法重新开启。',
     );
   }
 
@@ -720,7 +720,17 @@ export class LedgerService {
           }
         : member,
     );
-    return this.saveTrip(trip, userId, { members }, 'member.archived', 'member', userId);
+    return this.saveTripWithHomeCapacity(
+      trip,
+      userId,
+      { members },
+      'member.archived',
+      'member',
+      userId,
+      { [userId]: -1 },
+      'TRIP_LIMIT_REACHED',
+      `首页最多保留 ${LIMITS.activeTripsPerUser} 条行程。`,
+    );
   }
 
   async restoreTrip(userId: string, input: RestoreTripInput): Promise<TripDocument> {
@@ -737,18 +747,22 @@ export class LedgerService {
       'TRIP_RESTORE_EXPIRED',
       '该行程已超过 30 天恢复期。',
     );
-    const homeCount = await this.repository.countHomeTrips(userId);
-    assertBusiness(
-      homeCount < LIMITS.activeTripsPerUser,
-      'TRIP_LIMIT_REACHED',
-      `首页最多保留 ${LIMITS.activeTripsPerUser} 条行程。`,
-    );
     const members = trip.members.map((item) =>
       item.userId === userId
         ? { ...item, viewState: 'home' as const, archivedAt: null, purgeAfter: null }
         : item,
     );
-    return this.saveTrip(trip, userId, { members }, 'member.restored', 'member', userId);
+    return this.saveTripWithHomeCapacity(
+      trip,
+      userId,
+      { members },
+      'member.restored',
+      'member',
+      userId,
+      { [userId]: 1 },
+      'TRIP_LIMIT_REACHED',
+      `首页最多保留 ${LIMITS.activeTripsPerUser} 条行程。`,
+    );
   }
 
   async removeArchivedTrip(userId: string, input: RemoveArchivedTripInput): Promise<TripDocument> {
@@ -833,6 +847,54 @@ export class LedgerService {
     );
     const replaced = await this.repository.replaceTrip(prepared, trip.version);
     if (!replaced) {
+      throw new BusinessError('VERSION_CONFLICT', '行程已被其他成员修改，请刷新后重试。');
+    }
+    await this.publisher.publishTripChange(trip, prepared, action, userId, entityType, entityId);
+    return prepared;
+  }
+
+  private async saveTripWithHomeCapacity(
+    trip: TripDocument,
+    userId: string,
+    changes: Partial<TripDocument>,
+    action: string,
+    entityType: 'trip' | 'date' | 'bill' | 'member',
+    entityId: string,
+    homeCountDeltas: Readonly<Record<string, number>>,
+    capacityErrorCode: string,
+    capacityErrorMessage: string,
+  ): Promise<TripDocument> {
+    const next: TripDocument = {
+      ...trip,
+      ...changes,
+      ledgerRevision: changes.ledgerRevision ?? trip.ledgerRevision + 1,
+      ...(changes.settlementCache === undefined ? { settlementCache: null } : {}),
+      version: trip.version + 1,
+      updatedBy: userId,
+      updatedAt: this.clock.now().toISOString(),
+    };
+    const prepared = this.publisher.prepareTripChange(
+      trip,
+      next,
+      action,
+      userId,
+      entityType,
+      entityId,
+    );
+    const saved = await this.repository.replaceTripWithHomeCapacity(
+      prepared,
+      trip.version,
+      homeCountDeltas,
+      LIMITS.activeTripsPerUser,
+    );
+    if (saved === 'capacity_exceeded') {
+      throw new BusinessError(capacityErrorCode, capacityErrorMessage, false, {
+        memberIds: Object.keys(homeCountDeltas).filter(
+          (memberId) => homeCountDeltas[memberId]! > 0,
+        ),
+      });
+    }
+    if (saved === 'version_conflict') {
       throw new BusinessError('VERSION_CONFLICT', '行程已被其他成员修改，请刷新后重试。');
     }
     await this.publisher.publishTripChange(trip, prepared, action, userId, entityType, entityId);

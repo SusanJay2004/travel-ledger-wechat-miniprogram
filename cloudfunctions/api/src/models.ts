@@ -13,6 +13,7 @@ export interface UserDocument {
   qrCodeFileId?: string | null;
   qrSceneToken?: string | null;
   pendingFileDeletionIds?: readonly string[];
+  homeTripCount: number;
   status: 'active' | 'deleting' | 'deleted';
   version: number;
   createdAt: string;

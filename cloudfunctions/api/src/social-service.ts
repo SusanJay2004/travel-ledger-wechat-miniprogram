@@ -368,8 +368,15 @@ export class SocialService {
       'member',
       currentUser.id,
     );
-    const saved = await this.repository.replaceTrip(prepared, trip.version);
-    if (!saved) throw new BusinessError('VERSION_CONFLICT', '行程已被修改，请刷新后重试。');
+    const saved = await this.repository.replaceTripWithHomeCapacity(
+      prepared,
+      trip.version,
+      { [currentUser.id]: -1 },
+      LIMITS.activeTripsPerUser,
+    );
+    if (saved !== 'saved') {
+      throw new BusinessError('VERSION_CONFLICT', '行程已被修改，请刷新后重试。');
+    }
     await this.publisher.publishTripChange(
       trip,
       prepared,
@@ -435,11 +442,6 @@ export class SocialService {
         'MEMBER_LIMIT_REACHED',
         '行程成员已满。',
       );
-      assertBusiness(
-        (await this.repository.countHomeTrips(currentUser.id)) < LIMITS.activeTripsPerUser,
-        'TRIP_LIMIT_REACHED',
-        '你的首页行程已满，暂时无法接受邀请。',
-      );
       const next: TripDocument = {
         ...trip,
         memberIds: [...trip.memberIds, currentUser.id],
@@ -468,8 +470,18 @@ export class SocialService {
         'member',
         currentUser.id,
       );
-      const saved = await this.repository.replaceTrip(prepared, trip.version);
-      if (!saved) throw new BusinessError('VERSION_CONFLICT', '行程已被修改，请重新处理邀请。');
+      const saved = await this.repository.replaceTripWithHomeCapacity(
+        prepared,
+        trip.version,
+        { [currentUser.id]: 1 },
+        LIMITS.activeTripsPerUser,
+      );
+      if (saved === 'capacity_exceeded') {
+        throw new BusinessError('TRIP_LIMIT_REACHED', '你的首页行程已满，暂时无法接受邀请。');
+      }
+      if (saved === 'version_conflict') {
+        throw new BusinessError('VERSION_CONFLICT', '行程已被修改，请重新处理邀请。');
+      }
       await this.publisher.publishTripChange(
         trip,
         prepared,

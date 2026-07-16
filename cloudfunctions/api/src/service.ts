@@ -11,6 +11,7 @@ import {
 } from '@travel-ledger/domain';
 
 import { assertBusiness, BusinessError } from './errors';
+import { disabledContentSecurity, type ContentSecurity } from './content-security';
 import type {
   BillDocument,
   Clock,
@@ -111,6 +112,7 @@ export class LedgerService {
     private readonly clock: Clock,
     private readonly ids: IdGenerator,
     private readonly publisher: TripChangePublisher = noopPublisher,
+    private readonly contentSecurity: ContentSecurity = disabledContentSecurity(),
   ) {}
 
   async bootstrapSession(openId: string): Promise<UserDocument> {
@@ -166,6 +168,10 @@ export class LedgerService {
       'AVATAR_URL_INVALID',
       '头像地址格式不正确。',
     );
+    await this.contentSecurity.checkText(user.openId, 2, displayName, signature);
+    if (input.avatarUrl !== null && input.avatarUrl !== user.avatarUrl) {
+      await this.contentSecurity.checkImage(user.openId, input.avatarUrl);
+    }
     const next: UserDocument = {
       ...user,
       displayName,
@@ -275,6 +281,7 @@ export class LedgerService {
   async createTrip(user: UserDocument, input: CreateTripInput): Promise<TripDocument> {
     const name = input.name.trim();
     assertBusiness(isValidTripName(name), 'TRIP_NAME_INVALID', '行程名称格式不正确。');
+    await this.contentSecurity.checkText(user.openId, 3, name);
     const homeCount = await this.repository.countHomeTrips(user.id);
     assertBusiness(
       homeCount < LIMITS.activeTripsPerUser,
@@ -319,6 +326,7 @@ export class LedgerService {
     const name = input.name.trim();
     assertBusiness(isValidTripName(name), 'TRIP_NAME_INVALID', '行程名称格式不正确。');
     const trip = await this.editableTrip(userId, input.tripId, input.expectedVersion);
+    await this.checkTextForUser(userId, 3, name);
     return this.saveTrip(trip, userId, { name }, 'trip.renamed', 'trip', trip.id);
   }
 
@@ -350,6 +358,7 @@ export class LedgerService {
       `每段行程最多保留 ${LIMITS.billsPerTrip} 条账单。`,
     );
     const validationCodes = validateBillForTrip(trip, input.bill);
+    await this.checkTextForUser(userId, 3, input.bill.title);
 
     const timestamp = this.clock.now().toISOString();
     const bill: BillDocument = {
@@ -386,6 +395,7 @@ export class LedgerService {
     const existing = requiredBill(trip, input.billId);
     assertBusiness(existing.deletedAt === null, 'BILL_DELETED', '已删除账单不能直接修改。');
     const validationCodes = validateBillForTrip(trip, input.bill);
+    await this.checkTextForUser(userId, 3, input.bill.title);
     const timestamp = this.clock.now().toISOString();
     const replacement: BillDocument = {
       ...structuredClone(input.bill),
@@ -649,6 +659,12 @@ export class LedgerService {
     const trip = await this.repository.getTrip(tripId);
     assertBusiness(trip !== null, 'TRIP_NOT_FOUND', '找不到该行程。');
     return trip;
+  }
+
+  private async checkTextForUser(userId: string, scene: number, ...values: string[]) {
+    const user = await this.repository.getUser(userId);
+    assertBusiness(user !== null && user.status === 'active', 'USER_NOT_FOUND', '找不到当前用户。');
+    await this.contentSecurity.checkText(user.openId, scene, ...values);
   }
 
   private async saveTrip(

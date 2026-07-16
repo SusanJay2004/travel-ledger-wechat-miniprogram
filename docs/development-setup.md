@@ -15,7 +15,7 @@
 3. 将开发者工具生成的 `project.private.config.json` 保留在本机；不要提交。
 4. 在项目设置中填写真实 AppID。仓库中的 `project.config.json` 使用游客 AppID，防止公开真实配置。
 5. 开通云开发，创建一个开发环境。生产发布时另建生产环境。
-6. 在云开发数据库创建 `users` 和 `trips` 集合，客户端权限均设为“所有用户不可读写”。所有业务读写只经 `api` 云函数。
+6. 按 [cloud-database.md](./cloud-database.md) 创建完整集合、索引和安全规则。除 `sync_events` 的用户自有读取规则外，客户端均不可直接读写权威集合。
 7. 为集合建立索引：
    - `users.openId`：唯一索引。
    - `users.publicId`：唯一索引。
@@ -23,6 +23,14 @@
    - `trips.version`：普通索引，用于乐观并发更新。
 8. 执行 `npm install`、`npm run check` 和 `npm run build`。
 9. 在开发者工具中上传并部署 `cloudfunctions/api`，选择“云端安装依赖”。
+
+## 云函数环境变量
+
+- `PRODUCT_MODE=solo|collaboration`：默认 `solo`，只有协作发布门禁通过后才可启用完整社交功能。
+- `MINIPROGRAM_ENV_VERSION=develop|trial|release`：控制个人小程序码落到开发版、体验版或正式版。
+- `CONTENT_SECURITY_MODE=disabled`：只允许本地、无真实用户数据的开发环境临时设置。体验与生产环境必须删除该变量，让文本和头像审核失败关闭。
+
+云函数需要在微信公众平台和云开发中具备内容安全接口、小程序码、云存储读写与删除所需权限。发布前必须用真实开发 AppID 验证这些接口；游客 AppID 无法完成该验证。
 
 ## 常用命令
 

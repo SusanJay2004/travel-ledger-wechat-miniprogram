@@ -1,5 +1,6 @@
 import { CloudRepository, type CloudDatabase } from './cloud-repository';
 import { CloudSocialRepository } from './cloud-social-repository';
+import { WechatContentSecurity } from './content-security';
 import { BusinessError } from './errors';
 import { EventPublisher } from './event-publisher';
 import { secureIdGenerator, systemClock } from './generators';
@@ -24,6 +25,15 @@ interface CloudSdk {
   getWXContext(): CloudContext;
   init(options: { env: symbol }): void;
   openapi: {
+    security: {
+      imgSecCheck(options: { media: { contentType: string; value: Buffer } }): Promise<unknown>;
+      msgSecCheck(options: {
+        content: string;
+        openid: string;
+        scene: number;
+        version: number;
+      }): Promise<{ result?: { suggest?: string; label?: number } }>;
+    };
     wxacode: {
       getUnlimited(options: {
         scene: string;
@@ -33,6 +43,7 @@ interface CloudSdk {
       }): Promise<{ buffer?: Buffer }>;
     };
   };
+  downloadFile(options: { fileID: string }): Promise<{ fileContent: Buffer }>;
   uploadFile(options: { cloudPath: string; fileContent: Buffer }): Promise<{ fileID: string }>;
 }
 
@@ -55,7 +66,17 @@ export async function main(event: ApiEvent): Promise<unknown> {
   const socialRepository = new CloudSocialRepository(database);
   const publisher = new EventPublisher(socialRepository, repository);
   const idempotency = new IdempotencyService(database, systemClock);
-  const service = new LedgerService(repository, systemClock, secureIdGenerator, publisher);
+  const contentSecurity = new WechatContentSecurity(
+    cloud,
+    process.env['CONTENT_SECURITY_MODE'] !== 'disabled',
+  );
+  const service = new LedgerService(
+    repository,
+    systemClock,
+    secureIdGenerator,
+    publisher,
+    contentSecurity,
+  );
   const productMode = process.env['PRODUCT_MODE'] === 'collaboration' ? 'collaboration' : 'solo';
   const social = new SocialService(
     repository,

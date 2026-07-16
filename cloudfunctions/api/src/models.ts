@@ -117,6 +117,16 @@ export interface IdempotencyRecordDocument {
   expiresAt: string;
 }
 
+export interface RateLimitRecordDocument {
+  id: string;
+  ownerHash: string;
+  requestId: string;
+  scope: string;
+  bucket: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
 export interface TripMemberDocument {
   userId: string;
   displayNameSnapshot: string;

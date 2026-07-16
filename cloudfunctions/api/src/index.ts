@@ -6,6 +6,7 @@ import { EventPublisher } from './event-publisher';
 import { secureIdGenerator, systemClock } from './generators';
 import { IdempotencyService, isWriteAction } from './idempotency';
 import { LedgerService } from './service';
+import { RateLimiter } from './rate-limit';
 import { SocialService } from './social-service';
 
 interface ApiEvent {
@@ -66,6 +67,7 @@ export async function main(event: ApiEvent): Promise<unknown> {
   const socialRepository = new CloudSocialRepository(database);
   const publisher = new EventPublisher(socialRepository, repository);
   const idempotency = new IdempotencyService(database, systemClock);
+  const rateLimiter = new RateLimiter(database, systemClock);
   const contentSecurity = new WechatContentSecurity(
     cloud,
     process.env['CONTENT_SECURITY_MODE'] !== 'disabled',
@@ -88,6 +90,7 @@ export async function main(event: ApiEvent): Promise<unknown> {
   );
 
   try {
+    await rateLimiter.consume(openId, requestId, action);
     const existingUser = await repository.findUserByOpenId(openId);
     if (action === 'session.deleteAccount' && existingUser === null) {
       await idempotency.execute(openId, requestId, action, async () => null);

@@ -24,15 +24,21 @@
     "color": "#5F6A67",
     "list": [
       {
+        "iconPath": "assets/tabbar/tab-home.png",
         "pagePath": "pages/home/index",
+        "selectedIconPath": "assets/tabbar/tab-home-selected.png",
         "text": "首页"
       },
       {
+        "iconPath": "assets/tabbar/tab-messages.png",
         "pagePath": "pages/messages/index",
+        "selectedIconPath": "assets/tabbar/tab-messages-selected.png",
         "text": "消息"
       },
       {
+        "iconPath": "assets/tabbar/tab-profile.png",
         "pagePath": "pages/profile/index",
+        "selectedIconPath": "assets/tabbar/tab-profile-selected.png",
         "text": "我的"
       }
     ],

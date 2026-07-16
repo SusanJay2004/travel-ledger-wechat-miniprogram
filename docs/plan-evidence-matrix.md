@@ -30,6 +30,7 @@
 | 实时同步、审计与失败投影修复                   | 本地已证实；云端待演练     | outbox、维护修复和确定性 ID 测试                      | 人为断投影后真实云维护重放         |
 | 30 天备份、恢复手册、180 天审计                | 本地实现；演练待完成       | backup/maintenance 测试与运维文档                     | 云存储备份、隔离恢复和告警         |
 | 88rpx、核心 WCAG AA、字体放大适配              | 本地令牌已证实；真机待证实 | accessibility 测试和 WXSS                             | 常见 iOS/Android 尺寸截图验收      |
+| 应用头像与底栏品牌图标                         | 本地素材已完成；平台待确认 | `assets/brand`、`miniprogram/assets/tabbar`           | 后台上传、圆形/圆角裁切与真机显示  |
 
 ## 自动化基线
 
@@ -42,7 +43,7 @@ npm run build
 npm audit --audit-level=critical
 ```
 
-最近本地结果为 19 个测试文件、93 项测试通过，三个云函数构建成功，无 critical 依赖公告。微信官方 `wx-server-sdk 4.0.2` 仍带 5 high + 1 moderate 上游公告，处置规则见 `dependency-security.md`，因此依赖发布门禁仍未通过。
+最近本地结果为 20 个测试文件、95 项测试通过，三个云函数构建成功，无 critical 依赖公告。微信官方 `wx-server-sdk 4.0.2` 仍带 5 high + 1 moderate 上游公告，处置规则见 `dependency-security.md`，因此依赖发布门禁仍未通过。
 
 ## 真实环境与发布阻断
 

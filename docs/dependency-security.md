@@ -5,6 +5,7 @@
 ## 当前结论
 
 - 项目使用微信官方 `wx-server-sdk 4.0.2`，这是审计时 npm registry 的最新正式版。
+- 2026-07-17 再次核对 registry：CloudBase 虽已发布 `@cloudbase/node-sdk 3.18.5` 和 4.0.3，但两者仍固定使用 `axios 0.27.2`；`wx-server-sdk 4.0.2` 又精确固定 3.17.2，因此不能用受支持的小版本更新消除公告。
 - 干净执行 `npm ci` 后，`npm audit` 仍报告 6 个公告（5 high、1 moderate），全部来自官方 SDK 的依赖树。
 - 其中 3 个 high 来自 `@cloudbase/node-sdk 3.17.2 -> axios 0.27.2`；另外 2 个 high 与 1 个 moderate 来自 CloudBase 数据库固定的 `lodash.set 4.3.2` 与 `lodash.unset 4.5.2`。
 - 尝试降级到审计建议的 `wx-server-sdk 2.5.3` 后，结果恶化为 16 个漏洞（含 3 个 critical），且带来旧版类型兼容问题，因此已否决。

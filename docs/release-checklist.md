@@ -15,7 +15,7 @@
 
 - [ ] `npm ci && npm run check && npm run build` 通过。
 - [ ] `npm audit --audit-level=high` 通过，或取得 [依赖安全记录](./dependency-security.md) 所要求的微信/CloudBase 官方处置结论。
-- [ ] `git status` 干净，密钥扫描无 AppSecret、上传私钥、真实 AppID/环境 ID 和用户数据。
+- [ ] `git status` 干净，`npm run security:secrets` 通过，且人工确认无 AppSecret、上传私钥、真实 AppID/环境 ID 和用户数据。
 - [ ] 发布 commit 已打语义化版本标签，并保留上一稳定构建。
 
 ## 云环境（阻断）

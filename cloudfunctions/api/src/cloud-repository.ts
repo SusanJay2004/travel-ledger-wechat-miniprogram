@@ -37,8 +37,7 @@ export interface CloudDatabase {
 }
 
 export interface CloudTransaction {
-  get<T>(document: CloudDocumentReference<T>): Promise<{ data(): T }>;
-  set<T>(document: CloudDocumentReference<T>, data: T): Promise<unknown>;
+  collection<T>(name: string): CloudCollection<T>;
 }
 
 export class CloudRepository implements Repository {
@@ -119,25 +118,31 @@ export class CloudRepository implements Repository {
     trip: TripDocument,
     userId: string,
     limit: number,
-  ): Promise<'saved' | 'capacity_exceeded'> {
-    let outcome: 'saved' | 'capacity_exceeded' = 'capacity_exceeded';
+  ): Promise<'saved' | 'capacity_exceeded' | 'user_inactive'> {
+    let outcome: 'saved' | 'capacity_exceeded' | 'user_inactive' = 'capacity_exceeded';
     await this.db.runTransaction(async (transaction) => {
-      const userReference = this.users().doc(userId);
-      const user = (await transaction.get(userReference)).data();
+      const userReference = transaction.collection<UserDocument>('users').doc(userId);
+      const user = (await userReference.get()).data;
+      if (user.status !== 'active') {
+        outcome = 'user_inactive';
+        return;
+      }
       if (user.homeTripCount >= limit) {
         outcome = 'capacity_exceeded';
         return;
       }
       outcome = 'saved';
-      await transaction.set(
-        userReference,
-        withoutDocumentId({
+      await userReference.set({
+        data: withoutDocumentId({
           ...user,
           homeTripCount: user.homeTripCount + 1,
           version: user.version + 1,
         }),
-      );
-      await transaction.set(this.trips().doc(trip.id), withoutDocumentId(trip));
+      });
+      await transaction
+        .collection<TripDocument>('trips')
+        .doc(trip.id)
+        .set({ data: withoutDocumentId(trip) });
     });
     return outcome;
   }
@@ -154,11 +159,12 @@ export class CloudRepository implements Repository {
     expectedVersion: number,
     homeCountDeltas: Readonly<Record<string, number>>,
     limit: number,
-  ): Promise<'saved' | 'version_conflict' | 'capacity_exceeded'> {
-    let outcome: 'saved' | 'version_conflict' | 'capacity_exceeded' = 'version_conflict';
+  ): Promise<'saved' | 'version_conflict' | 'capacity_exceeded' | 'user_inactive'> {
+    let outcome: 'saved' | 'version_conflict' | 'capacity_exceeded' | 'user_inactive' =
+      'version_conflict';
     await this.db.runTransaction(async (transaction) => {
-      const tripReference = this.trips().doc(trip.id);
-      const current = (await transaction.get(tripReference)).data();
+      const tripReference = transaction.collection<TripDocument>('trips').doc(trip.id);
+      const current = (await tripReference.get()).data;
       if (current.version !== expectedVersion) {
         outcome = 'version_conflict';
         return;
@@ -169,8 +175,12 @@ export class CloudRepository implements Repository {
       }> = [];
       for (const [userId, delta] of Object.entries(homeCountDeltas)) {
         if (delta === 0) continue;
-        const reference = this.users().doc(userId);
-        const user = (await transaction.get(reference)).data();
+        const reference = transaction.collection<UserDocument>('users').doc(userId);
+        const user = (await reference.get()).data;
+        if (user.status !== 'active') {
+          outcome = 'user_inactive';
+          return;
+        }
         const homeTripCount = user.homeTripCount + delta;
         if (homeTripCount < 0) throw new Error('HOME_TRIP_COUNT_UNDERFLOW');
         if (homeTripCount > limit) {
@@ -184,9 +194,9 @@ export class CloudRepository implements Repository {
       }
       outcome = 'saved';
       for (const update of userUpdates) {
-        await transaction.set(update.reference, withoutDocumentId(update.user));
+        await update.reference.set({ data: withoutDocumentId(update.user) });
       }
-      await transaction.set(tripReference, withoutDocumentId(trip));
+      await tripReference.set({ data: withoutDocumentId(trip) });
     });
     return outcome;
   }

@@ -16,14 +16,14 @@ export interface Repository {
     trip: TripDocument,
     userId: string,
     limit: number,
-  ): Promise<'saved' | 'capacity_exceeded'>;
+  ): Promise<'saved' | 'capacity_exceeded' | 'user_inactive'>;
   replaceTrip(trip: TripDocument, expectedVersion: number): Promise<boolean>;
   replaceTripWithHomeCapacity(
     trip: TripDocument,
     expectedVersion: number,
     homeCountDeltas: Readonly<Record<string, number>>,
     limit: number,
-  ): Promise<'saved' | 'version_conflict' | 'capacity_exceeded'>;
+  ): Promise<'saved' | 'version_conflict' | 'capacity_exceeded' | 'user_inactive'>;
 }
 
 export class MemoryRepository implements Repository {
@@ -91,9 +91,10 @@ export class MemoryRepository implements Repository {
     trip: TripDocument,
     userId: string,
     limit: number,
-  ): Promise<'saved' | 'capacity_exceeded'> {
+  ): Promise<'saved' | 'capacity_exceeded' | 'user_inactive'> {
     const user = this.users.get(userId);
     if (user === undefined) throw new Error('USER_NOT_FOUND');
+    if (user.status !== 'active') return 'user_inactive';
     if (user.homeTripCount >= limit) return 'capacity_exceeded';
     if (this.trips.has(trip.id)) throw new Error('DUPLICATE_TRIP');
     this.users.set(userId, {
@@ -117,7 +118,7 @@ export class MemoryRepository implements Repository {
     expectedVersion: number,
     homeCountDeltas: Readonly<Record<string, number>>,
     limit: number,
-  ): Promise<'saved' | 'version_conflict' | 'capacity_exceeded'> {
+  ): Promise<'saved' | 'version_conflict' | 'capacity_exceeded' | 'user_inactive'> {
     const current = this.trips.get(trip.id);
     if (current === undefined || current.version !== expectedVersion) return 'version_conflict';
     const updates = new Map<string, UserDocument>();
@@ -125,6 +126,7 @@ export class MemoryRepository implements Repository {
       if (delta === 0) continue;
       const user = this.users.get(userId);
       if (user === undefined) throw new Error('USER_NOT_FOUND');
+      if (user.status !== 'active') return 'user_inactive';
       const homeTripCount = user.homeTripCount + delta;
       if (homeTripCount < 0) throw new Error('HOME_TRIP_COUNT_UNDERFLOW');
       if (homeTripCount > limit) return 'capacity_exceeded';

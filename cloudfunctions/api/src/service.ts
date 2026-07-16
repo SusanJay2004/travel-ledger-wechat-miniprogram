@@ -383,6 +383,9 @@ export class LedgerService {
       user.id,
       LIMITS.activeTripsPerUser,
     );
+    if (saved === 'user_inactive') {
+      throw new BusinessError('ACCOUNT_DELETION_PENDING', '账号正在注销，不能再创建行程。', true);
+    }
     assertBusiness(
       saved === 'saved',
       'TRIP_LIMIT_REACHED',
@@ -893,6 +896,9 @@ export class LedgerService {
           (memberId) => homeCountDeltas[memberId]! > 0,
         ),
       });
+    }
+    if (saved === 'user_inactive') {
+      throw new BusinessError('ACCOUNT_DELETION_PENDING', '账号正在注销，不能再修改行程。', true);
     }
     if (saved === 'version_conflict') {
       throw new BusinessError('VERSION_CONFLICT', '行程已被其他成员修改，请刷新后重试。');

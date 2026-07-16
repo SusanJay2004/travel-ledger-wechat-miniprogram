@@ -294,4 +294,22 @@ describe('SocialService collaboration gates', () => {
       social.respondTripInvitation(carol, staleInvitation.id, true),
     ).rejects.toMatchObject({ code: 'INVITER_LEFT_TRIP' });
   });
+
+  it('rejects invitation acceptance after the invitee account starts deleting', async () => {
+    const request = await social.sendFriendRequest(alice, bob.publicId);
+    await social.respondFriendRequest(bob, request.id, true);
+    const trip = await ledger.createTrip(alice, { name: '注销邀请竞态' });
+    const invitation = await social.inviteToTrip(alice, trip.id, bob.id);
+    const storedBob = (await repository.getUser(bob.id))!;
+    await repository.updateUser(
+      { ...storedBob, status: 'deleting', version: storedBob.version + 1 },
+      storedBob.version,
+    );
+
+    await expect(social.respondTripInvitation(bob, invitation.id, true)).rejects.toMatchObject({
+      code: 'ACCOUNT_DELETION_PENDING',
+    });
+    expect((await repository.getTrip(trip.id))?.memberIds).toEqual([alice.id]);
+    expect((await repository.getUser(bob.id))?.homeTripCount).toBe(0);
+  });
 });

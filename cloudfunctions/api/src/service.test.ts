@@ -675,6 +675,19 @@ describe('LedgerService solo flow', () => {
     });
   });
 
+  it('rejects a stale active session after account deletion has started', async () => {
+    await repository.updateUser(
+      { ...user, status: 'deleting', version: user.version + 1 },
+      user.version,
+    );
+
+    await expect(service.createTrip(user, { name: '注销竞态' })).rejects.toMatchObject({
+      code: 'ACCOUNT_DELETION_PENDING',
+    });
+    expect(await repository.listTripsForUser(user.id)).toEqual([]);
+    expect((await repository.getUser(user.id))?.homeTripCount).toBe(0);
+  });
+
   it('enforces the 100 active-bill limit while allowing soft-deleted slots to be reused', async () => {
     const trip = await service.createTrip(user, { name: '百笔账单' });
     const dated = await service.addDate(user.id, {

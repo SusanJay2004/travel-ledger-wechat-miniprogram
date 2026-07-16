@@ -1,7 +1,6 @@
 import type {
   CloudCollection,
   CloudDatabase,
-  CloudDocumentReference,
   CloudTransaction,
   QueryResult,
   UpdateResult,
@@ -30,13 +29,7 @@ export class MemoryCloudDatabase implements CloudDatabase {
     const run = this.transactionQueue.then(async () => {
       const snapshot = cloneCollections(this.collections);
       const transaction: CloudTransaction = {
-        get: async <T>(document: CloudDocumentReference<T>) => {
-          const result = await document.get();
-          return { data: () => result.data };
-        },
-        set: async <T>(document: CloudDocumentReference<T>, data: T) => {
-          await document.set({ data });
-        },
+        collection: <T>(name: string) => this.collection<T>(name),
       };
       try {
         return await callback(transaction);

@@ -374,6 +374,9 @@ export class SocialService {
       { [currentUser.id]: -1 },
       LIMITS.activeTripsPerUser,
     );
+    if (saved === 'user_inactive') {
+      throw new BusinessError('ACCOUNT_DELETION_PENDING', '账号正在注销，不能再退出行程。', true);
+    }
     if (saved !== 'saved') {
       throw new BusinessError('VERSION_CONFLICT', '行程已被修改，请刷新后重试。');
     }
@@ -478,6 +481,9 @@ export class SocialService {
       );
       if (saved === 'capacity_exceeded') {
         throw new BusinessError('TRIP_LIMIT_REACHED', '你的首页行程已满，暂时无法接受邀请。');
+      }
+      if (saved === 'user_inactive') {
+        throw new BusinessError('ACCOUNT_DELETION_PENDING', '账号正在注销，不能再加入行程。', true);
       }
       if (saved === 'version_conflict') {
         throw new BusinessError('VERSION_CONFLICT', '行程已被修改，请重新处理邀请。');

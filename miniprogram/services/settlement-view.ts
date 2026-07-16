@@ -30,6 +30,21 @@ export function settlementSummary(trip: TripDetail, settlement: SettlementRespon
   ].join('\n');
 }
 
+export function completionPrompt(trip: TripDetail, settlement: SettlementResponse) {
+  const invalidBill = firstInvalidBill(trip);
+  const hasIgnoredBills = settlement.ignoredBillIds.length > 0;
+  return {
+    cancelText: invalidBill === undefined ? '取消' : '去修改',
+    confirmText: hasIgnoredBills ? '忽略并完结' : '确认完结',
+    content: `${settlementSummary(trip, settlement)}\n\n完结后账本会变为只读，仍可重新开启。`,
+    ignoreInvalidBills: hasIgnoredBills,
+    invalidBill,
+    title: hasIgnoredBills
+      ? `${settlement.ignoredBillIds.length} 笔账单将被忽略`
+      : '确认最新分账并完结？',
+  };
+}
+
 function formatCents(value: number): string {
   return `¥${(value / 100).toFixed(2)}`;
 }

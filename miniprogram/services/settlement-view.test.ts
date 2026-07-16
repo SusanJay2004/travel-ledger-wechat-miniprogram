@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { SettlementResponse, TripDetail } from './api';
-import { firstInvalidBill, settlementSummary } from './settlement-view';
+import { completionPrompt, firstInvalidBill, settlementSummary } from './settlement-view';
 
 describe('settlement view', () => {
   it('selects the first invalid bill by date, creation time and stable id', () => {
@@ -30,6 +30,27 @@ describe('settlement view', () => {
     expect(settlementSummary(sampleTrip(), settlement)).toBe(
       ['小博 给 小艾 ¥12.34', '', '纳入 ¥12.34', '已忽略 2 笔，共 ¥56.78', '账本版本 9'].join('\n'),
     );
+  });
+
+  it('offers modify or explicit ignore before completing an invalid ledger', () => {
+    const trip = sampleTrip();
+    trip.bills = [bill('invalid', '2026-07-10', '2026-07-10T08:00:00.000Z')];
+    const prompt = completionPrompt(trip, {
+      result: { transfers: [], minimumTransferCount: 0 },
+      ignoredBillIds: ['invalid'],
+      ignoredCents: 100,
+      includedCents: 0,
+      ledgerRevision: 3,
+    });
+
+    expect(prompt).toMatchObject({
+      cancelText: '去修改',
+      confirmText: '忽略并完结',
+      ignoreInvalidBills: true,
+      invalidBill: { id: 'invalid' },
+      title: '1 笔账单将被忽略',
+    });
+    expect(prompt.content).toContain('已忽略 1 笔，共 ¥1.00');
   });
 });
 

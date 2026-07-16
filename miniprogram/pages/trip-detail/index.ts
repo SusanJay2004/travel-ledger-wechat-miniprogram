@@ -7,7 +7,11 @@ import {
 } from '../../services/api';
 import { runtimeConfig } from '../../config/runtime';
 import { watchTripSync, type SyncSubscription } from '../../services/sync';
-import { firstInvalidBill, settlementSummary } from '../../services/settlement-view';
+import {
+  completionPrompt,
+  firstInvalidBill,
+  settlementSummary,
+} from '../../services/settlement-view';
 import { getConnectivitySnapshot } from '../../services/connectivity';
 import {
   formatCacheTime,
@@ -395,39 +399,31 @@ Page<DetailData, DetailMethods>({
   async handleComplete() {
     const trip = this.data.trip;
     if (trip === null) return;
-    const confirmed = await confirm(
-      '完结这段行程？',
-      '完结后账本会变为只读，仍可重新开启。建议先检查并计算分账。',
-    );
-    if (!confirmed) return;
     try {
-      await callApi<TripDetail>('trip.complete', {
-        tripId: trip.id,
-        expectedVersion: trip.version,
-        ignoreInvalidBills: false,
+      const settlement = await callApi<SettlementResponse>('trip.calculate', { tripId: trip.id });
+      const prompt = completionPrompt(trip, settlement);
+      const decision = await wx.showModal({
+        title: prompt.title,
+        content: prompt.content,
+        cancelText: prompt.cancelText,
+        confirmText: prompt.confirmText,
+        confirmColor: '#0F6E65',
       });
-      await this.loadTrip();
-    } catch (error: unknown) {
-      if (error instanceof ApiError && error.code === 'INVALID_BILLS_REQUIRE_CONFIRMATION') {
-        const ignore = await confirm('仍有待完善账单', '这些账单不会参与结算。确认忽略并完结吗？');
-        if (ignore) {
-          try {
-            await callApi<TripDetail>('trip.complete', {
-              tripId: trip.id,
-              expectedVersion: trip.version,
-              ignoreInvalidBills: true,
-            });
-            await this.loadTrip();
-          } catch (retryError: unknown) {
-            if (isVersionConflict(retryError)) {
-              await showVersionConflictAndRefresh(() => this.loadTrip());
-              return;
-            }
-            void wx.showToast({ icon: 'none', title: toMessage(retryError) });
-          }
+      if (!decision.confirm) {
+        if (prompt.invalidBill !== undefined) {
+          void wx.navigateTo({
+            url: `/pages/bill-editor/index?tripId=${trip.id}&date=${prompt.invalidBill.date}&version=${trip.version}&billId=${prompt.invalidBill.id}`,
+          });
         }
         return;
       }
+      await callApi<TripDetail>('trip.complete', {
+        tripId: trip.id,
+        expectedVersion: trip.version,
+        ignoreInvalidBills: prompt.ignoreInvalidBills,
+      });
+      await this.loadTrip();
+    } catch (error: unknown) {
       if (isVersionConflict(error)) {
         await showVersionConflictAndRefresh(() => this.loadTrip());
         return;

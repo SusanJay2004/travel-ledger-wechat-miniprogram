@@ -557,6 +557,110 @@ describe('cloud API command integration', () => {
       else process.env['PRODUCT_MODE'] = previousMode;
     }
   });
+
+  it('rolls friendship deletion back when the block record cannot commit', async () => {
+    const previousMode = process.env['PRODUCT_MODE'];
+    process.env['PRODUCT_MODE'] = 'collaboration';
+    try {
+      const setup = await prepareFriendRequest('block-rollback');
+      setup.cloud.setOpenId(setup.bobOpenId);
+      await command(
+        setup.cloud.sdk,
+        'social.respondFriendRequest',
+        { requestId: setup.requestId, accept: true },
+        'block-rollback-accept',
+      );
+      setup.cloud.setOpenId(setup.aliceOpenId);
+      setup.cloud.database.failNextSet('blocks');
+
+      const response = await command(
+        setup.cloud.sdk,
+        'social.blockUser',
+        { blockedUserId: setup.bobUserId },
+        'block-rollback-write',
+      );
+
+      expect(response).toMatchObject({ ok: false, error: { code: 'INTERNAL_ERROR' } });
+      expect(setup.cloud.database.documents('friendships')).toHaveLength(1);
+      expect(setup.cloud.database.documents('blocks')).toEqual([]);
+    } finally {
+      if (previousMode === undefined) delete process.env['PRODUCT_MODE'];
+      else process.env['PRODUCT_MODE'] = previousMode;
+    }
+  });
+
+  it('never leaves users both friends and blocked in an accept-block race', async () => {
+    const previousMode = process.env['PRODUCT_MODE'];
+    process.env['PRODUCT_MODE'] = 'collaboration';
+    try {
+      const setup = await prepareFriendRequest('block-race');
+      setup.cloud.setOpenId(setup.bobOpenId);
+      const accept = command(
+        setup.cloud.sdk,
+        'social.respondFriendRequest',
+        { requestId: setup.requestId, accept: true },
+        'block-race-accept',
+      );
+      setup.cloud.setOpenId(setup.aliceOpenId);
+      const block = command(
+        setup.cloud.sdk,
+        'social.blockUser',
+        { blockedUserId: setup.bobUserId },
+        'block-race-block',
+      );
+
+      const [acceptResponse, blockResponse] = await Promise.all([accept, block]);
+
+      expect(blockResponse).toMatchObject({ ok: true });
+      expect([true, false]).toContain(acceptResponse['ok']);
+      expect(setup.cloud.database.documents('friendships')).toEqual([]);
+      expect(setup.cloud.database.documents('blocks')).toHaveLength(1);
+      expect(setup.cloud.database.documents('friend_requests')[0]).toMatchObject({
+        status: 'rejected',
+      });
+      expect(setup.cloud.database.documents('friend_requests')[0]).not.toHaveProperty('pendingKey');
+    } finally {
+      if (previousMode === undefined) delete process.env['PRODUCT_MODE'];
+      else process.env['PRODUCT_MODE'] = previousMode;
+    }
+  });
+
+  it('treats concurrent friendship deletion as an idempotent success', async () => {
+    const previousMode = process.env['PRODUCT_MODE'];
+    process.env['PRODUCT_MODE'] = 'collaboration';
+    try {
+      const setup = await prepareFriendRequest('delete-race');
+      setup.cloud.setOpenId(setup.bobOpenId);
+      await command(
+        setup.cloud.sdk,
+        'social.respondFriendRequest',
+        { requestId: setup.requestId, accept: true },
+        'delete-race-accept',
+      );
+      setup.cloud.setOpenId(setup.aliceOpenId);
+
+      const responses = await Promise.all([
+        command(
+          setup.cloud.sdk,
+          'social.deleteFriend',
+          { friendUserId: setup.bobUserId },
+          'delete-race-first',
+        ),
+        command(
+          setup.cloud.sdk,
+          'social.deleteFriend',
+          { friendUserId: setup.bobUserId },
+          'delete-race-second',
+        ),
+      ]);
+
+      expect(responses.every((response) => response['ok'] === true)).toBe(true);
+      expect(setup.cloud.database.documents('friendships')).toEqual([]);
+    } finally {
+      if (previousMode === undefined) delete process.env['PRODUCT_MODE'];
+      else process.env['PRODUCT_MODE'] = previousMode;
+    }
+  });
 });
 
 async function prepareFriendRequest(prefix: string) {

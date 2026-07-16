@@ -17,6 +17,7 @@ import type { SocialRepository } from './social-repository';
 import type { TripChangePublisher } from './service';
 import type { TripInvitationAcceptance } from './trip-invitation-transaction';
 import type { FriendRequestTransition } from './friend-request-transaction';
+import type { SocialRelationshipTransition } from './social-relationship-transaction';
 
 const noopPublisher: TripChangePublisher = {
   prepareTripCreated: (after) => after,
@@ -52,6 +53,7 @@ export class SocialService {
     private readonly publisher: TripChangePublisher = noopPublisher,
     private readonly invitationAcceptance: TripInvitationAcceptance,
     private readonly friendRequestTransition: FriendRequestTransition,
+    private readonly relationshipTransition: SocialRelationshipTransition,
   ) {}
 
   async searchByPublicId(
@@ -230,30 +232,19 @@ export class SocialService {
 
   async deleteFriend(userId: string, friendUserId: string): Promise<void> {
     this.assertCollaboration();
-    const friendship = await this.social.getFriendship(userId, friendUserId);
-    assertBusiness(friendship !== null, 'FRIENDSHIP_NOT_FOUND', '你们当前不是好友。');
-    await this.social.deleteFriendship(friendship.id);
+    await this.relationshipTransition.deleteFriend(userId, friendUserId);
   }
 
   async blockUser(userId: string, blockedUserId: string): Promise<void> {
     this.assertCollaboration();
     assertBusiness(userId !== blockedUserId, 'CANNOT_BLOCK_SELF', '不能拉黑自己。');
-    const target = await this.repository.getUser(blockedUserId);
-    assertBusiness(
-      target !== null && target.status === 'active',
-      'USER_NOT_FOUND',
-      '找不到该用户。',
-    );
     const now = this.clock.now();
-    const friendship = await this.social.getFriendship(userId, blockedUserId);
-    if (friendship !== null) await this.social.deleteFriendship(friendship.id);
-    if ((await this.social.getBlock(userId, blockedUserId)) !== null) return;
-    await this.social.createBlock({
-      id: this.ids.entityId('blk'),
-      blockerUserId: userId,
+    const outcome = await this.relationshipTransition.block(
+      userId,
       blockedUserId,
-      createdAt: now.toISOString(),
-    });
+      now.toISOString(),
+    );
+    assertBusiness(outcome === 'saved', 'USER_NOT_FOUND', '找不到该用户。');
   }
 
   async listBlockedUsers(userId: string): Promise<readonly BlockedUserView[]> {

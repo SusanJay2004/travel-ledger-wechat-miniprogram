@@ -13,6 +13,7 @@ import { successResponse } from './response';
 import { SocialService } from './social-service';
 import { CloudTripInvitationAcceptance } from './trip-invitation-transaction';
 import { CloudFriendRequestTransition } from './friend-request-transaction';
+import { CloudSocialRelationshipTransition } from './social-relationship-transaction';
 
 export interface ApiEvent {
   action?: unknown;
@@ -108,6 +109,7 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
     publisher,
     new CloudTripInvitationAcceptance(database),
     new CloudFriendRequestTransition(database),
+    new CloudSocialRelationshipTransition(database),
   );
 
   try {

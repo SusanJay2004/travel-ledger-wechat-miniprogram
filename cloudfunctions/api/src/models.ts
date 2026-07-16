@@ -13,6 +13,7 @@ export interface UserDocument {
   qrCodeFileId?: string | null;
   qrSceneToken?: string | null;
   status: 'active' | 'deleting' | 'deleted';
+  version: number;
   createdAt: string;
   updatedAt: string;
 }

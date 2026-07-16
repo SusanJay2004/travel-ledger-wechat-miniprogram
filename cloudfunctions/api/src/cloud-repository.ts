@@ -56,13 +56,19 @@ export class CloudRepository implements Repository {
   }
 
   async createUser(user: UserDocument): Promise<void> {
-    await this.users().add({ data: withDocumentId(user) });
+    try {
+      await this.users().add({ data: withDocumentId(user) });
+    } catch (error: unknown) {
+      if (isDuplicateError(error)) throw new Error('DUPLICATE_USER');
+      throw error;
+    }
   }
 
-  async updateUser(user: UserDocument): Promise<void> {
-    await this.users()
-      .doc(user.id)
-      .set({ data: withDocumentId(user) });
+  async updateUser(user: UserDocument, expectedVersion: number): Promise<boolean> {
+    const result = await this.users()
+      .where({ _id: user.id, version: expectedVersion })
+      .update({ data: withoutDocumentId(user) });
+    return result.stats?.updated === 1;
   }
 
   async countHomeTrips(userId: string): Promise<number> {
@@ -127,4 +133,13 @@ function isNotFoundError(error: unknown): boolean {
   const message = 'message' in error ? String(error.message) : '';
   const code = 'errCode' in error ? String(error.errCode) : '';
   return code.includes('DOCUMENT_NOT_FOUND') || message.toLowerCase().includes('not found');
+}
+
+function isDuplicateError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const message = 'message' in error ? String(error.message).toLowerCase() : '';
+  const code = 'errCode' in error ? String(error.errCode).toLowerCase() : '';
+  return (
+    `${code} ${message}`.includes('duplicate') || `${code} ${message}`.includes('already exists')
+  );
 }

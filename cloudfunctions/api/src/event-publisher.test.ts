@@ -199,6 +199,7 @@ function createUser(id: string, openId: string): UserDocument {
     signature: '',
     avatarUrl: null,
     status: 'active',
+    version: 1,
     createdAt: '2026-07-10T08:00:00.000Z',
     updatedAt: '2026-07-10T08:00:00.000Z',
   };

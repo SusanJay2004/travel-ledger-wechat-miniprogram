@@ -149,6 +149,7 @@ export class LedgerService {
         qrCodeFileId: null,
         qrSceneToken: null,
         status: 'active',
+        version: 1,
         createdAt: timestamp,
         updatedAt: timestamp,
       };
@@ -156,7 +157,11 @@ export class LedgerService {
         await this.repository.createUser(user);
         return user;
       } catch (error: unknown) {
-        if (error instanceof Error && error.message === 'DUPLICATE_USER') continue;
+        if (error instanceof Error && error.message === 'DUPLICATE_USER') {
+          const raced = await this.repository.findUserByOpenId(openId);
+          if (raced?.status === 'active') return raced;
+          continue;
+        }
         throw error;
       }
     }
@@ -197,9 +202,16 @@ export class LedgerService {
       displayName,
       signature,
       avatarUrl: input.avatarUrl,
+      version: user.version + 1,
       updatedAt: this.clock.now().toISOString(),
     };
-    await this.repository.updateUser(next);
+    const updated = await this.repository.updateUser(next, user.version);
+    if (!updated)
+      throw new BusinessError(
+        'PROFILE_VERSION_CONFLICT',
+        '个人资料刚刚发生变化，请刷新后重试。',
+        true,
+      );
     return next;
   }
 
@@ -215,9 +227,19 @@ export class LedgerService {
             qrCodeFileId: null,
             qrSceneToken: null,
             status: 'deleting',
+            version: user.version + 1,
             updatedAt: this.clock.now().toISOString(),
           };
-    if (user.status !== 'deleting') await this.repository.updateUser(deleting);
+    if (user.status !== 'deleting') {
+      const marked = await this.repository.updateUser(deleting, user.version);
+      if (!marked) {
+        throw new BusinessError(
+          'PROFILE_VERSION_CONFLICT',
+          '账号资料刚刚发生变化，请重新确认注销。',
+          true,
+        );
+      }
+    }
 
     const trips = await this.repository.listTripsForUser(user.id);
     for (const trip of trips) {
@@ -280,12 +302,23 @@ export class LedgerService {
       );
     }
     await social.purgeUserData(user.id);
-    await this.repository.updateUser({
-      ...deleting,
-      openId: `deleted:${user.id}`,
-      publicId: `DEL${user.id.slice(-7).toUpperCase()}`,
-      status: 'deleted',
-    });
+    const deleted = await this.repository.updateUser(
+      {
+        ...deleting,
+        openId: `deleted:${user.id}`,
+        publicId: `DEL${user.id.slice(-7).toUpperCase()}`,
+        status: 'deleted',
+        version: deleting.version + 1,
+      },
+      deleting.version,
+    );
+    if (!deleted) {
+      throw new BusinessError(
+        'PROFILE_VERSION_CONFLICT',
+        '账号注销状态发生变化，请稍后重试。',
+        true,
+      );
+    }
   }
 
   async listArchivedTrips(userId: string): Promise<readonly TripDocument[]> {
@@ -827,6 +860,12 @@ function requiredBill(trip: TripDocument, billId: string): BillDocument {
 }
 
 function validateBillForTrip(trip: TripDocument, bill: BillInput) {
+  assertBusiness(
+    bill.participants.length <= LIMITS.membersPerTrip &&
+      bill.payers.length <= LIMITS.membersPerTrip,
+    'BILL_CORE_INVALID',
+    `参与人和付款人均不能超过 ${LIMITS.membersPerTrip} 人。`,
+  );
   const memberIds = new Set(trip.memberIds);
   for (const participant of bill.participants) {
     assertBusiness(

@@ -11,8 +11,17 @@ export function sanitizeClientData<T>(value: T): T {
   const record = value as Record<string, unknown>;
   const copy: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(record)) {
-    if (key === 'projectionOutbox' || key === 'settlementCache') continue;
+    if (CLIENT_PRIVATE_KEYS.has(key)) continue;
     copy[key] = sanitizeClientData(item);
   }
   return copy as T;
 }
+
+const CLIENT_PRIVATE_KEYS = new Set([
+  'openId',
+  'ownerOpenId',
+  'projectionOutbox',
+  'qrCodeFileId',
+  'qrSceneToken',
+  'settlementCache',
+]);

@@ -113,7 +113,10 @@ describe('SocialService collaboration gates', () => {
   });
 
   it('resolves an opaque QR token without exposing identity in the scene', async () => {
-    await repository.updateUser({ ...alice, qrSceneToken: 'AbCdEfGhIjKlMnOpQr_2' });
+    await repository.updateUser(
+      { ...alice, qrSceneToken: 'AbCdEfGhIjKlMnOpQr_2', version: alice.version + 1 },
+      alice.version,
+    );
     expect(await social.resolveQrScene(bob.id, 'AbCdEfGhIjKlMnOpQr_2')).toMatchObject({
       publicId: alice.publicId,
     });

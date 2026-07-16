@@ -26,6 +26,7 @@
 | `users`               | 唯一      | `openId ASC`                                |
 | `users`               | 唯一      | `publicId ASC`                              |
 | `users`               | 唯一/稀疏 | `qrSceneToken ASC`                          |
+| `users`               | 普通      | `_id ASC, version ASC`                      |
 | `trips`               | 普通      | `memberIds ASC`                             |
 | `trips`               | 普通      | `_id ASC, version ASC`                      |
 | `friend_requests`     | 普通      | `fromUserId ASC, toUserId ASC, status ASC`  |
@@ -54,7 +55,7 @@
 ## 云存储
 
 - `avatars/<内部用户ID>/`：用户头像；云存储规则只允许文件创建者本人写入/删除，读取仅限业务所需。云函数保存资料时还会校验文件路径与当前内部用户 ID 一致；注销时删除。
-- `profile-codes/`：云函数生成的小程序码；注销时删除。
+- `profile-codes/<内部用户ID>/<随机场景令牌>.png`：云函数生成的小程序码；每次生成使用独立路径，冲突请求只清理自己的文件，注销时删除。
 - `private-backups/`：只允许备份/恢复云函数与管理员访问，客户端完全不可访问。
 
 ## 部署后烟测

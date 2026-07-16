@@ -80,6 +80,9 @@ describe('cloud API command integration', () => {
       const stored = cloud.database.documents('users')[0]!;
       expect(stored['qrSceneToken']).toMatch(/^[A-Za-z0-9_-]{20}$/);
       expect(String(stored['qrSceneToken'])).not.toContain(alice.publicId);
+      expect(stored['qrCodeFileId']).toBe(
+        `cloud://memory/profile-codes/${String(stored['id'])}/${String(stored['qrSceneToken'])}.png`,
+      );
 
       cloud.setOpenId('openid-bob');
       await command(cloud.sdk, 'session.bootstrap', {}, 'qr-bootstrap-bob');
@@ -101,6 +104,50 @@ describe('cloud API command integration', () => {
       if (previousMode === undefined) delete process.env['PRODUCT_MODE'];
       else process.env['PRODUCT_MODE'] = previousMode;
     }
+  });
+
+  it('rejects oversized bill member arrays at the request boundary', async () => {
+    const cloud = createMemoryCloudSdk('openid-alice');
+    const bootstrap = await command(cloud.sdk, 'session.bootstrap', {}, 'member-cap-bootstrap');
+    const profile = successData(bootstrap) as { userId: string };
+    const created = await command(
+      cloud.sdk,
+      'trip.create',
+      { name: '输入边界' },
+      'member-cap-trip',
+    );
+    const trip = successData(created) as { tripId: string; trip: { version: number } };
+    const dated = await command(
+      cloud.sdk,
+      'trip.addDate',
+      { tripId: trip.tripId, date: '2026-07-10', expectedVersion: trip.trip.version },
+      'member-cap-date',
+    );
+    const current = successData(dated) as { version: number };
+    const participants = Array.from({ length: 21 }, () => ({
+      memberId: profile.userId,
+      displayName: '伪造名称',
+      shares: 1,
+    }));
+
+    const response = await command(
+      cloud.sdk,
+      'trip.addBill',
+      {
+        tripId: trip.tripId,
+        date: '2026-07-10',
+        expectedVersion: current.version,
+        bill: {
+          title: '超大数组',
+          amountCents: 100,
+          participants,
+          payers: [{ memberId: profile.userId, displayName: '伪造名称', paidCents: 100 }],
+        },
+      },
+      'member-cap-bill',
+    );
+
+    expect(response).toMatchObject({ ok: false, error: { code: 'REQUEST_INVALID' } });
   });
 });
 

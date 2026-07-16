@@ -6,7 +6,7 @@ export interface Repository {
   findUserByQrSceneToken(token: string): Promise<UserDocument | null>;
   getUser(userId: string): Promise<UserDocument | null>;
   createUser(user: UserDocument): Promise<void>;
-  updateUser(user: UserDocument): Promise<void>;
+  updateUser(user: UserDocument, expectedVersion: number): Promise<boolean>;
 
   countHomeTrips(userId: string): Promise<number>;
   listTripsForUser(userId: string): Promise<readonly TripDocument[]>;
@@ -48,9 +48,11 @@ export class MemoryRepository implements Repository {
     this.users.set(user.id, structuredClone(user));
   }
 
-  async updateUser(user: UserDocument): Promise<void> {
-    if (!this.users.has(user.id)) throw new Error('USER_NOT_FOUND');
+  async updateUser(user: UserDocument, expectedVersion: number): Promise<boolean> {
+    const current = this.users.get(user.id);
+    if (current === undefined || current.version !== expectedVersion) return false;
     this.users.set(user.id, structuredClone(user));
+    return true;
   }
 
   async countHomeTrips(userId: string): Promise<number> {

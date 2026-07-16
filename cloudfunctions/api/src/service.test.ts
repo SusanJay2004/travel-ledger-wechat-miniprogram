@@ -423,6 +423,24 @@ describe('LedgerService solo flow', () => {
     expect(updated.id).toBe(user.id);
     expect(updated.publicId).toBe(user.publicId);
     expect(updated.displayName).toBe('苏同学');
+    expect(updated.version).toBe(user.version + 1);
+  });
+
+  it('rejects a stale profile update instead of overwriting newer user state', async () => {
+    const first = await service.updateProfile(user, {
+      displayName: '第一次修改',
+      signature: user.signature,
+      avatarUrl: null,
+    });
+
+    await expect(
+      service.updateProfile(user, {
+        displayName: '过期覆盖',
+        signature: user.signature,
+        avatarUrl: null,
+      }),
+    ).rejects.toMatchObject({ code: 'PROFILE_VERSION_CONFLICT' });
+    expect((await repository.getUser(user.id))?.displayName).toBe(first.displayName);
   });
 
   it('only accepts avatar files from the current account directory', async () => {

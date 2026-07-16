@@ -1,3 +1,5 @@
+import { LIMITS } from '@travel-ledger/domain';
+
 import { CloudRepository, type CloudDatabase } from './cloud-repository';
 import { CloudSocialRepository } from './cloud-social-repository';
 import { WechatContentSecurity } from './content-security';
@@ -157,10 +159,32 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
               );
             }
             const uploaded = await sdk.uploadFile({
-              cloudPath: `profile-codes/${user.id}.png`,
+              cloudPath: `profile-codes/${user.id}/${qrSceneToken}.png`,
               fileContent: code.buffer,
             });
-            await repository.updateUser({ ...user, qrCodeFileId: uploaded.fileID, qrSceneToken });
+            try {
+              const updated = await repository.updateUser(
+                {
+                  ...user,
+                  qrCodeFileId: uploaded.fileID,
+                  qrSceneToken,
+                  version: user.version + 1,
+                  updatedAt: systemClock.now().toISOString(),
+                },
+                user.version,
+              );
+              if (!updated) {
+                throw new BusinessError(
+                  'PROFILE_VERSION_CONFLICT',
+                  '个人资料刚刚发生变化，请重新生成二维码。',
+                  true,
+                );
+              }
+            } catch (error: unknown) {
+              await sdk.deleteFile({ fileList: [uploaded.fileID] }).catch(() => undefined);
+              if (error instanceof BusinessError) throw error;
+              throw new BusinessError('QR_CODE_FAILED', '二维码资料保存失败，请稍后重试。', true);
+            }
             return { fileId: uploaded.fileID };
           }),
         );
@@ -552,6 +576,12 @@ function requiredMemberAmounts(
   const value = object[key];
   if (!Array.isArray(value)) {
     throw new BusinessError('REQUEST_INVALID', `字段 bill.${key} 必须是数组。`);
+  }
+  if (value.length > LIMITS.membersPerTrip) {
+    throw new BusinessError(
+      'REQUEST_INVALID',
+      `字段 bill.${key} 最多包含 ${LIMITS.membersPerTrip} 人。`,
+    );
   }
   return value.map((item, index) => {
     if (typeof item !== 'object' || item === null) {

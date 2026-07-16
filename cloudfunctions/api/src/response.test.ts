@@ -20,4 +20,17 @@ describe('sanitizeClientData', () => {
     );
     expect(trip.projectionOutbox).toHaveLength(1);
   });
+
+  it('removes private WeChat identity and QR resolution fields recursively', () => {
+    const value = {
+      openId: 'openid-secret',
+      profile: {
+        displayName: '旅人',
+        ownerOpenId: 'openid-owner',
+        qrSceneToken: 'opaque-but-private',
+      },
+    };
+
+    expect(sanitizeClientData(value)).toEqual({ profile: { displayName: '旅人' } });
+  });
 });

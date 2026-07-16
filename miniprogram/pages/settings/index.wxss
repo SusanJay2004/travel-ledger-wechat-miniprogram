@@ -17,6 +17,19 @@
   padding: 0 28rpx;
 }
 
+.settings-action {
+  background: transparent;
+  border-radius: 0;
+  color: var(--color-primary);
+  font-size: 28rpx;
+  line-height: 100rpx;
+  min-height: 100rpx;
+}
+
+.settings-action::after {
+  border: 0;
+}
+
 .danger-card {
   margin-top: 28rpx;
   padding: 30rpx;

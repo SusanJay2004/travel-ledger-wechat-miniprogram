@@ -4,8 +4,11 @@
       <view class="page-title">同行账本</view>
       <view class="page-subtitle">把沿途的每一笔，算得清楚又温柔</view>
     </view>
-    <button class="header-add" bindtap="handleCreateTrip" aria-label="新建行程">＋</button>
+    <button wx:if="{{!readOnly}}" class="header-add" bindtap="handleCreateTrip" aria-label="新建行程">＋</button>
   </view>
+
+  <view wx:if="{{networkNotice}}" class="network-banner">{{networkNotice}}</view>
+  <view wx:if="{{cacheNotice}}" class="cache-banner">{{cacheNotice}}</view>
 
   <view wx:if="{{loading}}" class="loading-stack">
     <view class="skeleton skeleton-year"></view>
@@ -22,7 +25,7 @@
     <view class="empty-state__mark">⌁</view>
     <view class="empty-state__title">背上行囊，去见更多的诗和远方~</view>
     <view class="empty-state__description">从创建第一段行程开始，同行人的每笔花费都会有迹可循。</view>
-    <button class="primary-button empty-create" bindtap="handleCreateTrip">新建行程</button>
+    <button wx:if="{{!readOnly}}" class="primary-button empty-create" bindtap="handleCreateTrip">新建行程</button>
   </view>
 
   <view wx:else class="trip-groups">

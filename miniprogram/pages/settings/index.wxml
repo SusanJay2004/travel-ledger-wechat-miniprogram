@@ -2,6 +2,7 @@
   <view class="settings-card surface-card">
     <view class="settings-row" data-type="privacy" bindtap="handleLegal"><text>隐私保护指引</text><text>›</text></view>
     <view class="settings-row" data-type="terms" bindtap="handleLegal"><text>用户协议</text><text>›</text></view>
+    <button class="settings-action" loading="{{signingOut}}" disabled="{{signingOut || deleting}}" bindtap="handleSignOut">退出当前登录</button>
   </view>
   <view class="danger-card surface-card">
     <view class="danger-title">注销账号</view>

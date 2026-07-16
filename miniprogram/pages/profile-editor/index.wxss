@@ -48,7 +48,7 @@
 
 .field-input {
   font-size: 32rpx;
-  height: 76rpx;
+  height: 88rpx;
 }
 
 .signature-input {

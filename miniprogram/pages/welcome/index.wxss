@@ -58,6 +58,7 @@
 .consent-row {
   align-items: flex-start;
   display: flex;
+  min-height: 88rpx;
 }
 
 .consent-check {

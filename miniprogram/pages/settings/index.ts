@@ -1,21 +1,44 @@
 import { callApi } from '../../services/api';
-import { clearCachedSessionProfile } from '../../services/session';
+import { clearCachedSessionProfile, signOutLocalSession } from '../../services/session';
 
 interface SettingsData {
   deleting: boolean;
+  signingOut: boolean;
 }
 
 interface SettingsMethods {
   handleDeleteAccount(): Promise<void>;
   handleLegal(event: WechatMiniprogram.BaseEvent): void;
+  handleSignOut(): Promise<void>;
 }
 
 Page<SettingsData, SettingsMethods>({
-  data: { deleting: false },
+  data: { deleting: false, signingOut: false },
 
   handleLegal(event: WechatMiniprogram.BaseEvent) {
     const type = String(event.currentTarget.dataset['type'] ?? 'privacy');
     void wx.navigateTo({ url: `/pages/legal/index?type=${type}` });
+  },
+
+  async handleSignOut() {
+    if (this.data.signingOut || this.data.deleting) return;
+    const result = await wx.showModal({
+      title: '退出当前登录？',
+      content: '只会清除本机登录状态、离线缓存和未提交草稿；账号与云端行程不会删除。',
+      confirmText: '退出登录',
+      confirmColor: '#167D73',
+    });
+    if (!result.confirm) return;
+    this.setData({ signingOut: true });
+    try {
+      signOutLocalSession();
+    } catch {
+      this.setData({ signingOut: false });
+      void wx.showToast({ icon: 'none', title: '本机存储不可用，暂时无法退出' });
+      return;
+    }
+    void wx.removeTabBarBadge({ index: 1 }).catch(() => undefined);
+    void wx.reLaunch({ url: '/pages/welcome/index' });
   },
 
   async handleDeleteAccount() {

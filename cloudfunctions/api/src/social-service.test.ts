@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Clock, IdGenerator, UserDocument } from './models';
 import { MemoryRepository } from './repository';
@@ -7,8 +7,14 @@ import { MemorySocialRepository } from './social-repository';
 import { SocialService } from './social-service';
 
 class TestClock implements Clock {
+  private current = new Date('2026-07-10T08:00:00.000Z');
+
   now() {
-    return new Date('2026-07-10T08:00:00.000Z');
+    return new Date(this.current);
+  }
+
+  advanceDays(days: number) {
+    this.current = new Date(this.current.getTime() + days * 24 * 60 * 60 * 1000);
   }
 }
 
@@ -32,6 +38,7 @@ describe('SocialService collaboration gates', () => {
   let ledger: LedgerService;
   let social: SocialService;
   let ids: TestIds;
+  let clock: TestClock;
   let alice: UserDocument;
   let bob: UserDocument;
   let carol: UserDocument;
@@ -40,7 +47,7 @@ describe('SocialService collaboration gates', () => {
     repository = new MemoryRepository();
     socialRepository = new MemorySocialRepository();
     ids = new TestIds();
-    const clock = new TestClock();
+    clock = new TestClock();
     ledger = new LedgerService(repository, clock, ids);
     social = new SocialService(repository, socialRepository, clock, ids, 'collaboration');
     alice = await ledger.bootstrapSession('openid-alice');
@@ -134,6 +141,61 @@ describe('SocialService collaboration gates', () => {
     });
     await expect(social.leaveTrip(bob, secondTrip.id)).rejects.toMatchObject({
       code: 'MEMBER_REFERENCED_BY_BILL',
+    });
+  });
+
+  it('rejects expired friend requests and trip invitations', async () => {
+    const request = await social.sendFriendRequest(alice, bob.publicId);
+    clock.advanceDays(30);
+    await expect(social.respondFriendRequest(bob, request.id, true)).rejects.toMatchObject({
+      code: 'FRIEND_REQUEST_EXPIRED',
+    });
+
+    const currentRequest = await social.sendFriendRequest(alice, carol.publicId);
+    await social.respondFriendRequest(carol, currentRequest.id, true);
+    const trip = await ledger.createTrip(alice, { name: '过期邀请' });
+    const invitation = await social.inviteToTrip(alice, trip.id, carol.id);
+    clock.advanceDays(7);
+    await expect(social.respondTripInvitation(carol, invitation.id, true)).rejects.toMatchObject({
+      code: 'INVITATION_EXPIRED',
+    });
+  });
+
+  it('rechecks member and home-trip limits when an invitation is accepted', async () => {
+    const request = await social.sendFriendRequest(alice, bob.publicId);
+    await social.respondFriendRequest(bob, request.id, true);
+    const trip = await ledger.createTrip(alice, { name: '容量检查' });
+    const invitation = await social.inviteToTrip(alice, trip.id, bob.id);
+
+    const countHomeTrips = vi.spyOn(repository, 'countHomeTrips');
+    countHomeTrips.mockResolvedValueOnce(100);
+    await expect(social.respondTripInvitation(bob, invitation.id, true)).rejects.toMatchObject({
+      code: 'TRIP_LIMIT_REACHED',
+    });
+
+    const current = await repository.getTrip(trip.id);
+    expect(current).not.toBeNull();
+    const fillerIds = Array.from({ length: 19 }, (_, index) => `filler_${index}`);
+    await repository.replaceTrip(
+      {
+        ...current!,
+        memberIds: [alice.id, ...fillerIds],
+        members: [
+          ...current!.members,
+          ...fillerIds.map((userId) => ({
+            userId,
+            displayNameSnapshot: userId,
+            joinedAt: clock.now().toISOString(),
+            viewState: 'home' as const,
+            archivedAt: null,
+            purgeAfter: null,
+          })),
+        ],
+      },
+      current!.version,
+    );
+    await expect(social.respondTripInvitation(bob, invitation.id, true)).rejects.toMatchObject({
+      code: 'MEMBER_LIMIT_REACHED',
     });
   });
 });

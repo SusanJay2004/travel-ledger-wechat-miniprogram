@@ -4,6 +4,7 @@ export const DEFAULT_SIGNATURE = '这个人很懒，什么也没留下～';
 export const LIMITS = {
   activeTripsPerUser: 100,
   billsPerTrip: 100,
+  retainedBillsPerTrip: 500,
   membersPerTrip: 20,
   publicIdLength: 10,
   billTitleCodePoints: 12,

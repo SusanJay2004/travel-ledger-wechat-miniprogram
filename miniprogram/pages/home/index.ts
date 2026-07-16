@@ -1,8 +1,18 @@
-import { callApi, type TripSummary } from '../../services/api';
+import { ApiError, callApi, type TripSummary } from '../../services/api';
+import { getConnectivitySnapshot } from '../../services/connectivity';
+import {
+  formatCacheTime,
+  readHomeTripsCache,
+  writeHomeTripsCache,
+} from '../../services/local-cache';
+import { getLocallyCachedSessionProfile, getSessionProfile } from '../../services/session';
 
 interface HomeData {
+  cacheNotice: string;
   errorMessage: string;
   loading: boolean;
+  networkNotice: string;
+  readOnly: boolean;
   tripGroups: readonly TripGroup[];
 }
 
@@ -21,12 +31,16 @@ interface HomeMethods {
   handleOpenTrip(event: WechatMiniprogram.BaseEvent): void;
   handleRetry(): void;
   loadTrips(): Promise<void>;
+  showCachedTrips(notice: string): boolean;
 }
 
 Page<HomeData, HomeMethods>({
   data: {
+    cacheNotice: '',
     errorMessage: '',
     loading: true,
+    networkNotice: '',
+    readOnly: false,
     tripGroups: [],
   },
 
@@ -36,16 +50,59 @@ Page<HomeData, HomeMethods>({
   },
 
   async loadTrips() {
-    this.setData({ errorMessage: '', loading: true });
+    this.setData({ cacheNotice: '', errorMessage: '', loading: true });
+    const connectivity = await getConnectivitySnapshot();
+    if (connectivity.offline) {
+      this.showCachedTrips(connectivity.notice);
+      return;
+    }
     try {
-      const trips = await callApi<readonly TripSummary[]>('trip.list');
-      this.setData({ loading: false, tripGroups: groupTrips(trips) });
+      const [trips, profile] = await Promise.all([
+        callApi<readonly TripSummary[]>('trip.list'),
+        getSessionProfile(),
+      ]);
+      writeHomeTripsCache(profile.userId, trips);
+      this.setData({
+        loading: false,
+        networkNotice: connectivity.notice,
+        readOnly: false,
+        tripGroups: groupTrips(trips),
+      });
     } catch (error: unknown) {
-      this.setData({ loading: false, errorMessage: toErrorMessage(error) });
+      if (!canUseCacheAfter(error) || !this.showCachedTrips('网络连接失败，仅可查看本机缓存。')) {
+        this.setData({ loading: false, errorMessage: toErrorMessage(error) });
+      }
     }
   },
 
+  showCachedTrips(notice: string) {
+    const profile = getLocallyCachedSessionProfile();
+    const cached = profile === null ? null : readHomeTripsCache(profile.userId);
+    if (cached === null) {
+      this.setData({
+        errorMessage: '当前无法联网，且本机还没有可查看的行程缓存。',
+        loading: false,
+        networkNotice: notice,
+        readOnly: true,
+      });
+      return false;
+    }
+    this.setData({
+      cacheNotice: `显示 ${formatCacheTime(cached.savedAt)} 保存的内容`,
+      errorMessage: '',
+      loading: false,
+      networkNotice: notice,
+      readOnly: true,
+      tripGroups: groupTrips(cached.value),
+    });
+    return true;
+  },
+
   handleCreateTrip() {
+    if (this.data.readOnly) {
+      void wx.showToast({ icon: 'none', title: '离线时不能新建行程' });
+      return;
+    }
     void wx.navigateTo({ url: '/pages/trip-editor/index' });
   },
 
@@ -90,4 +147,8 @@ function formatDate(value: string): string {
 
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : '加载失败，请稍后重试。';
+}
+
+function canUseCacheAfter(error: unknown): boolean {
+  return !(error instanceof ApiError) || error.retryable;
 }

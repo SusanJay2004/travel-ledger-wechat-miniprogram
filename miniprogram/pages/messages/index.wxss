@@ -17,6 +17,8 @@
   font-size: 26rpx;
   font-weight: 650;
   padding: 18rpx;
+  min-height: 88rpx;
+  box-sizing: border-box;
   text-align: center;
 }
 
@@ -83,9 +85,9 @@
   border-radius: 15rpx;
   color: #fff;
   font-size: 23rpx;
-  line-height: 62rpx;
+  line-height: 88rpx;
   margin: 0;
-  min-height: 62rpx;
+  min-height: 88rpx;
   padding: 0 24rpx;
 }
 
@@ -119,7 +121,7 @@
 .id-input {
   flex: 1;
   font-size: 27rpx;
-  height: 72rpx;
+  height: 88rpx;
   margin-right: 18rpx;
 }
 

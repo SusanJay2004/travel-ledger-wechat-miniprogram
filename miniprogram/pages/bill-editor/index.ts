@@ -12,6 +12,9 @@ interface BillEditorData {
   billId: string;
   date: string;
   dateText: string;
+  dateOptions: readonly string[];
+  dateOptionTexts: readonly string[];
+  dateSelectedIndex: number;
   errorMessage: string;
   allocationWarning: string;
   loading: boolean;
@@ -25,6 +28,7 @@ interface BillEditorData {
 
 interface BillEditorMethods {
   handleAmountInput(event: WechatMiniprogram.Input): void;
+  handleDateChange(event: WechatMiniprogram.PickerChange): void;
   handlePaidInput(event: WechatMiniprogram.Input): void;
   handleShareInput(event: WechatMiniprogram.Input): void;
   handleSubmit(): Promise<void>;
@@ -43,6 +47,9 @@ Page<BillEditorData, BillEditorMethods>({
     billId: '',
     date: '',
     dateText: '',
+    dateOptions: [],
+    dateOptionTexts: [],
+    dateSelectedIndex: 0,
     errorMessage: '',
     allocationWarning: '',
     loading: true,
@@ -103,6 +110,14 @@ Page<BillEditorData, BillEditorMethods>({
       if (draft !== null) memberRows = applyDraftRows(memberRows, draft.memberRows);
       this.setData({
         amountYuan,
+        date: existing?.date ?? this.data.date,
+        dateOptions: [...trip.dates].sort(),
+        dateOptionTexts: [...trip.dates].sort().map(formatDate),
+        dateSelectedIndex: Math.max(
+          0,
+          [...trip.dates].sort().indexOf(existing?.date ?? this.data.date),
+        ),
+        dateText: formatDate(existing?.date ?? this.data.date),
         draftRestored: draft !== null,
         loading: false,
         memberRows,
@@ -117,6 +132,13 @@ Page<BillEditorData, BillEditorMethods>({
 
   handleTitleInput(event: WechatMiniprogram.Input) {
     this.setData({ title: event.detail.value, errorMessage: '' });
+  },
+
+  handleDateChange(event: WechatMiniprogram.PickerChange) {
+    const index = Number(event.detail.value);
+    const date = this.data.dateOptions[index];
+    if (date === undefined) return;
+    this.setData({ date, dateSelectedIndex: index, dateText: formatDate(date) });
   },
 
   handleAmountInput(event: WechatMiniprogram.Input) {
@@ -335,6 +357,10 @@ function hasDraftContent(data: BillEditorData): boolean {
 
 function formatCents(value: number): string {
   return `¥${(value / 100).toFixed(2)}`;
+}
+
+function formatDate(value: string): string {
+  return value.replaceAll('-', '.');
 }
 
 function parseCents(value: string): number | null {

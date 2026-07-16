@@ -51,6 +51,8 @@ export interface AddDateInput {
   expectedVersion: number;
 }
 
+export type DeleteDateInput = AddDateInput;
+
 export interface AddBillInput {
   tripId: string;
   date: string;
@@ -225,6 +227,8 @@ export class LedgerService {
           ),
         })),
         version: trip.version + 1,
+        ledgerRevision: trip.ledgerRevision + 1,
+        settlementCache: null,
         updatedBy: user.id,
         updatedAt: this.clock.now().toISOString(),
       };
@@ -348,6 +352,30 @@ export class LedgerService {
     );
   }
 
+  async deleteDate(userId: string, input: DeleteDateInput): Promise<TripDocument> {
+    assertCalendarDate(input.date);
+    const trip = await this.editableTrip(userId, input.tripId, input.expectedVersion);
+    assertBusiness(trip.dates.includes(input.date), 'DATE_NOT_FOUND', '找不到这个日期。');
+    const activeBillCount = trip.bills.filter(
+      (bill) => bill.date === input.date && bill.deletedAt === null,
+    ).length;
+    assertBusiness(activeBillCount === 0, 'DATE_HAS_BILLS', '请先移动或删除该日期下的有效账单。', {
+      activeBillCount,
+    });
+
+    return this.saveTrip(
+      trip,
+      userId,
+      {
+        dates: trip.dates.filter((date) => date !== input.date),
+        ledgerRevision: trip.ledgerRevision + 1,
+      },
+      'date.deleted',
+      'date',
+      input.date,
+    );
+  }
+
   async addBill(userId: string, input: AddBillInput): Promise<TripDocument> {
     assertCalendarDate(input.date);
     const trip = await this.editableTrip(userId, input.tripId, input.expectedVersion);
@@ -356,6 +384,12 @@ export class LedgerService {
       activeBills(trip).length < LIMITS.billsPerTrip,
       'BILL_LIMIT_REACHED',
       `每段行程最多保留 ${LIMITS.billsPerTrip} 条账单。`,
+    );
+    const retainedBills = retainRestorableBills(trip, this.clock.now());
+    assertBusiness(
+      retainedBills.length < LIMITS.retainedBillsPerTrip,
+      'BILL_HISTORY_LIMIT_REACHED',
+      '近期删除记录较多，请等待满 30 天自动清理后再新增账单。',
     );
     const validationCodes = validateBillForTrip(trip, input.bill);
     await this.checkTextForUser(userId, 3, input.bill.title);
@@ -377,7 +411,7 @@ export class LedgerService {
       trip,
       userId,
       {
-        bills: [...trip.bills, bill],
+        bills: [...retainedBills, bill],
         totalCents: trip.totalCents + bill.amountCents,
         invalidBillCount: trip.invalidBillCount + (validationCodes.length > 0 ? 1 : 0),
         ledgerRevision: trip.ledgerRevision + 1,
@@ -485,6 +519,9 @@ export class LedgerService {
       trip,
       userId,
       {
+        dates: trip.dates.includes(existing.date)
+          ? trip.dates
+          : [...trip.dates, existing.date].sort(),
         bills,
         totalCents: trip.totalCents + existing.amountCents,
         invalidBillCount: trip.invalidBillCount + (existing.validationCodes.length > 0 ? 1 : 0),
@@ -506,15 +543,32 @@ export class LedgerService {
     ledgerRevision: number;
   }> {
     const trip = await this.getTrip(userId, tripId);
+    if (trip.settlementCache?.ledgerRevision === trip.ledgerRevision) {
+      return {
+        result: structuredClone(trip.settlementCache.result),
+        ignoredBillIds: [...trip.settlementCache.ignoredBillIds],
+        includedCents: trip.settlementCache.includedCents,
+        ledgerRevision: trip.settlementCache.ledgerRevision,
+      };
+    }
     const bills = activeBills(trip);
     const valid = bills.filter((bill) => bill.validationCodes.length === 0);
     const ignored = bills.filter((bill) => bill.validationCodes.length > 0);
-    return {
+    const calculated = {
       result: calculateSettlement(valid),
       ignoredBillIds: ignored.map((bill) => bill.id),
       includedCents: valid.reduce((sum, bill) => sum + bill.amountCents, 0),
       ledgerRevision: trip.ledgerRevision,
     };
+    const cached: TripDocument = {
+      ...trip,
+      settlementCache: {
+        ...calculated,
+        calculatedAt: this.clock.now().toISOString(),
+      },
+    };
+    await this.repository.replaceTrip(cached, trip.version).catch(() => false);
+    return calculated;
   }
 
   async completeTrip(userId: string, input: CompleteTripInput): Promise<TripDocument> {
@@ -524,6 +578,9 @@ export class LedgerService {
       'INVALID_BILLS_REQUIRE_CONFIRMATION',
       '仍有分配无效的账单，请修改或明确忽略后再完结。',
     );
+    const bills = activeBills(trip);
+    const valid = bills.filter((bill) => bill.validationCodes.length === 0);
+    const ignored = bills.filter((bill) => bill.validationCodes.length > 0);
     const timestamp = this.clock.now().toISOString();
     return this.saveTrip(
       trip,
@@ -532,6 +589,13 @@ export class LedgerService {
         status: 'completed',
         completedAt: timestamp,
         completedBy: userId,
+        settlementCache: {
+          result: calculateSettlement(valid),
+          ignoredBillIds: ignored.map((bill) => bill.id),
+          includedCents: valid.reduce((sum, bill) => sum + bill.amountCents, 0),
+          ledgerRevision: trip.ledgerRevision + 1,
+          calculatedAt: timestamp,
+        },
       },
       'trip.completed',
       'trip',
@@ -543,21 +607,27 @@ export class LedgerService {
     const trip = await this.versionedTrip(userId, input.tripId, input.expectedVersion);
     assertBusiness(trip.status === 'completed', 'TRIP_NOT_COMPLETED', '该行程尚未完结。');
     for (const member of trip.members) {
-      if (member.viewState === 'home') {
+      if (member.viewState !== 'detached') {
         const homeCount = await this.repository.countHomeTrips(member.userId);
         assertBusiness(
-          homeCount <= LIMITS.activeTripsPerUser,
+          homeCount < LIMITS.activeTripsPerUser,
           'MEMBER_TRIP_LIMIT_REACHED',
           '有同行人的首页已满，暂时无法重新开启。',
           { memberId: member.userId },
         );
       }
     }
+    const members = trip.members.map((member) =>
+      member.viewState === 'archived'
+        ? { ...member, viewState: 'home' as const, archivedAt: null, purgeAfter: null }
+        : member,
+    );
     return this.saveTrip(
       trip,
       userId,
       {
         status: 'active',
+        members,
         completedAt: null,
         completedBy: null,
       },
@@ -678,6 +748,8 @@ export class LedgerService {
     const next: TripDocument = {
       ...trip,
       ...changes,
+      ledgerRevision: changes.ledgerRevision ?? trip.ledgerRevision + 1,
+      ...(changes.settlementCache === undefined ? { settlementCache: null } : {}),
       version: trip.version + 1,
       updatedBy: userId,
       updatedAt: this.clock.now().toISOString(),
@@ -699,6 +771,15 @@ function memberFor(trip: TripDocument, userId: string): TripMemberDocument {
 
 function activeBills(trip: TripDocument) {
   return trip.bills.filter((bill) => bill.deletedAt === null);
+}
+
+function retainRestorableBills(trip: TripDocument, now: Date): readonly BillDocument[] {
+  const retentionMs = 30 * 24 * 60 * 60 * 1000;
+  return trip.bills.filter((bill) => {
+    if (bill.deletedAt === null) return true;
+    const deletedAt = new Date(bill.deletedAt).getTime();
+    return !Number.isFinite(deletedAt) || now.getTime() - deletedAt < retentionMs;
+  });
 }
 
 function requiredBill(trip: TripDocument, billId: string): BillDocument {

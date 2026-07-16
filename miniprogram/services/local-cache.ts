@@ -1,0 +1,180 @@
+import type { SessionProfile, TripDetail, TripSummary } from './api';
+
+export interface CachedValue<T> {
+  savedAt: string;
+  value: T;
+}
+
+interface CacheEnvelope<T> extends CachedValue<T> {
+  version: 1;
+}
+
+const CACHE_PREFIX = 'travel-ledger-cache-v1:';
+const PROFILE_KEY = `${CACHE_PREFIX}profile`;
+const HOME_PREFIX = `${CACHE_PREFIX}home:`;
+const TRIP_PREFIX = `${CACHE_PREFIX}trip:`;
+const DRAFT_PREFIX = 'bill-draft-v1:';
+const MAX_TRIP_CACHE_ENTRIES = 12;
+
+export function writeCachedProfile(profile: SessionProfile): void {
+  writeEnvelope(PROFILE_KEY, profile);
+}
+
+export function readCachedProfile(): CachedValue<SessionProfile> | null {
+  return readEnvelope(PROFILE_KEY, isSessionProfile);
+}
+
+export function writeHomeTripsCache(userId: string, trips: readonly TripSummary[]): void {
+  writeEnvelope(`${HOME_PREFIX}${userId}`, trips);
+}
+
+export function readHomeTripsCache(userId: string): CachedValue<readonly TripSummary[]> | null {
+  return readEnvelope(`${HOME_PREFIX}${userId}`, isTripSummaryList);
+}
+
+export function writeTripDetailCache(userId: string, trip: TripDetail): void {
+  writeEnvelope(`${TRIP_PREFIX}${userId}:${trip.id}`, trip);
+  pruneTripCaches();
+}
+
+export function readTripDetailCache(
+  tripId: string,
+  userId: string,
+): CachedValue<TripDetail> | null {
+  return readEnvelope(`${TRIP_PREFIX}${userId}:${tripId}`, isTripDetail);
+}
+
+export function clearLocalAccountData(): void {
+  for (const key of cacheKeys()) {
+    if (key.startsWith(CACHE_PREFIX) || key.startsWith(DRAFT_PREFIX)) {
+      try {
+        wx.removeStorageSync(key);
+      } catch {
+        // A failed best-effort cleanup must not trap the user in the signed-in state.
+      }
+    }
+  }
+  try {
+    wx.removeStorageSync('pending-launch-v1');
+  } catch {
+    // Ignore unavailable local storage during sign-out.
+  }
+}
+
+export function formatCacheTime(savedAt: string): string {
+  const date = new Date(savedAt);
+  if (Number.isNaN(date.getTime())) return '较早前';
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${pad(date.getMonth() + 1)}.${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function writeEnvelope<T>(key: string, value: T): void {
+  const envelope: CacheEnvelope<T> = {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    value,
+  };
+  try {
+    wx.setStorageSync(key, envelope);
+  } catch {
+    // Cache writes are optional and must never make an online operation fail.
+  }
+}
+
+function readEnvelope<T>(
+  key: string,
+  validate: (value: unknown) => value is T,
+): CachedValue<T> | null {
+  try {
+    const stored = wx.getStorageSync<unknown>(key);
+    if (!isRecord(stored) || stored['version'] !== 1) return null;
+    const savedAt = stored['savedAt'];
+    const value = stored['value'];
+    if (typeof savedAt !== 'string' || !validate(value)) return null;
+    return { savedAt, value };
+  } catch {
+    return null;
+  }
+}
+
+function pruneTripCaches(): void {
+  const entries = cacheKeys()
+    .filter((key) => key.startsWith(TRIP_PREFIX))
+    .map((key) => ({ key, savedAt: readSavedAt(key) }))
+    .sort((left, right) => right.savedAt.localeCompare(left.savedAt));
+  for (const entry of entries.slice(MAX_TRIP_CACHE_ENTRIES)) {
+    try {
+      wx.removeStorageSync(entry.key);
+    } catch {
+      // Best-effort LRU pruning only.
+    }
+  }
+}
+
+function readSavedAt(key: string): string {
+  try {
+    const stored = wx.getStorageSync<unknown>(key);
+    return isRecord(stored) && typeof stored['savedAt'] === 'string' ? stored['savedAt'] : '';
+  } catch {
+    return '';
+  }
+}
+
+function cacheKeys(): readonly string[] {
+  try {
+    return wx.getStorageInfoSync().keys;
+  } catch {
+    return [];
+  }
+}
+
+function isSessionProfile(value: unknown): value is SessionProfile {
+  return (
+    isRecord(value) &&
+    typeof value['userId'] === 'string' &&
+    typeof value['publicId'] === 'string' &&
+    typeof value['displayName'] === 'string' &&
+    typeof value['signature'] === 'string' &&
+    (value['avatarUrl'] === null || typeof value['avatarUrl'] === 'string') &&
+    (value['productMode'] === 'solo' || value['productMode'] === 'collaboration')
+  );
+}
+
+function isTripSummaryList(value: unknown): value is readonly TripSummary[] {
+  return Array.isArray(value) && value.every(isTripSummary);
+}
+
+function isTripSummary(value: unknown): value is TripSummary {
+  return (
+    isRecord(value) &&
+    typeof value['id'] === 'string' &&
+    typeof value['name'] === 'string' &&
+    (value['status'] === 'active' || value['status'] === 'completed') &&
+    (value['startDate'] === null || typeof value['startDate'] === 'string') &&
+    (value['endDate'] === null || typeof value['endDate'] === 'string') &&
+    typeof value['totalCents'] === 'number' &&
+    typeof value['invalidBillCount'] === 'number' &&
+    typeof value['ledgerRevision'] === 'number'
+  );
+}
+
+function isTripDetail(value: unknown): value is TripDetail {
+  return (
+    isRecord(value) &&
+    typeof value['id'] === 'string' &&
+    typeof value['name'] === 'string' &&
+    (value['status'] === 'active' || value['status'] === 'completed') &&
+    Array.isArray(value['members']) &&
+    Array.isArray(value['dates']) &&
+    value['dates'].every((date) => typeof date === 'string') &&
+    Array.isArray(value['bills']) &&
+    typeof value['totalCents'] === 'number' &&
+    typeof value['invalidBillCount'] === 'number' &&
+    typeof value['version'] === 'number' &&
+    typeof value['ledgerRevision'] === 'number'
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { CloudCollection, CloudDatabase, QueryResult, UpdateResult } from './cloud-repository';
 import { BusinessError } from './errors';
-import { IdempotencyService } from './idempotency';
+import { IdempotencyService, isWriteAction } from './idempotency';
 import type { Clock, IdempotencyRecordDocument } from './models';
 
 class TestClock implements Clock {
@@ -76,6 +76,10 @@ class MemoryCloudCollection<T> implements CloudCollection<T> {
 }
 
 describe('IdempotencyService', () => {
+  it('classifies every ledger mutation including date deletion as a write', () => {
+    expect(isWriteAction('trip.deleteDate')).toBe(true);
+    expect(isWriteAction('trip.calculate')).toBe(false);
+  });
   it('returns the stored response without executing a duplicate request', async () => {
     const database = new MemoryCloudDatabase();
     const service = new IdempotencyService(database, new TestClock());

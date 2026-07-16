@@ -43,7 +43,7 @@
     <view class="menu-item menu-item--top-border" bindtap="handleSettings" hover-class="menu-item--pressed">
       <view>
         <view class="menu-item__title">设置与隐私</view>
-        <view class="menu-item__description">查看条款或注销账号</view>
+        <view class="menu-item__description">退出登录、查看条款或注销账号</view>
       </view>
       <view class="menu-item__arrow">›</view>
     </view>

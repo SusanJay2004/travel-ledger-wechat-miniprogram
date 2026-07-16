@@ -1,4 +1,4 @@
-import type { BillInput, BillValidationCode, Cents } from '@travel-ledger/domain';
+import type { BillInput, BillValidationCode, Cents, SettlementResult } from '@travel-ledger/domain';
 
 export type TripStatus = 'active' | 'completed';
 export type UserTripViewState = 'home' | 'archived' | 'detached';
@@ -160,6 +160,13 @@ export interface TripDocument {
   invalidBillCount: number;
   version: number;
   ledgerRevision: number;
+  settlementCache?: {
+    result: SettlementResult;
+    ignoredBillIds: readonly string[];
+    includedCents: number;
+    ledgerRevision: number;
+    calculatedAt: string;
+  } | null;
   createdBy: string;
   createdAt: string;
   updatedBy: string;

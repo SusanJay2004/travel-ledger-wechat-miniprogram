@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Clock, IdGenerator, UserDocument } from './models';
 import { MemoryRepository } from './repository';
@@ -96,6 +96,42 @@ describe('LedgerService solo flow', () => {
     expect(settlement.includedCents).toBe(0);
     expect(settlement.ignoredBillIds).toHaveLength(1);
     expect(settlement.result.transfers).toEqual([]);
+  });
+
+  it('caches a settlement by ledger revision and invalidates it on mutation', async () => {
+    const trip = await service.createTrip(user, { name: '结算缓存' });
+    const dated = await service.addDate(user.id, {
+      tripId: trip.id,
+      date: '2026-07-10',
+      expectedVersion: trip.version,
+    });
+    const billed = await service.addBill(user.id, {
+      tripId: trip.id,
+      date: '2026-07-10',
+      expectedVersion: dated.version,
+      bill: {
+        title: '午餐',
+        amountCents: 8000,
+        participants: [{ memberId: user.id, displayName: user.displayName, shares: 1 }],
+        payers: [{ memberId: user.id, displayName: user.displayName, paidCents: 8000 }],
+      },
+    });
+
+    const first = await service.calculate(user.id, trip.id);
+    const cached = await repository.getTrip(trip.id);
+    expect(first.ledgerRevision).toBe(billed.ledgerRevision);
+    expect(cached?.settlementCache?.ledgerRevision).toBe(billed.ledgerRevision);
+    expect(cached?.version).toBe(billed.version);
+
+    const deleted = await service.deleteBill(user.id, {
+      tripId: trip.id,
+      billId: billed.bills[0]!.id,
+      expectedVersion: billed.version,
+    });
+    expect(deleted.settlementCache).toBeNull();
+    const recalculated = await service.calculate(user.id, trip.id);
+    expect(recalculated.ledgerRevision).toBe(deleted.ledgerRevision);
+    expect(recalculated.includedCents).toBe(0);
   });
 
   it('requires explicit confirmation before completing with invalid bills', async () => {
@@ -213,6 +249,38 @@ describe('LedgerService solo flow', () => {
     expect(reopened.completedBy).toBeNull();
   });
 
+  it('restores every retained archived member on reopen and enforces their home capacity', async () => {
+    const trip = await service.createTrip(user, { name: '全员恢复' });
+    const completed = await service.completeTrip(user.id, {
+      tripId: trip.id,
+      expectedVersion: trip.version,
+      ignoreInvalidBills: false,
+    });
+    const archived = await service.archiveTrip(user.id, {
+      tripId: trip.id,
+      expectedVersion: completed.version,
+    });
+    const countHomeTrips = vi.spyOn(repository, 'countHomeTrips');
+    countHomeTrips.mockResolvedValueOnce(100);
+    await expect(
+      service.reopenTrip(user.id, {
+        tripId: trip.id,
+        expectedVersion: archived.version,
+      }),
+    ).rejects.toMatchObject({ code: 'MEMBER_TRIP_LIMIT_REACHED' });
+
+    countHomeTrips.mockResolvedValueOnce(99);
+    const reopened = await service.reopenTrip(user.id, {
+      tripId: trip.id,
+      expectedVersion: archived.version,
+    });
+    expect(reopened.members[0]).toMatchObject({
+      viewState: 'home',
+      archivedAt: null,
+      purgeAfter: null,
+    });
+  });
+
   it('rejects stale writes without overwriting current data', async () => {
     const trip = await service.createTrip(user, { name: '并发之旅' });
     await service.addDate(user.id, {
@@ -229,6 +297,90 @@ describe('LedgerService solo flow', () => {
       }),
     ).rejects.toMatchObject({ code: 'VERSION_CONFLICT' });
     expect((await service.getTrip(user.id, trip.id)).dates).toEqual(['2026-07-10']);
+  });
+
+  it('deletes only an empty date and restores it with a soft-deleted bill', async () => {
+    const trip = await service.createTrip(user, { name: '日期整理' });
+    const dated = await service.addDate(user.id, {
+      tripId: trip.id,
+      date: '2026-07-10',
+      expectedVersion: trip.version,
+    });
+    const billed = await service.addBill(user.id, {
+      tripId: trip.id,
+      date: '2026-07-10',
+      expectedVersion: dated.version,
+      bill: {
+        title: '车票',
+        amountCents: 100,
+        participants: [{ memberId: user.id, displayName: user.displayName, shares: 1 }],
+        payers: [{ memberId: user.id, displayName: user.displayName, paidCents: 100 }],
+      },
+    });
+
+    await expect(
+      service.deleteDate(user.id, {
+        tripId: trip.id,
+        date: '2026-07-10',
+        expectedVersion: billed.version,
+      }),
+    ).rejects.toMatchObject({ code: 'DATE_HAS_BILLS' });
+
+    const deletedBill = await service.deleteBill(user.id, {
+      tripId: trip.id,
+      billId: billed.bills[0]!.id,
+      expectedVersion: billed.version,
+    });
+    const deletedDate = await service.deleteDate(user.id, {
+      tripId: trip.id,
+      date: '2026-07-10',
+      expectedVersion: deletedBill.version,
+    });
+    expect(deletedDate.dates).toEqual([]);
+    expect(deletedDate.ledgerRevision).toBe(deletedBill.ledgerRevision + 1);
+
+    const restored = await service.restoreBill(user.id, {
+      tripId: trip.id,
+      billId: billed.bills[0]!.id,
+      expectedVersion: deletedDate.version,
+    });
+    expect(restored.dates).toEqual(['2026-07-10']);
+    expect(restored.totalCents).toBe(100);
+  });
+
+  it('moves an existing bill to another date without changing the total', async () => {
+    const trip = await service.createTrip(user, { name: '移动账单' });
+    const firstDate = await service.addDate(user.id, {
+      tripId: trip.id,
+      date: '2026-07-10',
+      expectedVersion: trip.version,
+    });
+    const secondDate = await service.addDate(user.id, {
+      tripId: trip.id,
+      date: '2026-07-11',
+      expectedVersion: firstDate.version,
+    });
+    const billed = await service.addBill(user.id, {
+      tripId: trip.id,
+      date: '2026-07-10',
+      expectedVersion: secondDate.version,
+      bill: {
+        title: '早餐',
+        amountCents: 2400,
+        participants: [{ memberId: user.id, displayName: user.displayName, shares: 1 }],
+        payers: [{ memberId: user.id, displayName: user.displayName, paidCents: 2400 }],
+      },
+    });
+
+    const moved = await service.updateBill(user.id, {
+      tripId: trip.id,
+      billId: billed.bills[0]!.id,
+      date: '2026-07-11',
+      expectedVersion: billed.version,
+      bill: billed.bills[0]!,
+    });
+    expect(moved.bills[0]?.date).toBe('2026-07-11');
+    expect(moved.totalCents).toBe(2400);
   });
 
   it('prevents non-members from reading a trip', async () => {
@@ -326,5 +478,67 @@ describe('LedgerService solo flow', () => {
     });
     expect(restored.totalCents).toBe(250);
     expect(restored.bills[0]?.deletedAt).toBeNull();
+  });
+
+  it('enforces the 100 home-trip limit at the service boundary', async () => {
+    const count = vi.spyOn(repository, 'countHomeTrips');
+    count.mockResolvedValueOnce(100);
+    await expect(service.createTrip(user, { name: '超额行程' })).rejects.toMatchObject({
+      code: 'TRIP_LIMIT_REACHED',
+    });
+  });
+
+  it('enforces the 100 active-bill limit while allowing soft-deleted slots to be reused', async () => {
+    const trip = await service.createTrip(user, { name: '百笔账单' });
+    const dated = await service.addDate(user.id, {
+      tripId: trip.id,
+      date: '2026-07-10',
+      expectedVersion: trip.version,
+    });
+    let current = dated;
+    for (let index = 0; index < 100; index += 1) {
+      current = await service.addBill(user.id, {
+        tripId: trip.id,
+        date: '2026-07-10',
+        expectedVersion: current.version,
+        bill: {
+          title: `账${index}`,
+          amountCents: 1,
+          participants: [{ memberId: user.id, displayName: user.displayName, shares: 1 }],
+          payers: [{ memberId: user.id, displayName: user.displayName, paidCents: 1 }],
+        },
+      });
+    }
+    await expect(
+      service.addBill(user.id, {
+        tripId: trip.id,
+        date: '2026-07-10',
+        expectedVersion: current.version,
+        bill: {
+          title: '第一百零一笔',
+          amountCents: 1,
+          participants: [{ memberId: user.id, displayName: user.displayName, shares: 1 }],
+          payers: [{ memberId: user.id, displayName: user.displayName, paidCents: 1 }],
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'BILL_LIMIT_REACHED' });
+
+    const withDeleted = await service.deleteBill(user.id, {
+      tripId: trip.id,
+      billId: current.bills[0]!.id,
+      expectedVersion: current.version,
+    });
+    const reused = await service.addBill(user.id, {
+      tripId: trip.id,
+      date: '2026-07-10',
+      expectedVersion: withDeleted.version,
+      bill: {
+        title: '复用名额',
+        amountCents: 1,
+        participants: [{ memberId: user.id, displayName: user.displayName, shares: 1 }],
+        payers: [{ memberId: user.id, displayName: user.displayName, paidCents: 1 }],
+      },
+    });
+    expect(reused.bills.filter((bill) => bill.deletedAt === null)).toHaveLength(100);
   });
 });

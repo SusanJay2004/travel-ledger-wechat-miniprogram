@@ -7,7 +7,13 @@ import {
 } from '../../services/api';
 import { runtimeConfig } from '../../config/runtime';
 import { watchTripSync, type SyncSubscription } from '../../services/sync';
-import { getSessionProfile } from '../../services/session';
+import { getConnectivitySnapshot } from '../../services/connectivity';
+import {
+  formatCacheTime,
+  readTripDetailCache,
+  writeTripDetailCache,
+} from '../../services/local-cache';
+import { getLocallyCachedSessionProfile, getSessionProfile } from '../../services/session';
 
 interface BillCard extends TripBill {
   amountText: string;
@@ -24,11 +30,14 @@ interface DateSection {
 
 interface DetailData {
   addingDate: boolean;
+  cacheNotice: string;
   collaborationEnabled: boolean;
   dateSections: readonly DateSection[];
   deletedBills: readonly BillCard[];
   errorMessage: string;
   loading: boolean;
+  networkNotice: string;
+  readOnly: boolean;
   selectedDate: string;
   trip: TripDetail | null;
   totalText: string;
@@ -41,6 +50,7 @@ interface DetailMethods {
   handleBillAction(event: WechatMiniprogram.BaseEvent): Promise<void>;
   handleComplete(): Promise<void>;
   handleDateChange(event: WechatMiniprogram.PickerChange): void;
+  handleDeleteDate(event: WechatMiniprogram.BaseEvent): Promise<void>;
   handleInvite(): void;
   handleActivity(): void;
   handleRename(): void;
@@ -50,22 +60,26 @@ interface DetailMethods {
   handleRestoreBill(event: WechatMiniprogram.BaseEvent): Promise<void>;
   handleSettle(): Promise<void>;
   loadTrip(): Promise<void>;
+  showCachedTrip(tripId: string, notice: string): boolean;
   submitDate(): Promise<void>;
   startSync(trip: TripDetail, currentUserId: string): void;
-  syncDebounce: number | null;
+  syncDebounce: ReturnType<typeof setTimeout> | null;
   syncSubscription: SyncSubscription | null;
 }
 
 Page<DetailData, DetailMethods>({
   syncSubscription: null as SyncSubscription | null,
-  syncDebounce: null as number | null,
+  syncDebounce: null as ReturnType<typeof setTimeout> | null,
   data: {
     addingDate: false,
+    cacheNotice: '',
     collaborationEnabled: runtimeConfig.collaborationEnabled,
     dateSections: [],
     deletedBills: [],
     errorMessage: '',
     loading: true,
+    networkNotice: '',
+    readOnly: false,
     selectedDate: today(),
     trip: null,
     totalText: '¥0.00',
@@ -94,25 +108,68 @@ Page<DetailData, DetailMethods>({
       this.setData({ errorMessage: '缺少行程 ID。', loading: false });
       return;
     }
-    this.setData({ errorMessage: '', loading: true });
+    this.setData({ cacheNotice: '', errorMessage: '', loading: true });
+    const connectivity = await getConnectivitySnapshot();
+    if (connectivity.offline) {
+      this.showCachedTrip(tripId, connectivity.notice);
+      return;
+    }
     try {
       const [trip, profile] = await Promise.all([
         callApi<TripDetail>('trip.get', { tripId }),
         getSessionProfile(),
       ]);
       void wx.setNavigationBarTitle({ title: trip.name });
+      writeTripDetailCache(profile.userId, trip);
       this.setData({
         collaborationEnabled: profile.productMode === 'collaboration',
         dateSections: buildDateSections(trip),
         deletedBills: trip.bills.filter((bill) => bill.deletedAt !== null).map(toBillCard),
         loading: false,
+        networkNotice: connectivity.notice,
+        readOnly: false,
         trip,
         totalText: formatCents(trip.totalCents),
       });
       this.startSync(trip, profile.userId);
     } catch (error: unknown) {
-      this.setData({ errorMessage: toMessage(error), loading: false });
+      if (
+        !canUseCacheAfter(error) ||
+        !this.showCachedTrip(tripId, '网络连接失败，仅可查看本机缓存。')
+      ) {
+        this.setData({ errorMessage: toMessage(error), loading: false });
+      }
     }
+  },
+
+  showCachedTrip(tripId: string, notice: string) {
+    const profile = getLocallyCachedSessionProfile();
+    const cached = profile === null ? null : readTripDetailCache(tripId, profile.userId);
+    if (cached === null) {
+      this.setData({
+        errorMessage: '当前无法联网，且本机还没有这段行程的缓存。',
+        loading: false,
+        networkNotice: notice,
+        readOnly: true,
+      });
+      return false;
+    }
+    const trip = cached.value;
+    void this.closeSync();
+    void wx.setNavigationBarTitle({ title: trip.name });
+    this.setData({
+      cacheNotice: `显示 ${formatCacheTime(cached.savedAt)} 保存的内容`,
+      collaborationEnabled: profile?.productMode === 'collaboration',
+      dateSections: buildDateSections(trip),
+      deletedBills: trip.bills.filter((bill) => bill.deletedAt !== null).map(toBillCard),
+      errorMessage: '',
+      loading: false,
+      networkNotice: notice,
+      readOnly: true,
+      trip,
+      totalText: formatCents(trip.totalCents),
+    });
+    return true;
   },
 
   handleDateChange(event: WechatMiniprogram.PickerChange) {
@@ -134,6 +191,34 @@ Page<DetailData, DetailMethods>({
       await this.loadTrip();
     } catch (error: unknown) {
       this.setData({ addingDate: false });
+      void wx.showToast({ icon: 'none', title: toMessage(error) });
+    }
+  },
+
+  async handleDeleteDate(event: WechatMiniprogram.BaseEvent) {
+    const trip = this.data.trip;
+    const date = String(event.currentTarget.dataset['date'] ?? '');
+    if (trip === null || this.data.readOnly || date.length === 0) return;
+    const activeBillCount = trip.bills.filter(
+      (bill) => bill.date === date && bill.deletedAt === null,
+    ).length;
+    if (activeBillCount > 0) {
+      void wx.showModal({
+        title: '这一天还有账单',
+        content: `请先移动或删除当天的 ${activeBillCount} 笔账单，再删除日期。`,
+        showCancel: false,
+      });
+      return;
+    }
+    if (!(await confirm('删除这个日期？', '日期下没有有效账单，可以安全删除。'))) return;
+    try {
+      await callApi<TripDetail>('trip.deleteDate', {
+        tripId: trip.id,
+        date,
+        expectedVersion: trip.version,
+      });
+      await this.loadTrip();
+    } catch (error: unknown) {
       void wx.showToast({ icon: 'none', title: toMessage(error) });
     }
   },
@@ -163,6 +248,10 @@ Page<DetailData, DetailMethods>({
   },
 
   handleActivity() {
+    if (this.data.readOnly) {
+      void wx.showToast({ icon: 'none', title: '离线时无法加载活动记录' });
+      return;
+    }
     const trip = this.data.trip;
     if (trip !== null) {
       void wx.navigateTo({ url: `/pages/trip-activity/index?id=${trip.id}` });
@@ -200,7 +289,8 @@ Page<DetailData, DetailMethods>({
   async handleBillAction(event: WechatMiniprogram.BaseEvent) {
     const trip = this.data.trip;
     const billId = String(event.currentTarget.dataset['billId'] ?? '');
-    if (trip === null || trip.status !== 'active' || billId.length === 0) return;
+    if (trip === null || this.data.readOnly || trip.status !== 'active' || billId.length === 0)
+      return;
     const selected = await wx.showActionSheet({ itemList: ['修改账单', '删除账单'] });
     if (selected.tapIndex === 0) {
       const bill = trip.bills.find((item) => item.id === billId);
@@ -278,8 +368,16 @@ Page<DetailData, DetailMethods>({
         settlement.ignoredBillIds.length > 0
           ? `已忽略 ${settlement.ignoredBillIds.length} 笔待完善账单`
           : '没有忽略账单',
+        `账本版本 ${settlement.ledgerRevision}`,
       ].join('\n');
-      void wx.showModal({ title: '最简分账方案', content: summary, showCancel: false });
+      const result = await wx.showModal({
+        title: '最简分账方案',
+        content: summary,
+        cancelText: '关闭',
+        confirmText: '复制结果',
+        confirmColor: '#167D73',
+      });
+      if (result.confirm) await wx.setClipboardData({ data: summary });
     } catch (error: unknown) {
       void wx.showToast({ icon: 'none', title: toMessage(error) });
     }
@@ -405,6 +503,10 @@ function formatCents(cents: number): string {
 
 function toMessage(error: unknown): string {
   return error instanceof Error ? error.message : '操作失败，请稍后重试。';
+}
+
+function canUseCacheAfter(error: unknown): boolean {
+  return !(error instanceof ApiError) || error.retryable;
 }
 
 async function confirm(title: string, content: string): Promise<boolean> {

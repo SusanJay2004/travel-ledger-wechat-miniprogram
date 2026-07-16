@@ -67,9 +67,9 @@
   border-radius: 16rpx;
   color: #fff;
   font-size: 23rpx;
-  line-height: 62rpx;
+  line-height: 88rpx;
   margin: 0;
-  min-height: 62rpx;
+  min-height: 88rpx;
   padding: 0 24rpx;
 }
 
@@ -120,10 +120,30 @@
   border-radius: 18rpx;
   color: var(--color-primary);
   font-size: 23rpx;
-  line-height: 64rpx;
+  line-height: 88rpx;
   margin: 0;
-  min-height: 64rpx;
+  min-height: 88rpx;
   padding: 0 20rpx;
+}
+
+.date-heading__actions {
+  align-items: center;
+  display: flex;
+  gap: 8rpx;
+}
+
+.date-heading__delete {
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 22rpx;
+  line-height: 88rpx;
+  margin: 0;
+  min-height: 88rpx;
+  padding: 0 14rpx;
+}
+
+.date-heading__delete::after {
+  border: 0;
 }
 
 .date-heading__add::after {
@@ -192,6 +212,7 @@
   color: var(--color-primary);
   font-size: 23rpx;
   margin: 0;
+  min-height: 88rpx;
   padding: 0 12rpx;
 }
 
@@ -218,6 +239,7 @@
   background: transparent;
   color: var(--color-muted);
   font-size: 25rpx;
+  min-height: 88rpx;
 }
 
 .text-button::after {

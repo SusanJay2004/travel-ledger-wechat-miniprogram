@@ -1,4 +1,4 @@
-import { getSessionProfile } from '../../services/session';
+import { getSessionProfile, isLocalSessionSignedOut } from '../../services/session';
 
 interface WelcomeData {
   accepted: boolean;
@@ -16,7 +16,9 @@ Page<WelcomeData, WelcomeMethods>({
   data: { accepted: false, errorMessage: '', loading: false },
 
   onLoad() {
-    if (wx.getStorageSync<boolean>('privacy-consent-v1') === true) {
+    const consented = wx.getStorageSync<boolean>('privacy-consent-v1') === true;
+    this.setData({ accepted: consented });
+    if (consented && !isLocalSessionSignedOut()) {
       void wx.switchTab({ url: '/pages/home/index' });
     }
   },

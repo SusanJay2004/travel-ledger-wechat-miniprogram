@@ -58,6 +58,7 @@ function actionText(action: string): string {
     'trip.created': '创建了行程',
     'trip.renamed': '修改了行程名称',
     'date.created': '添加了日期',
+    'date.deleted': '删除了日期',
     'bill.created': '添加了账单',
     'bill.updated': '修改了账单',
     'bill.deleted': '删除了账单',

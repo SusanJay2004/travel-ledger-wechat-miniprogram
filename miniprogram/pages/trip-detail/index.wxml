@@ -1,4 +1,6 @@
 <view class="page-shell detail-page">
+  <view wx:if="{{networkNotice}}" class="network-banner">{{networkNotice}}</view>
+  <view wx:if="{{cacheNotice}}" class="cache-banner">{{cacheNotice}}</view>
   <view wx:if="{{loading}}" class="loading-stack">
     <view class="skeleton detail-skeleton"></view>
     <view class="skeleton section-skeleton"></view>
@@ -18,9 +20,9 @@
         {{trip.invalidBillCount}} 笔账单待完善，不会纳入分账
       </view>
       <view class="detail-head__actions">
-        <button wx:if="{{trip.status === 'active'}}" class="invite-button" bindtap="handleRename">修改名称</button>
-        <button wx:if="{{collaborationEnabled && trip.status === 'active'}}" class="invite-button" bindtap="handleInvite">邀请好友</button>
-        <button class="invite-button" bindtap="handleActivity">活动记录</button>
+        <button wx:if="{{!readOnly && trip.status === 'active'}}" class="invite-button" bindtap="handleRename">修改名称</button>
+        <button wx:if="{{!readOnly && collaborationEnabled && trip.status === 'active'}}" class="invite-button" bindtap="handleInvite">邀请好友</button>
+        <button wx:if="{{!readOnly}}" class="invite-button" bindtap="handleActivity">活动记录</button>
       </view>
     </view>
 
@@ -28,7 +30,7 @@
       <view class="empty-state__mark">日</view>
       <view class="empty-state__title">先为旅程添加第一个日期</view>
       <view class="empty-state__description">同一天发生的账单会自然收拢在一起，回看旅程时一目了然。</view>
-      <picker wx:if="{{trip.status === 'active'}}" mode="date" value="{{selectedDate}}" bindchange="handleDateChange">
+      <picker wx:if="{{!readOnly && trip.status === 'active'}}" mode="date" value="{{selectedDate}}" bindchange="handleDateChange">
         <view class="secondary-button">{{addingDate ? '正在添加…' : '添加日期'}}</view>
       </picker>
     </view>
@@ -37,12 +39,10 @@
       <view wx:for="{{dateSections}}" wx:key="date" class="date-section">
         <view class="date-heading">
           <view class="date-heading__value">{{item.dateText}}</view>
-          <button
-            wx:if="{{trip.status === 'active'}}"
-            class="date-heading__add"
-            data-date="{{item.date}}"
-            bindtap="handleAddBill"
-          >＋ 记一笔</button>
+          <view wx:if="{{!readOnly && trip.status === 'active'}}" class="date-heading__actions">
+            <button class="date-heading__delete" data-date="{{item.date}}" bindtap="handleDeleteDate">删除日期</button>
+            <button class="date-heading__add" data-date="{{item.date}}" bindtap="handleAddBill">＋ 记一笔</button>
+          </view>
         </view>
         <view wx:if="{{item.bills.length === 0}}" class="date-empty surface-card">这一天还没有账单</view>
         <view wx:for="{{item.bills}}" wx:for-item="bill" wx:key="id" class="bill-card surface-card" data-bill-id="{{bill.id}}" bindtap="handleBillAction">
@@ -55,12 +55,12 @@
           <view wx:if="{{bill.invalid}}" class="bill-card__invalid">份额或付款金额待完善</view>
         </view>
       </view>
-      <picker wx:if="{{trip.status === 'active'}}" mode="date" value="{{selectedDate}}" bindchange="handleDateChange">
+      <picker wx:if="{{!readOnly && trip.status === 'active'}}" mode="date" value="{{selectedDate}}" bindchange="handleDateChange">
         <view class="add-another-date">＋ 插入新日期</view>
       </picker>
     </view>
 
-    <view wx:if="{{deletedBills.length > 0 && trip.status === 'active'}}" class="deleted-section surface-card">
+    <view wx:if="{{!readOnly && deletedBills.length > 0 && trip.status === 'active'}}" class="deleted-section surface-card">
       <view class="deleted-section__title">最近删除的账单</view>
       <view wx:for="{{deletedBills}}" wx:key="id" class="deleted-row">
         <view>{{item.title}} · {{item.amountText}}</view>
@@ -68,7 +68,7 @@
       </view>
     </view>
 
-    <view class="trip-lifecycle">
+    <view wx:if="{{!readOnly}}" class="trip-lifecycle">
       <button wx:if="{{trip.status === 'active'}}" class="text-button" bindtap="handleComplete">完结行程</button>
       <block wx:else>
         <button class="text-button" bindtap="handleReopen">重新开启</button>
@@ -77,7 +77,7 @@
       <button wx:if="{{collaborationEnabled && trip.status === 'active' && trip.members.length > 1}}" class="text-button" bindtap="handleLeave">退出行程</button>
     </view>
 
-    <view class="bottom-actions">
+    <view wx:if="{{!readOnly}}" class="bottom-actions">
       <button class="primary-button" bindtap="handleSettle">计算分账</button>
     </view>
   </block>

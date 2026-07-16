@@ -5,7 +5,7 @@
 
 .search-input {
   font-size: 27rpx;
-  height: 70rpx;
+  height: 88rpx;
 }
 
 .invite-skeleton {

@@ -86,6 +86,7 @@ export function isWriteAction(action: string): boolean {
     'trip.create',
     'trip.rename',
     'trip.addDate',
+    'trip.deleteDate',
     'trip.addBill',
     'trip.updateBill',
     'trip.deleteBill',

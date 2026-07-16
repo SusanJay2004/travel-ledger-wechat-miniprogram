@@ -281,6 +281,17 @@ export async function main(event: ApiEvent): Promise<unknown> {
             }),
           ),
         );
+      case 'trip.deleteDate':
+        return success(
+          requestId,
+          await write(() =>
+            service.deleteDate(user.id, {
+              tripId: requiredString(event.payload, 'tripId'),
+              date: requiredString(event.payload, 'date'),
+              expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
+            }),
+          ),
+        );
       case 'trip.addBill':
         return success(
           requestId,

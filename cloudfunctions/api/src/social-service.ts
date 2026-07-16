@@ -345,6 +345,7 @@ export class SocialService {
       members: trip.members.filter((member) => member.userId !== currentUser.id),
       version: trip.version + 1,
       ledgerRevision: trip.ledgerRevision + 1,
+      settlementCache: null,
       updatedBy: currentUser.id,
       updatedAt: now.toISOString(),
     };
@@ -431,6 +432,7 @@ export class SocialService {
         ],
         version: trip.version + 1,
         ledgerRevision: trip.ledgerRevision + 1,
+        settlementCache: null,
         updatedBy: currentUser.id,
         updatedAt: now.toISOString(),
       };

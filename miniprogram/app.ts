@@ -1,4 +1,5 @@
 import { runtimeConfig } from './config/runtime';
+import { isLocalSessionSignedOut } from './services/session';
 
 interface TravelLedgerAppOptions {
   runtime: typeof runtimeConfig;
@@ -17,7 +18,8 @@ App<TravelLedgerAppOptions>({
 });
 
 function guardPrivacyConsent(options: WechatMiniprogram.App.LaunchShowOption): void {
-  if (wx.getStorageSync<boolean>('privacy-consent-v1') === true) return;
+  const consented = wx.getStorageSync<boolean>('privacy-consent-v1') === true;
+  if (consented && !isLocalSessionSignedOut()) return;
   if (options.path === 'pages/welcome/index' || options.path === 'pages/legal/index') return;
   if (options.path === 'pages/messages/index' && typeof options.query['scene'] === 'string') {
     wx.setStorageSync('pending-launch-v1', {

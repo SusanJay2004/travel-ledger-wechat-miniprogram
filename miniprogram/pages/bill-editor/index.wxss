@@ -10,6 +10,14 @@
   margin: 8rpx 0 24rpx 8rpx;
 }
 
+.bill-editor__date--editable {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  min-height: 88rpx;
+  padding: 0 18rpx;
+}
+
 .editor-skeleton {
   height: 420rpx;
 }
@@ -90,6 +98,7 @@
   align-items: center;
   display: flex;
   flex: 1;
+  min-height: 88rpx;
 }
 
 .check-mark {
@@ -120,7 +129,7 @@
   border-radius: 14rpx;
   box-sizing: border-box;
   font-size: 26rpx;
-  height: 62rpx;
+  height: 88rpx;
   padding: 0 14rpx;
   text-align: right;
 }

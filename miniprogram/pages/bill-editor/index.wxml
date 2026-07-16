@@ -1,5 +1,8 @@
 <view class="page-shell bill-editor">
-  <view class="bill-editor__date">{{dateText}}</view>
+  <picker wx:if="{{billId}}" mode="selector" range="{{dateOptionTexts}}" value="{{dateSelectedIndex}}" bindchange="handleDateChange">
+    <view class="bill-editor__date bill-editor__date--editable">日期 {{dateText}} <text>›</text></view>
+  </picker>
+  <view wx:else class="bill-editor__date">{{dateText}}</view>
 
   <view wx:if="{{loading}}" class="skeleton editor-skeleton"></view>
   <view wx:else>

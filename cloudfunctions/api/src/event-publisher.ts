@@ -77,6 +77,35 @@ export class EventPublisher {
         failureCount: failures.length,
       });
     }
+    if (action === 'trip.completed' || action === 'trip.reopened') {
+      const type = action === 'trip.completed' ? 'trip_completed' : 'trip_reopened';
+      const verb = action === 'trip.completed' ? '已完结' : '已重新开启';
+      await Promise.all(
+        after.memberIds.map(async (userId) => {
+          await this.social
+            .createNotification({
+              id: deterministicId('not', after.id, String(after.version), action, userId),
+              userId,
+              type,
+              actorUserId,
+              tripId: after.id,
+              requestId: null,
+              invitationId: null,
+              title: action === 'trip.completed' ? '行程已完结' : '行程已重新开启',
+              body: `“${after.name}”${verb}`,
+              readAt: null,
+              createdAt,
+            })
+            .catch(() => {
+              console.error('trip-lifecycle-notification-failed', {
+                tripId: after.id,
+                userId,
+                action,
+              });
+            });
+        }),
+      );
+    }
   }
 }
 

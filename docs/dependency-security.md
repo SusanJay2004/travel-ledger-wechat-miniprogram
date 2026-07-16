@@ -1,0 +1,25 @@
+# 依赖安全审计记录
+
+审计日期：2026-07-17。
+
+## 当前结论
+
+- 项目使用微信官方 `wx-server-sdk 4.0.2`，这是审计时 npm registry 的最新正式版。
+- 干净执行 `npm ci` 后，`npm audit` 仍报告 6 个公告（5 high、1 moderate），全部来自官方 SDK 的依赖树。
+- 其中 3 个 high 来自 `@cloudbase/node-sdk 3.17.2 -> axios 0.27.2`；另外 2 个 high 与 1 个 moderate 来自 CloudBase 数据库固定的 `lodash.set 4.3.2` 与 `lodash.unset 4.5.2`。
+- 尝试降级到审计建议的 `wx-server-sdk 2.5.3` 后，结果恶化为 16 个漏洞（含 3 个 critical），且带来旧版类型兼容问题，因此已否决。
+- 尝试通过根级 `overrides` 跨主版本替换 Axios，`npm ls` 与锁文件证明嵌套 `axios 0.27.2` 仍然存在，因此没有把无效配置保留在仓库。
+- 尝试使用本地兼容包替换 Lodash 单函数依赖，发现 npm workspace 与云函数独立安装会产生去重和相对路径不一致，无法证明线上部署可靠，因此也已回退。
+
+## 风险边界
+
+业务代码不接受用户提供的任意 URL，不对外开放 HTTP API，也不直接调用 Axios；所有外部请求由微信 SDK 指向平台服务。服务端还实施鉴权、输入白名单、请求幂等、版本条件、限流和内容安全检查。这些措施降低了部分 SSRF 和原型污染利用面，但不能把上游依赖公告视为已修复。
+
+## 发布门禁
+
+生产发布前必须满足以下任一条件：
+
+1. 微信发布不再包含上述高危依赖的新 SDK，升级后 `npm audit --audit-level=high` 通过，并完成云端回归；或
+2. 微信/CloudBase 官方提供与当前云函数场景对应的书面风险说明或受支持的安全修复方案，经运营者留档确认。
+
+CI 继续运行 `npm audit --audit-level=critical`，防止新增 critical 漏洞；高危报告单独输出并作为发布清单的人工阻断项。不得使用 `npm audit fix --force` 自动降级或做未经验证的跨主版本替换。

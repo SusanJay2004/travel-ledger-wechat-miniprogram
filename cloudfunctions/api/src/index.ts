@@ -61,6 +61,9 @@ export async function main(event: ApiEvent): Promise<unknown> {
   if (openId === undefined || openId.length === 0) {
     return failure(requestId, 'UNAUTHENTICATED', '无法识别当前微信用户，请重新进入小程序。');
   }
+  if (!/^[A-Za-z0-9-]{8,80}$/.test(requestId)) {
+    return failure(requestId, 'REQUEST_ID_INVALID', '请求标识格式不正确。');
+  }
 
   const database = cloud.database();
   const repository = new CloudRepository(database);

@@ -92,7 +92,9 @@ export class CloudSocialRepository implements SocialRepository {
   }
 
   async createNotification(notification: NotificationDocument) {
-    await this.notifications().add({ data: withDocumentId(notification) });
+    await this.notifications()
+      .doc(notification.id)
+      .set({ data: withDocumentId(notification) });
   }
 
   async listNotifications(userId: string) {

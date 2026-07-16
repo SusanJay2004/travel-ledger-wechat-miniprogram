@@ -3,6 +3,7 @@
   "references": [
     { "path": "./packages/domain" },
     { "path": "./miniprogram" },
-    { "path": "./cloudfunctions/api" }
+    { "path": "./cloudfunctions/api" },
+    { "path": "./cloudfunctions/maintenance" }
   ]
 }

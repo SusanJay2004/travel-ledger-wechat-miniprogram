@@ -1,5 +1,10 @@
 import { cleanTrip, type MaintenanceBill, type MaintenanceMember } from './maintenance';
-import { buildProjectionDocuments, type RepairTrip, type RepairUser } from './projection-repair';
+import {
+  buildProjectionDocuments,
+  type RepairProjection,
+  type RepairTrip,
+  type RepairUser,
+} from './projection-repair';
 import { cleanDeletedUserFiles, type DeletedUserFileRecord } from './deleted-user-cleanup';
 
 interface DbCommand {
@@ -14,7 +19,7 @@ interface UpdateResult {
   stats?: { removed?: number; updated?: number };
 }
 
-interface Collection<T> {
+export interface Collection<T> {
   add(options: { data: T }): Promise<unknown>;
   doc(id: string): {
     get(): Promise<{ data: T }>;
@@ -28,17 +33,19 @@ interface Collection<T> {
   update(options: { data: Partial<T> }): Promise<UpdateResult>;
 }
 
-interface Database {
+export interface Database {
   collection<T>(name: string): Collection<T>;
   command: DbCommand;
 }
 
-interface MaintenanceTripDocument extends RepairTrip {
+export interface MaintenanceTripDocument extends RepairTrip {
   id: string;
   name: string;
   memberIds: readonly string[];
   members: readonly (MaintenanceMember & { userId: string })[];
   bills: readonly (MaintenanceBill & { id: string })[];
+  ledgerRevision: number;
+  settlementCache?: unknown;
   version: number;
   updatedAt: string;
   updatedBy: string;
@@ -60,6 +67,14 @@ interface CloudSdk {
   deleteFile(options: { fileList: string[] }): Promise<unknown>;
   getWXContext(): { OPENID?: string };
   init(options: { env: symbol }): void;
+}
+
+export interface TripMaintenanceResult {
+  orphanTripsRemoved: number;
+  tripsUpdated: number;
+  conflictsSkipped: number;
+  projectionsRepaired: number;
+  projectionFailures: number;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -113,42 +128,114 @@ export async function main(): Promise<Record<string, number>> {
 
   const trips = await listAll(db.collection<MaintenanceTripDocument>('trips'));
   for (const trip of trips) {
-    const projectionSummary = await repairTripProjections(db, trip);
-    summary.projectionsRepaired += projectionSummary.repaired;
-    summary.projectionFailures += projectionSummary.failed;
-    const cleaned = cleanTrip(trip, now);
-    if (!cleaned.changed && !cleaned.orphaned) continue;
-    if (cleaned.orphaned) {
-      const removed = await db
-        .collection<MaintenanceTripDocument>('trips')
-        .where({ _id: trip.id, version: trip.version })
-        .remove();
-      if (removed.stats?.removed === 1) {
-        summary.orphanTripsRemoved += 1;
-        await purgeTripRelations(db, trip.id);
-      } else {
-        summary.conflictsSkipped += 1;
-      }
-      continue;
-    }
-    const updated = await db
-      .collection<MaintenanceTripDocument>('trips')
-      .where({ _id: trip.id, version: trip.version })
-      .update({
-        data: {
-          bills: cleaned.bills,
-          members: cleaned.members,
-          version: trip.version + 1,
-          updatedAt: nowIso,
-          updatedBy: 'system:maintenance',
-        },
-      });
-    if (updated.stats?.updated === 1) summary.tripsUpdated += 1;
-    else summary.conflictsSkipped += 1;
+    const tripResult = await maintainTrip(db, trip, now);
+    summary.orphanTripsRemoved += tripResult.orphanTripsRemoved;
+    summary.tripsUpdated += tripResult.tripsUpdated;
+    summary.conflictsSkipped += tripResult.conflictsSkipped;
+    summary.projectionsRepaired += tripResult.projectionsRepaired;
+    summary.projectionFailures += tripResult.projectionFailures;
   }
 
   console.info('maintenance-complete', summary);
   return summary;
+}
+
+export async function maintainTrip(
+  db: Database,
+  listedTrip: MaintenanceTripDocument,
+  now: Date,
+): Promise<TripMaintenanceResult> {
+  const result: TripMaintenanceResult = {
+    orphanTripsRemoved: 0,
+    tripsUpdated: 0,
+    conflictsSkipped: 0,
+    projectionsRepaired: 0,
+    projectionFailures: 0,
+  };
+  const projectionSummary = await repairTripProjections(db, listedTrip);
+  result.projectionsRepaired += projectionSummary.repaired;
+  result.projectionFailures += projectionSummary.failed;
+
+  // Projection repair may remove delivered entries. Always clean the latest persisted
+  // document so a stale listing cannot put those entries back into the outbox.
+  const currentTrip =
+    (listedTrip.projectionOutbox?.length ?? 0) > 0
+      ? (await db.collection<MaintenanceTripDocument>('trips').doc(listedTrip.id).get()).data
+      : listedTrip;
+  const cleaned = cleanTrip(currentTrip, now);
+  if (!cleaned.changed && !cleaned.orphaned) return result;
+  if (cleaned.orphaned) {
+    const removed = await db
+      .collection<MaintenanceTripDocument>('trips')
+      .where({ _id: currentTrip.id, version: currentTrip.version })
+      .remove();
+    if (removed.stats?.removed === 1) {
+      result.orphanTripsRemoved += 1;
+      await purgeTripRelations(db, currentTrip.id);
+    } else {
+      result.conflictsSkipped += 1;
+    }
+    return result;
+  }
+  if ((currentTrip.projectionOutbox?.length ?? 0) >= 1000) {
+    result.projectionFailures += 1;
+    return result;
+  }
+
+  const nowIso = now.toISOString();
+  const nextVersion = currentTrip.version + 1;
+  const nextLedgerRevision = currentTrip.ledgerRevision + 1;
+  const cleanupProjection: RepairProjection = {
+    id: `out_maintenance_${currentTrip.id}_${nextVersion}`,
+    action: 'trip.maintained',
+    actorUserId: 'system:maintenance',
+    entityType: 'trip',
+    entityId: currentTrip.id,
+    beforeVersion: currentTrip.version,
+    afterVersion: nextVersion,
+    ledgerRevision: nextLedgerRevision,
+    targetUserIds: cleaned.members
+      .filter((member) => member.viewState !== 'detached')
+      .map((member) => member.userId),
+    createdAt: nowIso,
+  };
+  const projectionOutbox = [...(currentTrip.projectionOutbox ?? []), cleanupProjection];
+  const nextTrip: MaintenanceTripDocument = {
+    ...currentTrip,
+    bills: cleaned.bills,
+    ledgerRevision: nextLedgerRevision,
+    members: cleaned.members,
+    projectionOutbox,
+    settlementCache: null,
+    version: nextVersion,
+    updatedAt: nowIso,
+    updatedBy: 'system:maintenance',
+  };
+  const updated = await db
+    .collection<MaintenanceTripDocument>('trips')
+    .where({ _id: currentTrip.id, version: currentTrip.version })
+    .update({
+      data: {
+        bills: nextTrip.bills,
+        ledgerRevision: nextTrip.ledgerRevision,
+        members: nextTrip.members,
+        projectionOutbox,
+        settlementCache: null,
+        version: nextTrip.version,
+        updatedAt: nextTrip.updatedAt,
+        updatedBy: nextTrip.updatedBy,
+      },
+    });
+  if (updated.stats?.updated !== 1) {
+    result.conflictsSkipped += 1;
+    return result;
+  }
+
+  result.tripsUpdated += 1;
+  const repaired = await repairTripProjections(db, nextTrip);
+  result.projectionsRepaired += repaired.repaired;
+  result.projectionFailures += repaired.failed;
+  return result;
 }
 
 async function repairTripProjections(
@@ -157,7 +244,14 @@ async function repairTripProjections(
 ): Promise<{ repaired: number; failed: number }> {
   const pending = trip.projectionOutbox ?? [];
   if (pending.length === 0) return { repaired: 0, failed: 0 };
-  const userIds = [...new Set(pending.flatMap((projection) => projection.targetUserIds))];
+  const userIds = [
+    ...new Set(
+      pending.flatMap((projection) => [
+        ...projection.targetUserIds,
+        ...(projection.notification?.targetUserIds ?? []),
+      ]),
+    ),
+  ];
   const users = new Map<string, RepairUser>();
   for (const userId of userIds) {
     try {

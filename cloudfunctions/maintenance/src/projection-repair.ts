@@ -80,7 +80,13 @@ export function buildProjectionDocuments(
       },
     ];
   });
-  const notifications = (projection.notification?.targetUserIds ?? []).map((userId) => {
+  const notifications = (projection.notification?.targetUserIds ?? []).flatMap((userId) => {
+    const user = users.get(userId);
+    if (user === undefined) {
+      if (!missingUserIds.includes(userId)) missingUserIds.push(userId);
+      return [];
+    }
+    if (user.status !== 'active') return [];
     const id = deterministicId(
       'not',
       trip.id,
@@ -88,20 +94,22 @@ export function buildProjectionDocuments(
       projection.action,
       userId,
     );
-    return {
-      _id: id,
-      id,
-      userId,
-      type: projection.notification!.type,
-      actorUserId: projection.actorUserId,
-      tripId: trip.id,
-      requestId: null,
-      invitationId: null,
-      title: projection.notification!.title,
-      body: projection.notification!.body,
-      readAt: null,
-      createdAt: projection.createdAt,
-    };
+    return [
+      {
+        _id: id,
+        id,
+        userId,
+        type: projection.notification!.type,
+        actorUserId: projection.actorUserId,
+        tripId: trip.id,
+        requestId: null,
+        invitationId: null,
+        title: projection.notification!.title,
+        body: projection.notification!.body,
+        readAt: null,
+        createdAt: projection.createdAt,
+      },
+    ];
   });
   const auditId = deterministicId(
     'aud',

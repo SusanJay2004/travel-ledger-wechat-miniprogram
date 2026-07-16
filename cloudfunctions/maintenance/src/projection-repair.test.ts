@@ -83,5 +83,34 @@ describe('buildProjectionDocuments', () => {
     );
     expect(result.missingUserIds).toEqual([]);
     expect(result.syncEvents).toEqual([]);
+    expect(result.notifications).toEqual([]);
+  });
+
+  it('retains notification projections until a missing target identity can be resolved', () => {
+    const result = buildProjectionDocuments(
+      { id: 'trip-1', name: '旅行', version: 2 },
+      {
+        id: 'out-1',
+        action: 'trip.completed',
+        actorUserId: 'alice',
+        entityType: 'trip',
+        entityId: 'trip-1',
+        beforeVersion: 1,
+        afterVersion: 2,
+        ledgerRevision: 1,
+        targetUserIds: ['alice'],
+        notification: {
+          type: 'trip_completed',
+          title: '行程已完结',
+          body: '行程已完结',
+          targetUserIds: ['missing'],
+        },
+        createdAt: '2026-07-17T08:00:00.000Z',
+      },
+      new Map([['alice', { id: 'alice', openId: 'openid-a', status: 'active' }]]),
+    );
+
+    expect(result.notifications).toEqual([]);
+    expect(result.missingUserIds).toEqual(['missing']);
   });
 });

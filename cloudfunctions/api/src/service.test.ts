@@ -254,6 +254,26 @@ describe('LedgerService solo flow', () => {
     expect(reopened.completedBy).toBeNull();
   });
 
+  it('allows a retained home member at capacity to reopen without adding another home trip', async () => {
+    const trip = await service.createTrip(user, { name: '首页满额重开' });
+    const completed = await service.completeTrip(user.id, {
+      tripId: trip.id,
+      expectedVersion: trip.version,
+      ignoreInvalidBills: false,
+    });
+    const countHomeTrips = vi.spyOn(repository, 'countHomeTrips');
+    countHomeTrips.mockClear();
+
+    const reopened = await service.reopenTrip(user.id, {
+      tripId: trip.id,
+      expectedVersion: completed.version,
+    });
+
+    expect(reopened.status).toBe('active');
+    expect(reopened.members[0]?.viewState).toBe('home');
+    expect(countHomeTrips).not.toHaveBeenCalled();
+  });
+
   it('restores every retained archived member on reopen and enforces their home capacity', async () => {
     const trip = await service.createTrip(user, { name: '全员恢复' });
     const completed = await service.completeTrip(user.id, {

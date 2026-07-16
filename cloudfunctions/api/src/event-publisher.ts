@@ -217,7 +217,9 @@ function notificationProjection(
       type: completed ? 'trip_completed' : 'trip_reopened',
       title: completed ? '行程已完结' : '行程已重新开启',
       body: `“${after.name}”${completed ? '已完结' : '已重新开启'}`,
-      targetUserIds: [...after.memberIds],
+      targetUserIds: after.members
+        .filter((member) => member.viewState !== 'detached')
+        .map((member) => member.userId),
     };
   }
   if (action === 'member.joined' || action === 'member.left') {

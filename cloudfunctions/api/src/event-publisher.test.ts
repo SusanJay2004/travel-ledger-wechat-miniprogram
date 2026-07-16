@@ -161,6 +161,33 @@ describe('EventPublisher', () => {
 
     expect((await social.listNotifications('alice'))[0]?.readAt).toBe('2026-07-10T09:00:00.000Z');
   });
+
+  it('does not notify a permanently detached historical member about lifecycle changes', async () => {
+    const repository = new MemoryRepository();
+    const social = new MemorySocialRepository();
+    await repository.createUser(createUser('alice', 'openid-alice'));
+    await repository.createUser(createUser('bob', 'openid-bob'));
+    const before = createTrip(1, ['alice', 'bob']);
+    before.members = before.members.map((member) =>
+      member.userId === 'bob' ? { ...member, viewState: 'detached' as const } : member,
+    );
+    const publisher = new EventPublisher(social, repository);
+    const after = publisher.prepareTripChange(
+      before,
+      { ...before, status: 'completed', version: 2, ledgerRevision: 1 },
+      'trip.completed',
+      'alice',
+      'trip',
+      before.id,
+    );
+
+    await publisher.publishTripChange(before, after, 'trip.completed', 'alice', 'trip', before.id);
+
+    expect(await social.listNotifications('alice')).toHaveLength(1);
+    expect(await social.listNotifications('bob')).toEqual([]);
+    expect(after.projectionOutbox?.[0]?.targetUserIds).toEqual(['alice']);
+    expect(after.projectionOutbox?.[0]?.notification?.targetUserIds).toEqual(['alice']);
+  });
 });
 
 function createUser(id: string, openId: string): UserDocument {

@@ -637,7 +637,7 @@ export class LedgerService {
     const trip = await this.versionedTrip(userId, input.tripId, input.expectedVersion);
     assertBusiness(trip.status === 'completed', 'TRIP_NOT_COMPLETED', '该行程尚未完结。');
     for (const member of trip.members) {
-      if (member.viewState !== 'detached') {
+      if (member.viewState === 'archived') {
         const homeCount = await this.repository.countHomeTrips(member.userId);
         assertBusiness(
           homeCount < LIMITS.activeTripsPerUser,

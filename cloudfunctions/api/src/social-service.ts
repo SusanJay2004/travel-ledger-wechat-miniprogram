@@ -409,7 +409,9 @@ export class SocialService {
         '该行程已无法加入。',
       );
       assertBusiness(
-        trip.memberIds.includes(invitation.inviterUserId),
+        trip.members.some(
+          (member) => member.userId === invitation.inviterUserId && member.viewState === 'home',
+        ),
         'INVITER_LEFT_TRIP',
         '邀请人已不在该行程中，无法再接受邀请。',
       );
@@ -508,7 +510,11 @@ export class SocialService {
   private async requiredTripForMember(userId: string, tripId: string) {
     const trip = await this.repository.getTrip(tripId);
     assertBusiness(trip !== null, 'TRIP_NOT_FOUND', '找不到该行程。');
-    assertBusiness(trip.memberIds.includes(userId), 'FORBIDDEN', '你不是该行程成员。');
+    assertBusiness(
+      trip.members.some((member) => member.userId === userId && member.viewState === 'home'),
+      'FORBIDDEN',
+      '你不是该行程的当前成员。',
+    );
     return trip;
   }
 }

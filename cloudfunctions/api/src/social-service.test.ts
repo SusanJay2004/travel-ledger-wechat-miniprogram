@@ -249,4 +249,41 @@ describe('SocialService collaboration gates', () => {
       social.respondTripInvitation(bob, inviterInvitation.id, true),
     ).rejects.toMatchObject({ code: 'INVITER_LEFT_TRIP' });
   });
+
+  it('does not authorize a permanently detached historical member', async () => {
+    for (const target of [bob, carol]) {
+      const request = await social.sendFriendRequest(alice, target.publicId);
+      await social.respondFriendRequest(target, request.id, true);
+    }
+    const trip = await ledger.createTrip(alice, { name: '历史成员隔离' });
+    const bobInvitation = await social.inviteToTrip(alice, trip.id, bob.id);
+    await social.respondTripInvitation(bob, bobInvitation.id, true);
+    const staleInvitation = await social.inviteToTrip(alice, trip.id, carol.id);
+
+    const joined = await ledger.getTrip(alice.id, trip.id);
+    const completed = await ledger.completeTrip(alice.id, {
+      tripId: trip.id,
+      expectedVersion: joined.version,
+      ignoreInvalidBills: false,
+    });
+    const archived = await ledger.archiveTrip(alice.id, {
+      tripId: trip.id,
+      expectedVersion: completed.version,
+    });
+    const detached = await ledger.removeArchivedTrip(alice.id, {
+      tripId: trip.id,
+      expectedVersion: archived.version,
+    });
+    await ledger.reopenTrip(bob.id, {
+      tripId: trip.id,
+      expectedVersion: detached.version,
+    });
+
+    await expect(social.inviteToTrip(alice, trip.id, carol.id)).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+    await expect(
+      social.respondTripInvitation(carol, staleInvitation.id, true),
+    ).rejects.toMatchObject({ code: 'INVITER_LEFT_TRIP' });
+  });
 });

@@ -188,7 +188,8 @@ Page<MessageData, MessageMethods>({
   async handleNotificationRead(event: WechatMiniprogram.BaseEvent) {
     const notificationId = String(event.currentTarget.dataset['notificationId'] ?? '');
     const unread = event.currentTarget.dataset['unread'] === true;
-    if (!unread || notificationId.length === 0) return;
+    const actionable = event.currentTarget.dataset['actionable'] === true;
+    if (!unread || actionable || notificationId.length === 0) return;
     try {
       await callApi('social.markNotificationRead', { notificationId });
       await this.loadData();

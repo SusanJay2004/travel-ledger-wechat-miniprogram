@@ -35,6 +35,7 @@ export interface SocialRepository {
     tripId: string,
     inviteeUserId: string,
   ): Promise<TripInvitationDocument | null>;
+  listInvitations(userId: string): Promise<readonly TripInvitationDocument[]>;
   createInvitation(invitation: TripInvitationDocument): Promise<void>;
   updateInvitation(invitation: TripInvitationDocument): Promise<void>;
 
@@ -163,6 +164,14 @@ export class MemorySocialRepository implements SocialRepository {
         invitation.status === 'pending',
     );
     return cloneOrNull(item);
+  }
+
+  async listInvitations(userId: string) {
+    return [...this.invitations.values()]
+      .filter(
+        (invitation) => invitation.inviterUserId === userId || invitation.inviteeUserId === userId,
+      )
+      .map((invitation) => structuredClone(invitation));
   }
 
   async createInvitation(invitation: TripInvitationDocument) {

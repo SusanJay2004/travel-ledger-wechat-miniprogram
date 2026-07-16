@@ -95,6 +95,89 @@ describe('SocialService collaboration gates', () => {
     expect(await social.listNotifications(alice.id)).toHaveLength(1);
   });
 
+  it('recovers missing actionable notifications from pending social records', async () => {
+    class FailingNotificationRepository extends MemorySocialRepository {
+      override async createNotification() {
+        throw new Error('notification unavailable');
+      }
+    }
+    const failingRepository = new FailingNotificationRepository();
+    const failingSocial = new SocialService(
+      repository,
+      failingRepository,
+      clock,
+      ids,
+      'collaboration',
+      undefined,
+      new MemoryTripInvitationAcceptance(repository, failingRepository),
+    );
+    const friendRequest = await failingSocial.sendFriendRequest(alice, bob.publicId);
+    await failingSocial.respondFriendRequest(bob, friendRequest.id, true);
+    const trip = await ledger.createTrip(alice, { name: '通知恢复' });
+    const invitation = await failingSocial.inviteToTrip(alice, trip.id, bob.id);
+
+    const recovered = await failingSocial.listNotifications(bob.id);
+
+    expect(recovered).toEqual([
+      expect.objectContaining({
+        type: 'trip_invitation',
+        invitationId: invitation.id,
+        userId: bob.id,
+      }),
+    ]);
+    await expect(
+      failingSocial.markNotificationRead(bob.id, recovered[0]!.id),
+    ).resolves.toBeUndefined();
+    await failingSocial.respondTripInvitation(bob, invitation.id, false);
+    expect(await failingSocial.listNotifications(bob.id)).toEqual([]);
+  });
+
+  it('does not synthesize duplicates when persisted notifications already exist', async () => {
+    const request = await social.sendFriendRequest(alice, bob.publicId);
+    const stored = await socialRepository.listNotifications(bob.id);
+    await socialRepository.markNotificationRead(stored[0]!.id, bob.id, clock.now().toISOString());
+    const notifications = await social.listNotifications(bob.id);
+
+    expect(notifications.filter((item) => item.requestId === request.id)).toHaveLength(1);
+    expect(notifications[0]?.readAt).toBeNull();
+  });
+
+  it('only exposes action identifiers while the matching request is pending', async () => {
+    const request = await social.sendFriendRequest(alice, bob.publicId);
+    await social.respondFriendRequest(bob, request.id, true);
+
+    const bobNotifications = await social.listNotifications(bob.id);
+    const aliceNotifications = await social.listNotifications(alice.id);
+
+    expect(bobNotifications.find((item) => item.type === 'friend_request')).toMatchObject({
+      requestId: null,
+    });
+    expect(aliceNotifications.find((item) => item.type === 'friend_accepted')).toMatchObject({
+      requestId: null,
+    });
+  });
+
+  it('persists a deterministic recovered notification exactly once', async () => {
+    await socialRepository.createFriendRequest({
+      id: 'frq_recovery',
+      fromUserId: alice.id,
+      toUserId: bob.id,
+      status: 'pending',
+      createdAt: clock.now().toISOString(),
+      expiresAt: new Date(clock.now().getTime() + 60_000).toISOString(),
+      respondedAt: null,
+    });
+
+    const first = await social.listNotifications(bob.id);
+    const second = await social.listNotifications(bob.id);
+
+    expect(first).toEqual([
+      expect.objectContaining({ id: 'not_recovered_frq_recovery', requestId: 'frq_recovery' }),
+    ]);
+    expect(second).toEqual(first);
+    expect(await socialRepository.listNotifications(bob.id)).toHaveLength(1);
+  });
+
   it('requires friendship before a trip invitation', async () => {
     const trip = await ledger.createTrip(alice, { name: '好友旅行' });
     await expect(social.inviteToTrip(alice, trip.id, bob.id)).rejects.toMatchObject({

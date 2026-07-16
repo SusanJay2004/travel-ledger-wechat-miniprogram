@@ -35,6 +35,29 @@ describe('CloudSocialRepository pagination', () => {
     expect(logs[0]?.id).toBe('audit-100');
     expect(logs.at(-1)?.id).toBe('audit-000');
   });
+
+  it('lists invitations involving a user across both directions without duplicates', async () => {
+    const database = new MemoryCloudDatabase();
+    const repository = new CloudSocialRepository(database);
+    const collection = database.collection<Record<string, unknown>>('trip_invitations');
+    for (let index = 0; index < 101; index += 1) {
+      await collection.add({
+        data: {
+          _id: `invitation-${index}`,
+          id: `invitation-${index}`,
+          tripId: 'trip-1',
+          inviterUserId: index % 2 === 0 ? 'alice' : `friend-${index}`,
+          inviteeUserId: index % 2 === 0 ? `friend-${index}` : 'alice',
+          status: 'pending',
+          createdAt: '2026-07-17T00:00:00.000Z',
+          expiresAt: '2026-07-24T00:00:00.000Z',
+          respondedAt: null,
+        },
+      });
+    }
+
+    expect(await repository.listInvitations('alice')).toHaveLength(101);
+  });
 });
 
 function friendship(index: number): FriendshipDocument {

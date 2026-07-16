@@ -127,6 +127,14 @@ export class CloudSocialRepository implements SocialRepository {
     return result.data[0] ?? null;
   }
 
+  async listInvitations(userId: string) {
+    const [sent, received] = await Promise.all([
+      listAll(this.invitations().where({ inviterUserId: userId })),
+      listAll(this.invitations().where({ inviteeUserId: userId })),
+    ]);
+    return deduplicate([...sent, ...received]);
+  }
+
   async createInvitation(invitation: TripInvitationDocument) {
     await this.invitations().add({ data: withDocumentId(invitation) });
   }

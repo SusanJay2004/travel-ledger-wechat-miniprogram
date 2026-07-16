@@ -255,7 +255,112 @@ export class SocialService {
 
   async listNotifications(userId: string): Promise<readonly NotificationDocument[]> {
     this.assertCollaboration();
-    return this.social.listNotifications(userId);
+    const [stored, requests, invitations] = await Promise.all([
+      this.social.listNotifications(userId),
+      this.social.listFriendRequests(userId),
+      this.social.listInvitations(userId),
+    ]);
+    const pendingRequestIds = new Set(
+      requests
+        .filter(
+          (request) =>
+            request.toUserId === userId &&
+            request.status === 'pending' &&
+            !isExpired(request.expiresAt, this.clock.now()),
+        )
+        .map((request) => request.id),
+    );
+    const pendingInvitationIds = new Set(
+      invitations
+        .filter(
+          (invitation) =>
+            invitation.inviteeUserId === userId &&
+            invitation.status === 'pending' &&
+            !isExpired(invitation.expiresAt, this.clock.now()),
+        )
+        .map((invitation) => invitation.id),
+    );
+    const result = stored.map((item) => {
+      const requestId =
+        item.type === 'friend_request' &&
+        item.requestId !== null &&
+        pendingRequestIds.has(item.requestId)
+          ? item.requestId
+          : null;
+      const invitationId =
+        item.type === 'trip_invitation' &&
+        item.invitationId !== null &&
+        pendingInvitationIds.has(item.invitationId)
+          ? item.invitationId
+          : null;
+      return {
+        ...item,
+        requestId,
+        invitationId,
+        readAt: requestId !== null || invitationId !== null ? null : item.readAt,
+      };
+    });
+    const existingRequestIds = new Set(
+      stored.flatMap((item) => (item.requestId === null ? [] : [item.requestId])),
+    );
+    const existingInvitationIds = new Set(
+      stored.flatMap((item) => (item.invitationId === null ? [] : [item.invitationId])),
+    );
+    for (const request of requests) {
+      if (
+        request.toUserId !== userId ||
+        request.status !== 'pending' ||
+        isExpired(request.expiresAt, this.clock.now()) ||
+        existingRequestIds.has(request.id)
+      ) {
+        continue;
+      }
+      const sender = await this.repository.getUser(request.fromUserId);
+      if (sender === null || sender.status !== 'active') continue;
+      const recovered = {
+        ...notification(this.ids, new Date(request.createdAt), {
+          userId,
+          type: 'friend_request',
+          actorUserId: sender.id,
+          requestId: request.id,
+          title: '新的好友申请',
+          body: `${sender.displayName} 想添加你为好友`,
+        }),
+        id: `not_recovered_${request.id}`,
+      };
+      await this.bestEffortNotification(recovered);
+      result.push(recovered);
+    }
+    for (const invitation of invitations) {
+      if (
+        invitation.inviteeUserId !== userId ||
+        invitation.status !== 'pending' ||
+        isExpired(invitation.expiresAt, this.clock.now()) ||
+        existingInvitationIds.has(invitation.id)
+      ) {
+        continue;
+      }
+      const [inviter, trip] = await Promise.all([
+        this.repository.getUser(invitation.inviterUserId),
+        this.repository.getTrip(invitation.tripId),
+      ]);
+      if (inviter === null || inviter.status !== 'active' || trip === null) continue;
+      const recovered = {
+        ...notification(this.ids, new Date(invitation.createdAt), {
+          userId,
+          type: 'trip_invitation',
+          actorUserId: inviter.id,
+          tripId: trip.id,
+          invitationId: invitation.id,
+          title: '新的行程邀请',
+          body: `${inviter.displayName} 邀请你加入“${trip.name}”`,
+        }),
+        id: `not_recovered_${invitation.id}`,
+      };
+      await this.bestEffortNotification(recovered);
+      result.push(recovered);
+    }
+    return result.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
 
   async markNotificationRead(userId: string, notificationId: string): Promise<void> {
@@ -265,7 +370,9 @@ export class SocialService {
       userId,
       this.clock.now().toISOString(),
     );
-    assertBusiness(updated, 'NOTIFICATION_NOT_FOUND', '找不到该通知。');
+    // Marking read is deliberately idempotent. A notification reconstructed from its
+    // pending request may still be usable while the notification collection is unavailable.
+    if (!updated) return;
   }
 
   async inviteToTrip(

@@ -3,6 +3,7 @@
 
   <view wx:if="{{loading}}" class="skeleton editor-skeleton"></view>
   <view wx:else>
+    <view wx:if="{{draftRestored}}" class="draft-banner">已恢复这台设备上未保存的草稿</view>
     <view class="form-card surface-card">
       <view class="field-block">
         <view class="field-label">事件</view>
@@ -38,6 +39,7 @@
       <view class="section-hint">可以选择多名付款人；实付金额之和应等于消费金额。</view>
     </view>
 
+    <view wx:if="{{allocationWarning}}" class="allocation-warning">{{allocationWarning}}</view>
     <view wx:if="{{errorMessage}}" class="error-banner">{{errorMessage}}</view>
     <button class="primary-button save-button" loading="{{saving}}" disabled="{{saving}}" bindtap="handleSubmit">保存账单</button>
   </view>

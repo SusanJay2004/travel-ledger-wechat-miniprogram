@@ -13,9 +13,11 @@ interface BillEditorData {
   date: string;
   dateText: string;
   errorMessage: string;
+  allocationWarning: string;
   loading: boolean;
   memberRows: readonly MemberRow[];
   saving: boolean;
+  draftRestored: boolean;
   title: string;
   trip: TripDetail | null;
   tripId: string;
@@ -28,6 +30,8 @@ interface BillEditorMethods {
   handleSubmit(): Promise<void>;
   handleTitleInput(event: WechatMiniprogram.Input): void;
   loadTrip(): Promise<void>;
+  persistDraft(): void;
+  refreshAllocationWarning(memberRows?: readonly MemberRow[], amountYuan?: string): void;
   toggleParticipant(event: WechatMiniprogram.BaseEvent): void;
   togglePayer(event: WechatMiniprogram.BaseEvent): void;
   updateMemberValue(event: WechatMiniprogram.Input, key: 'paidYuan' | 'shares'): void;
@@ -40,12 +44,22 @@ Page<BillEditorData, BillEditorMethods>({
     date: '',
     dateText: '',
     errorMessage: '',
+    allocationWarning: '',
     loading: true,
     memberRows: [],
     saving: false,
+    draftRestored: false,
     title: '',
     trip: null,
     tripId: '',
+  },
+
+  onHide() {
+    this.persistDraft();
+  },
+
+  onUnload() {
+    this.persistDraft();
   },
 
   onLoad(query: Record<string, string | undefined>) {
@@ -67,27 +81,35 @@ Page<BillEditorData, BillEditorMethods>({
     try {
       const trip = await callApi<TripDetail>('trip.get', { tripId: this.data.tripId });
       const existing = trip.bills.find((bill) => bill.id === this.data.billId);
+      const draft = existing === undefined ? readDraft(this.data.tripId, this.data.date) : null;
+      const amountYuan =
+        draft?.amountYuan ??
+        (existing === undefined ? '' : (existing.amountCents / 100).toFixed(2));
+      let memberRows = trip.members
+        .filter((member) => member.viewState !== 'detached')
+        .map((member, index) => {
+          const participant = existing?.participants.find(
+            (item) => item.memberId === member.userId,
+          );
+          const payer = existing?.payers.find((item) => item.memberId === member.userId);
+          return {
+            ...member,
+            paidYuan: payer === undefined ? '' : (payer.paidCents / 100).toFixed(2),
+            participantSelected: existing === undefined ? true : participant !== undefined,
+            payerSelected: existing === undefined ? index === 0 : payer !== undefined,
+            shares: String(participant?.shares ?? 1),
+          };
+        });
+      if (draft !== null) memberRows = applyDraftRows(memberRows, draft.memberRows);
       this.setData({
-        amountYuan: existing === undefined ? '' : (existing.amountCents / 100).toFixed(2),
+        amountYuan,
+        draftRestored: draft !== null,
         loading: false,
-        memberRows: trip.members
-          .filter((member) => member.viewState !== 'detached')
-          .map((member, index) => {
-            const participant = existing?.participants.find(
-              (item) => item.memberId === member.userId,
-            );
-            const payer = existing?.payers.find((item) => item.memberId === member.userId);
-            return {
-              ...member,
-              paidYuan: payer === undefined ? '' : (payer.paidCents / 100).toFixed(2),
-              participantSelected: existing === undefined ? true : participant !== undefined,
-              payerSelected: existing === undefined ? index === 0 : payer !== undefined,
-              shares: String(participant?.shares ?? 1),
-            };
-          }),
-        title: existing?.title ?? '',
+        memberRows,
+        title: draft?.title ?? existing?.title ?? '',
         trip,
       });
+      this.refreshAllocationWarning(memberRows, amountYuan);
     } catch (error: unknown) {
       this.setData({ errorMessage: toMessage(error), loading: false });
     }
@@ -106,21 +128,22 @@ Page<BillEditorData, BillEditorMethods>({
         : member,
     );
     this.setData({ amountYuan, errorMessage: '', memberRows });
+    this.refreshAllocationWarning(memberRows, amountYuan);
   },
 
   toggleParticipant(event: WechatMiniprogram.BaseEvent) {
     const userId = String(event.currentTarget.dataset['userId'] ?? '');
-    this.setData({
-      memberRows: this.data.memberRows.map((member) =>
-        member.userId === userId
-          ? {
-              ...member,
-              participantSelected: !member.participantSelected,
-              shares: member.participantSelected ? '0' : '1',
-            }
-          : member,
-      ),
-    });
+    const memberRows = this.data.memberRows.map((member) =>
+      member.userId === userId
+        ? {
+            ...member,
+            participantSelected: !member.participantSelected,
+            shares: member.participantSelected ? '0' : '1',
+          }
+        : member,
+    );
+    this.setData({ memberRows });
+    this.refreshAllocationWarning(memberRows);
   },
 
   togglePayer(event: WechatMiniprogram.BaseEvent) {
@@ -141,6 +164,7 @@ Page<BillEditorData, BillEditorMethods>({
         : member,
     );
     this.setData({ memberRows });
+    this.refreshAllocationWarning(memberRows);
   },
 
   handleShareInput(event: WechatMiniprogram.Input) {
@@ -197,6 +221,7 @@ Page<BillEditorData, BillEditorMethods>({
         expectedVersion: trip.version,
         bill: { title, amountCents, participants, payers },
       });
+      removeDraft(this.data.tripId, this.data.date);
       void wx.navigateBack();
     } catch (error: unknown) {
       this.setData({ errorMessage: toMessage(error), saving: false });
@@ -206,13 +231,111 @@ Page<BillEditorData, BillEditorMethods>({
   updateMemberValue(event: WechatMiniprogram.Input, key: 'paidYuan' | 'shares') {
     const userId = String(event.currentTarget.dataset['userId'] ?? '');
     const value = event.detail.value;
-    this.setData({
-      memberRows: this.data.memberRows.map((member) =>
-        member.userId === userId ? { ...member, [key]: value } : member,
-      ),
+    const memberRows = this.data.memberRows.map((member) =>
+      member.userId === userId ? { ...member, [key]: value } : member,
+    );
+    this.setData({ memberRows });
+    this.refreshAllocationWarning(memberRows);
+  },
+
+  refreshAllocationWarning(memberRows?: readonly MemberRow[], amountYuan?: string) {
+    const rows = memberRows ?? this.data.memberRows;
+    const amount = amountYuan ?? this.data.amountYuan;
+    const participants = rows.filter((member) => member.participantSelected);
+    const shares = participants.map((member) => parseWholeNumber(member.shares));
+    if (participants.length > 0 && shares.every((value) => value !== null)) {
+      const shareTotal = shares.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+      if (shareTotal !== participants.length) {
+        this.setData({
+          allocationWarning: `参与人共 ${participants.length} 人，当前份额合计 ${shareTotal}，该账单不会参与分账。`,
+        });
+        return;
+      }
+    }
+    const amountCents = parseCents(amount);
+    const payerValues = rows
+      .filter((member) => member.payerSelected)
+      .map((member) => parseCents(member.paidYuan));
+    if (
+      amountCents !== null &&
+      payerValues.length > 0 &&
+      payerValues.every((value) => value !== null)
+    ) {
+      const paidTotal = payerValues.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+      if (paidTotal !== amountCents) {
+        this.setData({
+          allocationWarning: `付款合计 ${formatCents(paidTotal)}，应等于 ${formatCents(amountCents)}，该账单不会参与分账。`,
+        });
+        return;
+      }
+    }
+    this.setData({ allocationWarning: '' });
+  },
+
+  persistDraft() {
+    if (this.data.billId.length > 0 || this.data.saving || !hasDraftContent(this.data)) return;
+    writeDraft(this.data.tripId, this.data.date, {
+      amountYuan: this.data.amountYuan,
+      memberRows: this.data.memberRows.map((member) => ({
+        userId: member.userId,
+        paidYuan: member.paidYuan,
+        participantSelected: member.participantSelected,
+        payerSelected: member.payerSelected,
+        shares: member.shares,
+      })),
+      title: this.data.title,
     });
   },
 });
+
+interface BillDraft {
+  amountYuan: string;
+  memberRows: readonly Pick<
+    MemberRow,
+    'userId' | 'paidYuan' | 'participantSelected' | 'payerSelected' | 'shares'
+  >[];
+  title: string;
+}
+
+const DRAFT_PREFIX = 'bill-draft-v1';
+
+function draftKey(tripId: string, date: string): string {
+  return `${DRAFT_PREFIX}:${tripId}:${date}`;
+}
+
+function readDraft(tripId: string, date: string): BillDraft | null {
+  try {
+    const value = wx.getStorageSync<unknown>(draftKey(tripId, date));
+    if (typeof value !== 'object' || value === null || !('memberRows' in value)) return null;
+    return value as BillDraft;
+  } catch {
+    return null;
+  }
+}
+
+function writeDraft(tripId: string, date: string, draft: BillDraft): void {
+  if (tripId.length > 0 && date.length > 0) wx.setStorageSync(draftKey(tripId, date), draft);
+}
+
+function removeDraft(tripId: string, date: string): void {
+  wx.removeStorageSync(draftKey(tripId, date));
+}
+
+function applyDraftRows(
+  rows: readonly MemberRow[],
+  draftRows: BillDraft['memberRows'],
+): MemberRow[] {
+  const draftById = new Map(draftRows.map((row) => [row.userId, row]));
+  return rows.map((row) => ({ ...row, ...draftById.get(row.userId) }));
+}
+
+function hasDraftContent(data: BillEditorData): boolean {
+  return data.title.trim().length > 0 || data.amountYuan.trim().length > 0;
+}
+
+function formatCents(value: number): string {
+  return `¥${(value / 100).toFixed(2)}`;
+}
 
 function parseCents(value: string): number | null {
   const match = /^(?:0|[1-9]\d{0,6})(?:\.(\d{1,2}))?$/.exec(value.trim());

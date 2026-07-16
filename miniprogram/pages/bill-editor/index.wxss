@@ -14,6 +14,26 @@
   height: 420rpx;
 }
 
+.draft-banner {
+  background: #fff3d9;
+  border-radius: 18rpx;
+  color: #986319;
+  font-size: 22rpx;
+  margin-bottom: 20rpx;
+  padding: 16rpx 20rpx;
+}
+
+.allocation-warning {
+  background: #fff0ed;
+  border: 2rpx solid #efbbb3;
+  border-radius: 20rpx;
+  color: var(--color-danger);
+  font-size: 24rpx;
+  line-height: 1.55;
+  margin-top: 28rpx;
+  padding: 20rpx 24rpx;
+}
+
 .form-card {
   padding: 32rpx;
 }

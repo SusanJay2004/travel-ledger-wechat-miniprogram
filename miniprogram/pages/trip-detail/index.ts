@@ -243,6 +243,24 @@ Page<DetailData, DetailMethods>({
   async handleSettle() {
     const trip = this.data.trip;
     if (trip === null) return;
+    const firstInvalid = trip.bills.find(
+      (bill) => bill.deletedAt === null && bill.validationCodes.length > 0,
+    );
+    if (firstInvalid !== undefined) {
+      const decision = await wx.showModal({
+        title: `${trip.invalidBillCount} 笔账单待完善`,
+        content: '待完善账单不会参与分账。你可以立即修改第一笔，或忽略它们后继续计算。',
+        cancelText: '去修改',
+        confirmText: '忽略并计算',
+        confirmColor: '#167D73',
+      });
+      if (!decision.confirm) {
+        void wx.navigateTo({
+          url: `/pages/bill-editor/index?tripId=${trip.id}&date=${firstInvalid.date}&version=${trip.version}&billId=${firstInvalid.id}`,
+        });
+        return;
+      }
+    }
     try {
       const settlement = await callApi<SettlementResponse>('trip.calculate', { tripId: trip.id });
       const nameById = Object.fromEntries(

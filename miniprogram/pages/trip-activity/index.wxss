@@ -1,0 +1,47 @@
+.activity-page {
+  padding-top: 30rpx;
+}
+
+.activity-skeleton {
+  height: 220rpx;
+}
+
+.activity-list {
+  border-left: 3rpx solid #c9dfda;
+  margin-left: 16rpx;
+  padding-left: 30rpx;
+}
+
+.activity-row {
+  margin-bottom: 22rpx;
+  position: relative;
+}
+
+.activity-dot {
+  background: var(--color-primary);
+  border: 7rpx solid var(--color-bg);
+  border-radius: 50%;
+  height: 17rpx;
+  left: -41rpx;
+  position: absolute;
+  top: 30rpx;
+  width: 17rpx;
+}
+
+.activity-card {
+  padding: 26rpx;
+}
+
+.activity-copy {
+  font-size: 27rpx;
+}
+
+.activity-name {
+  font-weight: 750;
+}
+
+.activity-time {
+  color: var(--color-muted);
+  font-size: 21rpx;
+  margin-top: 12rpx;
+}

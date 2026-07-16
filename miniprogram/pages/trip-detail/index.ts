@@ -42,6 +42,9 @@ interface DetailMethods {
   handleComplete(): Promise<void>;
   handleDateChange(event: WechatMiniprogram.PickerChange): void;
   handleInvite(): void;
+  handleActivity(): void;
+  handleRename(): void;
+  handleReopen(): Promise<void>;
   handleLeave(): Promise<void>;
   handleRetry(): void;
   handleRestoreBill(event: WechatMiniprogram.BaseEvent): Promise<void>;
@@ -147,6 +150,34 @@ Page<DetailData, DetailMethods>({
   handleInvite() {
     const trip = this.data.trip;
     if (trip !== null) void wx.navigateTo({ url: `/pages/trip-invite/index?tripId=${trip.id}` });
+  },
+
+  handleRename() {
+    const trip = this.data.trip;
+    if (trip !== null && trip.status === 'active') {
+      void wx.navigateTo({
+        url: `/pages/trip-editor/index?id=${trip.id}&version=${trip.version}`,
+      });
+    }
+  },
+
+  handleActivity() {
+    const trip = this.data.trip;
+    if (trip !== null) {
+      void wx.navigateTo({ url: `/pages/trip-activity/index?id=${trip.id}` });
+    }
+  },
+
+  async handleReopen() {
+    const trip = this.data.trip;
+    if (trip === null || trip.status !== 'completed') return;
+    if (!(await confirm('重新开启行程？', '重新开启后所有同行人都可以继续修改账本。'))) return;
+    try {
+      await callApi('trip.reopen', { tripId: trip.id, expectedVersion: trip.version });
+      await this.loadTrip();
+    } catch (error: unknown) {
+      void wx.showToast({ icon: 'none', title: toMessage(error) });
+    }
   },
 
   async handleLeave() {

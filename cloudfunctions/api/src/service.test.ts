@@ -156,6 +156,46 @@ describe('LedgerService solo flow', () => {
     expect(await service.listTrips(user.id)).toHaveLength(1);
   });
 
+  it('rejects restoration after 30 days and allows permanent detachment', async () => {
+    const expiredTrip = await service.createTrip(user, { name: '过期归档' });
+    const completed = await service.completeTrip(user.id, {
+      tripId: expiredTrip.id,
+      expectedVersion: expiredTrip.version,
+      ignoreInvalidBills: false,
+    });
+    const archived = await service.archiveTrip(user.id, {
+      tripId: expiredTrip.id,
+      expectedVersion: completed.version,
+    });
+    clock.advanceDays(30);
+    await expect(
+      service.restoreTrip(user.id, {
+        tripId: expiredTrip.id,
+        expectedVersion: archived.version,
+      }),
+    ).rejects.toMatchObject({ code: 'TRIP_RESTORE_EXPIRED' });
+    expect(await service.listArchivedTrips(user.id)).toEqual([]);
+
+    const removable = await service.createTrip(user, { name: '主动清理' });
+    const removableCompleted = await service.completeTrip(user.id, {
+      tripId: removable.id,
+      expectedVersion: removable.version,
+      ignoreInvalidBills: false,
+    });
+    const removableArchived = await service.archiveTrip(user.id, {
+      tripId: removable.id,
+      expectedVersion: removableCompleted.version,
+    });
+    const detached = await service.removeArchivedTrip(user.id, {
+      tripId: removable.id,
+      expectedVersion: removableArchived.version,
+    });
+    expect(detached.members[0]?.viewState).toBe('detached');
+    await expect(service.getTrip(user.id, removable.id)).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+  });
+
   it('reopens a completed trip and clears completion metadata', async () => {
     const trip = await service.createTrip(user, { name: '重新出发' });
     const completed = await service.completeTrip(user.id, {

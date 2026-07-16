@@ -1,0 +1,17 @@
+<view class="page-shell activity-page">
+  <view wx:if="{{loading}}" class="skeleton activity-skeleton"></view>
+  <view wx:elif="{{errorMessage}}" class="error-banner">{{errorMessage}}</view>
+  <view wx:elif="{{activities.length === 0}}" class="empty-state">
+    <view class="empty-state__mark">记</view>
+    <view class="empty-state__title">还没有活动记录</view>
+  </view>
+  <view wx:else class="activity-list">
+    <view wx:for="{{activities}}" wx:key="id" class="activity-row">
+      <view class="activity-dot"></view>
+      <view class="activity-card surface-card">
+        <view class="activity-copy"><text class="activity-name">{{item.actorName}}</text> {{item.actionText}}</view>
+        <view class="activity-time">{{item.timeText}}</view>
+      </view>
+    </view>
+  </view>
+</view>

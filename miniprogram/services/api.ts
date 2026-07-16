@@ -40,6 +40,8 @@ export interface TripMember {
   userId: string;
   displayNameSnapshot: string;
   viewState: 'home' | 'archived' | 'detached';
+  archivedAt: string | null;
+  purgeAfter: string | null;
 }
 
 export interface BillParticipant {
@@ -93,6 +95,18 @@ export interface SettlementResponse {
   ignoredBillIds: readonly string[];
   includedCents: number;
   ledgerRevision: number;
+}
+
+export interface TripActivity {
+  id: string;
+  tripId: string;
+  actorUserId: string;
+  action: string;
+  entityType: 'trip' | 'date' | 'bill' | 'member';
+  entityId: string;
+  beforeVersion: number;
+  afterVersion: number;
+  createdAt: string;
 }
 
 export interface PublicUserProfile {

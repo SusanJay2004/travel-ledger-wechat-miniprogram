@@ -55,13 +55,20 @@
   padding: 14rpx 18rpx;
 }
 
+.detail-head__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+  margin-top: 22rpx;
+}
+
 .invite-button {
   background: rgba(255, 255, 255, 0.16);
   border-radius: 16rpx;
   color: #fff;
   font-size: 23rpx;
   line-height: 62rpx;
-  margin: 22rpx 0 0;
+  margin: 0;
   min-height: 62rpx;
   padding: 0 24rpx;
 }

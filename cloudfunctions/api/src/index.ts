@@ -150,6 +150,11 @@ export async function main(event: ApiEvent): Promise<unknown> {
           requestId,
           await service.getTrip(user.id, requiredString(event.payload, 'tripId')),
         );
+      case 'trip.activity': {
+        const tripId = requiredString(event.payload, 'tripId');
+        await service.getTrip(user.id, tripId);
+        return success(requestId, await socialRepository.listAuditLogs(tripId));
+      }
       case 'trip.create': {
         const trip = await write(() =>
           service.createTrip(user, {
@@ -268,6 +273,16 @@ export async function main(event: ApiEvent): Promise<unknown> {
           requestId,
           await write(() =>
             service.restoreTrip(user.id, {
+              tripId: requiredString(event.payload, 'tripId'),
+              expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
+            }),
+          ),
+        );
+      case 'trip.removeArchived':
+        return success(
+          requestId,
+          await write(() =>
+            service.removeArchivedTrip(user.id, {
               tripId: requiredString(event.payload, 'tripId'),
               expectedVersion: requiredInteger(event.payload, 'expectedVersion'),
             }),

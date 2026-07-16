@@ -15,6 +15,7 @@ import type { SocialRepository } from './social-repository';
 import type { TripChangePublisher } from './service';
 
 const noopPublisher: TripChangePublisher = {
+  publishTripCreated: async () => undefined,
   publishTripChange: async () => undefined,
 };
 

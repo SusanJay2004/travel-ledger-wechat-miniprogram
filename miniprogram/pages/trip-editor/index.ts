@@ -1,14 +1,17 @@
-import { callApi } from '../../services/api';
+import { callApi, type TripDetail } from '../../services/api';
 
 interface TripEditorData {
   errorMessage: string;
   name: string;
   saving: boolean;
+  tripId: string;
+  version: number;
 }
 
 interface TripEditorMethods {
   handleNameInput(event: WechatMiniprogram.Input): void;
   handleSubmit(): Promise<void>;
+  loadTrip(): Promise<void>;
 }
 
 Page<TripEditorData, TripEditorMethods>({
@@ -16,6 +19,27 @@ Page<TripEditorData, TripEditorMethods>({
     errorMessage: '',
     name: '',
     saving: false,
+    tripId: '',
+    version: 0,
+  },
+
+  onLoad(query: Record<string, string | undefined>) {
+    const tripId = query['id'] ?? '';
+    const version = Number(query['version'] ?? 0);
+    this.setData({ tripId, version: Number.isSafeInteger(version) ? version : 0 });
+    if (tripId.length > 0) {
+      void wx.setNavigationBarTitle({ title: '修改行程名称' });
+      void this.loadTrip();
+    }
+  },
+
+  async loadTrip() {
+    try {
+      const trip = await callApi<TripDetail>('trip.get', { tripId: this.data.tripId });
+      this.setData({ name: trip.name, version: trip.version });
+    } catch (error: unknown) {
+      this.setData({ errorMessage: toMessage(error) });
+    }
   },
 
   handleNameInput(event: WechatMiniprogram.Input) {
@@ -35,8 +59,17 @@ Page<TripEditorData, TripEditorMethods>({
 
     this.setData({ saving: true });
     try {
-      const result = await callApi<{ tripId: string }>('trip.create', { name });
-      void wx.redirectTo({ url: `/pages/trip-detail/index?id=${result.tripId}` });
+      if (this.data.tripId.length > 0) {
+        await callApi('trip.rename', {
+          tripId: this.data.tripId,
+          name,
+          expectedVersion: this.data.version,
+        });
+        void wx.navigateBack();
+      } else {
+        const result = await callApi<{ tripId: string }>('trip.create', { name });
+        void wx.redirectTo({ url: `/pages/trip-detail/index?id=${result.tripId}` });
+      }
     } catch (error: unknown) {
       this.setData({
         errorMessage: error instanceof Error ? error.message : '创建失败，请稍后重试。',
@@ -45,3 +78,7 @@ Page<TripEditorData, TripEditorMethods>({
     }
   },
 });
+
+function toMessage(error: unknown): string {
+  return error instanceof Error ? error.message : '操作失败，请稍后重试。';
+}

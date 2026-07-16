@@ -23,6 +23,7 @@ import type {
 import type { Repository } from './repository';
 
 export interface TripChangePublisher {
+  publishTripCreated(after: TripDocument, actorUserId: string): Promise<void>;
   publishTripChange(
     before: TripDocument,
     after: TripDocument,
@@ -34,6 +35,7 @@ export interface TripChangePublisher {
 }
 
 const noopPublisher: TripChangePublisher = {
+  publishTripCreated: async () => undefined,
   publishTripChange: async () => undefined,
 };
 
@@ -93,6 +95,11 @@ export interface ReopenTripInput {
 }
 
 export interface RestoreTripInput {
+  tripId: string;
+  expectedVersion: number;
+}
+
+export interface RemoveArchivedTripInput {
   tripId: string;
   expectedVersion: number;
 }
@@ -169,7 +176,14 @@ export class LedgerService {
   async listArchivedTrips(userId: string): Promise<readonly TripDocument[]> {
     const trips = await this.repository.listTripsForUser(userId);
     return trips
-      .filter((trip) => memberFor(trip, userId).viewState === 'archived')
+      .filter((trip) => {
+        const member = memberFor(trip, userId);
+        return (
+          member.viewState === 'archived' &&
+          member.purgeAfter !== null &&
+          new Date(member.purgeAfter).getTime() > this.clock.now().getTime()
+        );
+      })
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   }
 
@@ -219,6 +233,7 @@ export class LedgerService {
       completedBy: null,
     };
     await this.repository.createTrip(trip);
+    await this.publisher.publishTripCreated(trip, user.id);
     return trip;
   }
 
@@ -489,6 +504,12 @@ export class LedgerService {
       'TRIP_NOT_ARCHIVED',
       '该行程不在已完结行程中。',
     );
+    assertBusiness(
+      member.purgeAfter !== null &&
+        new Date(member.purgeAfter).getTime() > this.clock.now().getTime(),
+      'TRIP_RESTORE_EXPIRED',
+      '该行程已超过 30 天恢复期。',
+    );
     const homeCount = await this.repository.countHomeTrips(userId);
     assertBusiness(
       homeCount < LIMITS.activeTripsPerUser,
@@ -501,6 +522,27 @@ export class LedgerService {
         : item,
     );
     return this.saveTrip(trip, userId, { members }, 'member.restored', 'member', userId);
+  }
+
+  async removeArchivedTrip(userId: string, input: RemoveArchivedTripInput): Promise<TripDocument> {
+    const trip = await this.versionedTrip(userId, input.tripId, input.expectedVersion);
+    const member = memberFor(trip, userId);
+    assertBusiness(
+      member.viewState === 'archived',
+      'TRIP_NOT_ARCHIVED',
+      '只有已归档行程可以永久移除。',
+    );
+    const members = trip.members.map((item) =>
+      item.userId === userId
+        ? {
+            ...item,
+            viewState: 'detached' as const,
+            archivedAt: null,
+            purgeAfter: null,
+          }
+        : item,
+    );
+    return this.saveTrip(trip, userId, { members }, 'member.detached', 'member', userId);
   }
 
   private async editableTrip(userId: string, tripId: string, expectedVersion: number) {

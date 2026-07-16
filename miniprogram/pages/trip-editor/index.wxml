@@ -1,8 +1,8 @@
 <view class="page-shell editor-page">
   <view class="editor-hero">
-    <view class="editor-hero__eyebrow">NEW JOURNEY</view>
-    <view class="page-title">给这段旅程起个名字</view>
-    <view class="page-subtitle">后续任何同行人都可以修改，日期和账单可进入行程后再添加。</view>
+    <view class="editor-hero__eyebrow">{{tripId ? 'EDIT JOURNEY' : 'NEW JOURNEY'}}</view>
+    <view class="page-title">{{tripId ? '修改行程名称' : '给这段旅程起个名字'}}</view>
+    <view class="page-subtitle">{{tripId ? '修改会立即同步给所有同行人。' : '后续任何同行人都可以修改，日期和账单可进入行程后再添加。'}}</view>
   </view>
 
   <view class="form-card surface-card">
@@ -22,6 +22,6 @@
   </view>
 
   <button class="primary-button submit-button" loading="{{saving}}" disabled="{{saving}}" bindtap="handleSubmit">
-    {{saving ? '正在创建…' : '创建行程'}}
+    {{saving ? '正在保存…' : (tripId ? '保存修改' : '创建行程')}}
   </button>
 </view>

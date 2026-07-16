@@ -6,6 +6,29 @@
   height: 180rpx;
 }
 
+.archive-toolbar {
+  align-items: center;
+  color: var(--color-muted);
+  display: flex;
+  font-size: 23rpx;
+  justify-content: space-between;
+  margin-bottom: 22rpx;
+}
+
+.clear-button,
+.remove-button {
+  background: transparent;
+  color: var(--color-danger);
+  font-size: 22rpx;
+  margin: 0;
+  padding: 0 14rpx;
+}
+
+.clear-button::after,
+.remove-button::after {
+  border: 0;
+}
+
 .archived-card {
   align-items: center;
   display: flex;
@@ -57,4 +80,9 @@
 
 .restore-button::after {
   border: 0;
+}
+
+.remove-button {
+  line-height: 50rpx;
+  min-height: 50rpx;
 }

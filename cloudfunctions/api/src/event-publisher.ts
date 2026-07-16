@@ -10,6 +10,23 @@ export class EventPublisher {
     private readonly repository: Repository,
   ) {}
 
+  async publishTripCreated(after: TripDocument, actorUserId: string): Promise<void> {
+    const log: AuditLogDocument = {
+      id: deterministicId('aud', after.id, String(after.version), 'trip.created'),
+      tripId: after.id,
+      actorUserId,
+      action: 'trip.created',
+      entityType: 'trip',
+      entityId: after.id,
+      beforeVersion: 0,
+      afterVersion: after.version,
+      createdAt: after.createdAt,
+    };
+    await this.social.createAuditLog(log).catch(() => {
+      console.error('trip-create-audit-failed', { tripId: after.id });
+    });
+  }
+
   async publishTripChange(
     before: TripDocument,
     after: TripDocument,

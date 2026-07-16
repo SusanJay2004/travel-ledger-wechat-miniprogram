@@ -7,6 +7,10 @@
     <view class="empty-state__description">完结后的行程可以从详情页移到这里，30 天内随时恢复。</view>
   </view>
   <view wx:else>
+    <view class="archive-toolbar">
+      <view>共 {{trips.length}} 段</view>
+      <button class="clear-button" bindtap="handleClear">清空</button>
+    </view>
     <view wx:for="{{trips}}" wx:key="id" class="archived-card surface-card" data-trip-id="{{item.id}}" bindtap="handleOpenTrip">
       <view class="archived-card__main">
         <view class="archived-card__name">{{item.name}}</view>
@@ -16,6 +20,7 @@
       <view class="archived-card__side">
         <view class="archived-card__amount">{{item.totalText}}</view>
         <button class="restore-button" catchtap="handleRestore" data-trip-id="{{item.id}}" data-version="{{item.version}}">恢复</button>
+        <button class="remove-button" catchtap="handleRemove" data-trip-id="{{item.id}}" data-version="{{item.version}}">移除</button>
       </view>
     </view>
   </view>

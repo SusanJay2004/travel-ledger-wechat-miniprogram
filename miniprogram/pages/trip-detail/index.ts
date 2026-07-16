@@ -5,6 +5,7 @@ import {
   type TripBill,
   type TripDetail,
 } from '../../services/api';
+import { runtimeConfig } from '../../config/runtime';
 
 interface BillCard extends TripBill {
   amountText: string;
@@ -21,6 +22,7 @@ interface DateSection {
 
 interface DetailData {
   addingDate: boolean;
+  collaborationEnabled: boolean;
   dateSections: readonly DateSection[];
   deletedBills: readonly BillCard[];
   errorMessage: string;
@@ -36,6 +38,8 @@ interface DetailMethods {
   handleBillAction(event: WechatMiniprogram.BaseEvent): Promise<void>;
   handleComplete(): Promise<void>;
   handleDateChange(event: WechatMiniprogram.PickerChange): void;
+  handleInvite(): void;
+  handleLeave(): Promise<void>;
   handleRetry(): void;
   handleRestoreBill(event: WechatMiniprogram.BaseEvent): Promise<void>;
   handleSettle(): Promise<void>;
@@ -46,6 +50,7 @@ interface DetailMethods {
 Page<DetailData, DetailMethods>({
   data: {
     addingDate: false,
+    collaborationEnabled: runtimeConfig.collaborationEnabled,
     dateSections: [],
     deletedBills: [],
     errorMessage: '',
@@ -116,6 +121,27 @@ Page<DetailData, DetailMethods>({
       void wx.navigateTo({
         url: `/pages/bill-editor/index?tripId=${trip.id}&date=${date}&version=${trip.version}`,
       });
+    }
+  },
+
+  handleInvite() {
+    const trip = this.data.trip;
+    if (trip !== null) void wx.navigateTo({ url: `/pages/trip-invite/index?tripId=${trip.id}` });
+  },
+
+  async handleLeave() {
+    const trip = this.data.trip;
+    if (trip === null) return;
+    const accepted = await confirm(
+      '退出这段行程？',
+      '未被账单引用时可以退出，退出后将不再看到该行程。',
+    );
+    if (!accepted) return;
+    try {
+      await callApi('social.leaveTrip', { tripId: trip.id });
+      void wx.switchTab({ url: '/pages/home/index' });
+    } catch (error: unknown) {
+      void wx.showToast({ icon: 'none', title: toMessage(error) });
     }
   },
 

@@ -1,7 +1,9 @@
 import { CloudRepository, type CloudDatabase } from './cloud-repository';
+import { CloudSocialRepository } from './cloud-social-repository';
 import { BusinessError } from './errors';
 import { secureIdGenerator, systemClock } from './generators';
 import { LedgerService } from './service';
+import { SocialService } from './social-service';
 
 interface ApiEvent {
   action?: unknown;
@@ -39,6 +41,13 @@ export async function main(event: ApiEvent): Promise<unknown> {
     systemClock,
     secureIdGenerator,
   );
+  const social = new SocialService(
+    new CloudRepository(cloud.database()),
+    new CloudSocialRepository(cloud.database()),
+    systemClock,
+    secureIdGenerator,
+    process.env['PRODUCT_MODE'] === 'collaboration' ? 'collaboration' : 'solo',
+  );
 
   try {
     const user = await service.bootstrapSession(openId);
@@ -53,6 +62,61 @@ export async function main(event: ApiEvent): Promise<unknown> {
         });
         return success(requestId, publicProfile(updated));
       }
+      case 'social.search':
+        return success(
+          requestId,
+          await social.searchByPublicId(user.id, requiredString(event.payload, 'publicId')),
+        );
+      case 'social.sendFriendRequest':
+        return success(
+          requestId,
+          await social.sendFriendRequest(user, requiredString(event.payload, 'publicId')),
+        );
+      case 'social.respondFriendRequest':
+        return success(
+          requestId,
+          await social.respondFriendRequest(
+            user,
+            requiredString(event.payload, 'requestId'),
+            requiredBoolean(event.payload, 'accept'),
+          ),
+        );
+      case 'social.listFriends':
+        return success(requestId, await social.listFriends(user.id));
+      case 'social.deleteFriend':
+        await social.deleteFriend(user.id, requiredString(event.payload, 'friendUserId'));
+        return success(requestId, null);
+      case 'social.blockUser':
+        await social.blockUser(user.id, requiredString(event.payload, 'blockedUserId'));
+        return success(requestId, null);
+      case 'social.listNotifications':
+        return success(requestId, await social.listNotifications(user.id));
+      case 'social.markNotificationRead':
+        await social.markNotificationRead(user.id, requiredString(event.payload, 'notificationId'));
+        return success(requestId, null);
+      case 'social.inviteToTrip':
+        return success(
+          requestId,
+          await social.inviteToTrip(
+            user,
+            requiredString(event.payload, 'tripId'),
+            requiredString(event.payload, 'inviteeUserId'),
+          ),
+        );
+      case 'social.leaveTrip':
+        return success(
+          requestId,
+          await social.leaveTrip(user, requiredString(event.payload, 'tripId')),
+        );
+      case 'social.respondTripInvitation':
+        return success(
+          requestId,
+          await social.respondTripInvitation(
+            user,
+            requiredString(event.payload, 'invitationId'),
+            requiredBoolean(event.payload, 'accept'),
+          ),
+        );
       case 'trip.list':
         return success(requestId, await service.listTrips(user.id));
       case 'trip.listArchived':
@@ -218,6 +282,14 @@ function requiredInteger(payload: unknown, key: string): number {
 function optionalBoolean(payload: unknown, key: string): boolean {
   const value = payloadValue(payload, key);
   if (value === undefined) return false;
+  if (typeof value !== 'boolean') {
+    throw new BusinessError('REQUEST_INVALID', `字段 ${key} 必须是布尔值。`);
+  }
+  return value;
+}
+
+function requiredBoolean(payload: unknown, key: string): boolean {
+  const value = payloadValue(payload, key);
   if (typeof value !== 'boolean') {
     throw new BusinessError('REQUEST_INVALID', `字段 ${key} 必须是布尔值。`);
   }

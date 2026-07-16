@@ -17,6 +17,7 @@
       <view wx:if="{{trip.invalidBillCount > 0}}" class="detail-head__warning">
         {{trip.invalidBillCount}} 笔账单待完善，不会纳入分账
       </view>
+      <button wx:if="{{collaborationEnabled && trip.status === 'active'}}" class="invite-button" bindtap="handleInvite">邀请好友</button>
     </view>
 
     <view wx:if="{{dateSections.length === 0}}" class="empty-state detail-empty">
@@ -66,6 +67,7 @@
     <view class="trip-lifecycle">
       <button wx:if="{{trip.status === 'active'}}" class="text-button" bindtap="handleComplete">完结行程</button>
       <button wx:else class="text-button" bindtap="handleArchive">移入已完结行程</button>
+      <button wx:if="{{collaborationEnabled && trip.status === 'active' && trip.members.length > 1}}" class="text-button" bindtap="handleLeave">退出行程</button>
     </view>
 
     <view class="bottom-actions">

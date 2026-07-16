@@ -8,7 +8,8 @@
     "pages/trip-detail/index",
     "pages/bill-editor/index",
     "pages/archived-trips/index",
-    "pages/profile-editor/index"
+    "pages/profile-editor/index",
+    "pages/trip-invite/index"
   ],
   "sitemapLocation": "sitemap.json",
   "style": "v2",

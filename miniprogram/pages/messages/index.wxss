@@ -1,1 +1,113 @@
-/* Message page currently shares the global empty-state design. */
+.messages-page {
+  padding-top: 42rpx;
+}
+
+.message-tabs {
+  background: #eae7df;
+  border-radius: 20rpx;
+  display: flex;
+  margin: 30rpx 0;
+  padding: 6rpx;
+}
+
+.message-tab {
+  border-radius: 16rpx;
+  color: var(--color-muted);
+  flex: 1;
+  font-size: 26rpx;
+  font-weight: 650;
+  padding: 18rpx;
+  text-align: center;
+}
+
+.message-tab--active {
+  background: var(--color-surface);
+  box-shadow: 0 4rpx 14rpx rgba(52, 66, 62, 0.08);
+  color: var(--color-primary);
+}
+
+.messages-skeleton {
+  height: 180rpx;
+}
+
+.compact-empty {
+  min-height: 44vh;
+}
+
+.notification-card,
+.friend-card,
+.search-card {
+  margin-bottom: 20rpx;
+  padding: 26rpx 28rpx;
+}
+
+.notification-card__title,
+.friend-card__name {
+  font-size: 29rpx;
+  font-weight: 750;
+}
+
+.notification-card__body,
+.friend-card__signature {
+  color: var(--color-muted);
+  font-size: 24rpx;
+  line-height: 1.55;
+  margin-top: 10rpx;
+}
+
+.notification-actions {
+  display: flex;
+  gap: 16rpx;
+  justify-content: flex-end;
+  margin-top: 20rpx;
+}
+
+.notice-button,
+.add-friend,
+.search-button {
+  background: var(--color-primary);
+  border-radius: 15rpx;
+  color: #fff;
+  font-size: 23rpx;
+  line-height: 62rpx;
+  margin: 0;
+  min-height: 62rpx;
+  padding: 0 24rpx;
+}
+
+.notice-button::after,
+.add-friend::after,
+.search-button::after {
+  border: 0;
+}
+
+.notice-button--muted {
+  background: #eceae4;
+  color: var(--color-muted);
+}
+
+.search-card,
+.friend-card {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.id-input {
+  flex: 1;
+  font-size: 27rpx;
+  height: 72rpx;
+  margin-right: 18rpx;
+}
+
+.friend-card__id {
+  color: var(--color-primary);
+  font-size: 21rpx;
+  margin-top: 8rpx;
+}
+
+.section-label {
+  color: var(--color-muted);
+  font-size: 24rpx;
+  margin: 30rpx 8rpx 16rpx;
+}

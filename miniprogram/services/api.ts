@@ -95,6 +95,38 @@ export interface SettlementResponse {
   ledgerRevision: number;
 }
 
+export interface PublicUserProfile {
+  userId: string;
+  publicId: string;
+  displayName: string;
+  signature: string;
+  avatarUrl: string | null;
+}
+
+export interface FriendView extends PublicUserProfile {
+  friendshipId: string;
+}
+
+export interface AppNotification {
+  id: string;
+  type:
+    | 'friend_request'
+    | 'friend_accepted'
+    | 'trip_invitation'
+    | 'member_joined'
+    | 'member_left'
+    | 'trip_completed'
+    | 'trip_reopened';
+  actorUserId: string | null;
+  tripId: string | null;
+  requestId: string | null;
+  invitationId: string | null;
+  title: string;
+  body: string;
+  readAt: string | null;
+  createdAt: string;
+}
+
 export async function callApi<T>(action: string, payload: unknown = {}): Promise<T> {
   if (wx.cloud === undefined) throw new Error('当前微信版本不支持云开发。');
   const requestId = createRequestId();

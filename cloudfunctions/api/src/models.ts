@@ -15,6 +15,67 @@ export interface UserDocument {
   updatedAt: string;
 }
 
+export type FriendRequestStatus = 'pending' | 'accepted' | 'rejected' | 'expired';
+
+export interface FriendRequestDocument {
+  id: string;
+  fromUserId: string;
+  toUserId: string;
+  status: FriendRequestStatus;
+  createdAt: string;
+  expiresAt: string;
+  respondedAt: string | null;
+}
+
+export interface FriendshipDocument {
+  id: string;
+  userIds: readonly [string, string];
+  createdAt: string;
+}
+
+export interface BlockDocument {
+  id: string;
+  blockerUserId: string;
+  blockedUserId: string;
+  createdAt: string;
+}
+
+export type NotificationType =
+  | 'friend_request'
+  | 'friend_accepted'
+  | 'trip_invitation'
+  | 'member_joined'
+  | 'member_left'
+  | 'trip_completed'
+  | 'trip_reopened';
+
+export interface NotificationDocument {
+  id: string;
+  userId: string;
+  type: NotificationType;
+  actorUserId: string | null;
+  tripId: string | null;
+  requestId: string | null;
+  invitationId: string | null;
+  title: string;
+  body: string;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export type InvitationStatus = 'pending' | 'accepted' | 'rejected' | 'expired';
+
+export interface TripInvitationDocument {
+  id: string;
+  tripId: string;
+  inviterUserId: string;
+  inviteeUserId: string;
+  status: InvitationStatus;
+  createdAt: string;
+  expiresAt: string;
+  respondedAt: string | null;
+}
+
 export interface TripMemberDocument {
   userId: string;
   displayNameSnapshot: string;

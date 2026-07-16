@@ -1,29 +1,30 @@
 import type { TripDocument, UserDocument } from './models';
 import type { Repository } from './repository';
 
-interface QueryResult<T> {
+export interface QueryResult<T> {
   data: T[];
 }
 
-interface UpdateResult {
+export interface UpdateResult {
   stats?: { updated?: number };
 }
 
-interface Collection<T> {
+export interface CloudCollection<T> {
   add(options: { data: T }): Promise<unknown>;
   doc(id: string): {
     get(): Promise<{ data: T }>;
+    remove(): Promise<unknown>;
     set(options: { data: T }): Promise<unknown>;
   };
   get(): Promise<QueryResult<T>>;
-  limit(value: number): Collection<T>;
-  skip(value: number): Collection<T>;
-  where(query: Record<string, unknown>): Collection<T>;
+  limit(value: number): CloudCollection<T>;
+  skip(value: number): CloudCollection<T>;
+  where(query: Record<string, unknown>): CloudCollection<T>;
   update(options: { data: Partial<T> }): Promise<UpdateResult>;
 }
 
 export interface CloudDatabase {
-  collection<T>(name: string): Collection<T>;
+  collection<T>(name: string): CloudCollection<T>;
 }
 
 export class CloudRepository implements Repository {
@@ -37,6 +38,15 @@ export class CloudRepository implements Repository {
   async findUserByPublicId(publicId: string): Promise<UserDocument | null> {
     const result = await this.users().where({ publicId }).limit(1).get();
     return result.data[0] ?? null;
+  }
+
+  async getUser(userId: string): Promise<UserDocument | null> {
+    try {
+      return (await this.users().doc(userId).get()).data;
+    } catch (error: unknown) {
+      if (isNotFoundError(error)) return null;
+      throw error;
+    }
   }
 
   async createUser(user: UserDocument): Promise<void> {

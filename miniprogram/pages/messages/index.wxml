@@ -1,4 +1,4 @@
-<view class="page-shell">
+<view class="page-shell messages-page">
   <view class="page-title">消息</view>
   <view class="page-subtitle">好友申请、行程邀请与协作动态都会在这里出现</view>
 
@@ -7,9 +7,51 @@
     <view class="empty-state__title">当前是单人记账模式</view>
     <view class="empty-state__description">公开 ID、好友和邀请会在协作版通过平台发布门禁后开放。</view>
   </view>
-  <view wx:else class="empty-state">
-    <view class="empty-state__mark">信</view>
-    <view class="empty-state__title">还没有新消息</view>
-    <view class="empty-state__description">新的好友申请和行程邀请会及时提醒你。</view>
-  </view>
+
+  <block wx:else>
+    <view class="message-tabs">
+      <view class="message-tab {{activeTab === 'notifications' ? 'message-tab--active' : ''}}" data-tab="notifications" bindtap="switchTab">通知</view>
+      <view class="message-tab {{activeTab === 'friends' ? 'message-tab--active' : ''}}" data-tab="friends" bindtap="switchTab">好友</view>
+    </view>
+
+    <view wx:if="{{loading}}" class="skeleton messages-skeleton"></view>
+    <view wx:elif="{{errorMessage}}" class="error-banner">{{errorMessage}}</view>
+
+    <view wx:elif="{{activeTab === 'notifications'}}">
+      <view wx:if="{{notifications.length === 0}}" class="empty-state compact-empty">
+        <view class="empty-state__mark">信</view>
+        <view class="empty-state__title">还没有新通知</view>
+      </view>
+      <view wx:for="{{notifications}}" wx:key="id" class="notification-card surface-card">
+        <view class="notification-card__title">{{item.title}}</view>
+        <view class="notification-card__body">{{item.body}}</view>
+        <view wx:if="{{item.readAt === null && (item.requestId || item.invitationId)}}" class="notification-actions">
+          <button class="notice-button notice-button--muted" data-notification-id="{{item.id}}" data-request-id="{{item.requestId}}" data-invitation-id="{{item.invitationId}}" data-accept="{{false}}" bindtap="handleNotificationAction">拒绝</button>
+          <button class="notice-button" data-notification-id="{{item.id}}" data-request-id="{{item.requestId}}" data-invitation-id="{{item.invitationId}}" data-accept="{{true}}" bindtap="handleNotificationAction">同意</button>
+        </view>
+      </view>
+    </view>
+
+    <view wx:else>
+      <view class="search-card surface-card">
+        <input class="id-input" maxlength="10" placeholder="输入 10 位账号 ID" value="{{publicIdQuery}}" bindinput="handleQueryInput" />
+        <button class="search-button" bindtap="handleSearch">搜索</button>
+      </view>
+      <view wx:if="{{searchResult}}" class="friend-card surface-card">
+        <view>
+          <view class="friend-card__name">{{searchResult.displayName}}</view>
+          <view class="friend-card__id">ID {{searchResult.publicId}}</view>
+          <view class="friend-card__signature">{{searchResult.signature}}</view>
+        </view>
+        <button class="add-friend" bindtap="handleAddFriend">添加</button>
+      </view>
+      <view class="section-label">我的好友 {{friends.length}}</view>
+      <view wx:for="{{friends}}" wx:key="userId" class="friend-card surface-card">
+        <view>
+          <view class="friend-card__name">{{item.displayName}}</view>
+          <view class="friend-card__id">ID {{item.publicId}}</view>
+        </view>
+      </view>
+    </view>
+  </block>
 </view>

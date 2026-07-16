@@ -3,8 +3,9 @@
     <input class="search-input" placeholder="搜索好友姓名或 ID" value="{{query}}" bindinput="handleQueryInput" />
   </view>
 
+  <view wx:if="{{noticeMessage}}" class="notice-banner">{{noticeMessage}}</view>
+  <view wx:if="{{errorMessage}}" class="error-banner">{{errorMessage}}</view>
   <view wx:if="{{loading}}" class="skeleton invite-skeleton"></view>
-  <view wx:elif="{{errorMessage}}" class="error-banner">{{errorMessage}}</view>
   <view wx:elif="{{friends.length === 0}}" class="empty-state">
     <view class="empty-state__mark">友</view>
     <view class="empty-state__title">暂无可邀请的好友</view>

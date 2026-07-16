@@ -12,6 +12,16 @@
   height: 260rpx;
 }
 
+.notice-banner {
+  margin-bottom: 20rpx;
+  padding: 20rpx 24rpx;
+  border: 2rpx solid #b8d8d3;
+  border-radius: 18rpx;
+  color: #0f6e65;
+  background: #eef8f5;
+  line-height: 1.5;
+}
+
 .friend-list {
   overflow: hidden;
   padding: 0 28rpx;

@@ -1,4 +1,5 @@
 import { callApi, type FriendView, type TripDetail } from '../../services/api';
+import { inviteBatch } from '../../services/invite-batch';
 
 interface SelectableFriend extends FriendView {
   visible: boolean;
@@ -9,6 +10,7 @@ interface InviteData {
   errorMessage: string;
   friends: readonly SelectableFriend[];
   loading: boolean;
+  noticeMessage: string;
   query: string;
   saving: boolean;
   tripId: string;
@@ -26,6 +28,7 @@ Page<InviteData, InviteMethods>({
     errorMessage: '',
     friends: [],
     loading: true,
+    noticeMessage: '',
     query: '',
     saving: false,
     tripId: '',
@@ -80,19 +83,33 @@ Page<InviteData, InviteMethods>({
   async handleSubmit() {
     const selected = this.data.friends.filter((friend) => friend.selected);
     if (selected.length === 0 || this.data.saving) return;
-    this.setData({ saving: true });
-    try {
-      for (const friend of selected) {
-        await callApi('social.inviteToTrip', {
-          tripId: this.data.tripId,
-          inviteeUserId: friend.userId,
-        });
-      }
+    this.setData({ errorMessage: '', noticeMessage: '', saving: true });
+    const result = await inviteBatch(selected, async (friend) => {
+      await callApi('social.inviteToTrip', {
+        tripId: this.data.tripId,
+        inviteeUserId: friend.userId,
+      });
+    });
+    if (result.failed.length === 0) {
       void wx.showToast({ icon: 'success', title: `已邀请 ${selected.length} 人` });
       void wx.navigateBack();
-    } catch (error: unknown) {
-      this.setData({ errorMessage: toMessage(error), saving: false });
+      return;
     }
+
+    const succeededIds = new Set(result.succeeded.map((friend) => friend.userId));
+    const failedSummary = result.failed
+      .slice(0, 3)
+      .map(({ candidate, message }) => `${candidate.displayName}：${message}`)
+      .join('；');
+    this.setData({
+      errorMessage: `${result.failed.length} 人未邀请成功：${failedSummary}${result.failed.length > 3 ? '……' : ''}`,
+      friends: this.data.friends.filter((friend) => !succeededIds.has(friend.userId)),
+      noticeMessage:
+        result.succeeded.length > 0
+          ? `已成功邀请 ${result.succeeded.length} 人，失败项仍保持勾选。`
+          : '',
+      saving: false,
+    });
   },
 });
 

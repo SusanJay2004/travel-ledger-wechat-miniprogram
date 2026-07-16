@@ -9,6 +9,7 @@ interface ProfileEditorData {
   loading: boolean;
   saving: boolean;
   signature: string;
+  originalAvatarUrl: string;
 }
 
 interface ProfileEditorMethods {
@@ -29,6 +30,7 @@ Page<ProfileEditorData, ProfileEditorMethods>({
     loading: true,
     saving: false,
     signature: '',
+    originalAvatarUrl: '',
   },
 
   onLoad() {
@@ -42,6 +44,7 @@ Page<ProfileEditorData, ProfileEditorMethods>({
         avatarUrl: profile.avatarUrl ?? '',
         displayName: profile.displayName,
         loading: false,
+        originalAvatarUrl: profile.avatarUrl ?? '',
         signature: profile.signature,
       });
     } catch (error: unknown) {
@@ -74,15 +77,28 @@ Page<ProfileEditorData, ProfileEditorMethods>({
     }
     this.setData({ errorMessage: '', saving: true });
     try {
-      const avatarUrl = this.data.avatarChanged
+      const uploadedAvatar = this.data.avatarChanged
         ? await this.uploadAvatar(this.data.avatarUrl)
-        : this.data.avatarUrl || null;
-      const updated = await callApi<SessionProfile>('session.updateProfile', {
-        displayName,
-        signature: this.data.signature.trim() || '这个人很懒，什么也没留下～',
-        avatarUrl,
-      });
+        : null;
+      let updated: SessionProfile;
+      try {
+        updated = await callApi<SessionProfile>('session.updateProfile', {
+          displayName,
+          signature: this.data.signature.trim() || '这个人很懒，什么也没留下～',
+          avatarUrl: uploadedAvatar ?? (this.data.avatarUrl || null),
+        });
+      } catch (error: unknown) {
+        if (uploadedAvatar !== null) await deleteCloudFile(uploadedAvatar);
+        throw error;
+      }
       updateCachedSessionProfile(updated);
+      if (
+        uploadedAvatar !== null &&
+        this.data.originalAvatarUrl.startsWith('cloud://') &&
+        this.data.originalAvatarUrl !== uploadedAvatar
+      ) {
+        await deleteCloudFile(this.data.originalAvatarUrl);
+      }
       void wx.navigateBack();
     } catch (error: unknown) {
       this.setData({ errorMessage: toMessage(error), saving: false });
@@ -103,4 +119,12 @@ Page<ProfileEditorData, ProfileEditorMethods>({
 
 function toMessage(error: unknown): string {
   return error instanceof Error ? error.message : '保存失败，请稍后重试。';
+}
+
+async function deleteCloudFile(fileId: string): Promise<void> {
+  try {
+    await wx.cloud?.deleteFile({ fileList: [fileId] });
+  } catch {
+    console.warn('avatar-cleanup-failed');
+  }
 }

@@ -102,6 +102,7 @@ Page<DetailData, DetailMethods>({
       ]);
       void wx.setNavigationBarTitle({ title: trip.name });
       this.setData({
+        collaborationEnabled: profile.productMode === 'collaboration',
         dateSections: buildDateSections(trip),
         deletedBills: trip.bills.filter((bill) => bill.deletedAt !== null).map(toBillCard),
         loading: false,

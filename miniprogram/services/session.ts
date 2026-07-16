@@ -1,4 +1,5 @@
 import { callApi, type SessionProfile } from './api';
+import { configureRuntimeMode } from '../config/runtime';
 
 let cachedProfile: SessionProfile | null = null;
 let pendingProfile: Promise<SessionProfile> | null = null;
@@ -9,6 +10,7 @@ export function getSessionProfile(forceRefresh = false): Promise<SessionProfile>
 
   const request = callApi<SessionProfile>('session.bootstrap')
     .then((profile) => {
+      configureRuntimeMode(profile.productMode);
       cachedProfile = profile;
       return profile;
     })
@@ -20,6 +22,7 @@ export function getSessionProfile(forceRefresh = false): Promise<SessionProfile>
 }
 
 export function updateCachedSessionProfile(profile: SessionProfile): void {
+  configureRuntimeMode(profile.productMode);
   cachedProfile = profile;
 }
 

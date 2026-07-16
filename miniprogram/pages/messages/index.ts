@@ -6,6 +6,7 @@ import {
   type FriendView,
   type PublicUserProfile,
 } from '../../services/api';
+import { getSessionProfile } from '../../services/session';
 
 interface MessageData {
   activeTab: 'notifications' | 'friends';
@@ -48,15 +49,28 @@ Page<MessageData, MessageMethods>({
 
   onLoad(query: Record<string, string | undefined>) {
     const publicId = scenePublicId(query['scene']) ?? query['publicId'] ?? '';
-    if (this.data.collaborationEnabled && /^[A-Z2-9]{10}$/.test(publicId)) {
+    if (/^[A-Z2-9]{10}$/.test(publicId)) {
       this.setData({ activeTab: 'friends', publicIdQuery: publicId });
-      void this.handleSearch();
+      if (this.data.collaborationEnabled) void this.handleSearch();
     }
   },
 
   onShow() {
     if (wx.getStorageSync<boolean>('privacy-consent-v1') !== true) return;
-    if (this.data.collaborationEnabled) void this.loadData();
+    void getSessionProfile()
+      .then((profile) => {
+        const collaborationEnabled = profile.productMode === 'collaboration';
+        this.setData({ collaborationEnabled });
+        if (collaborationEnabled) {
+          void this.loadData();
+          if (/^[A-Z2-9]{10}$/.test(this.data.publicIdQuery) && this.data.searchResult === null) {
+            void this.handleSearch();
+          }
+        }
+      })
+      .catch((error: unknown) => {
+        this.setData({ errorMessage: toMessage(error), loading: false });
+      });
   },
 
   async loadData() {

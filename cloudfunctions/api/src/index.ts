@@ -109,7 +109,7 @@ export async function main(event: ApiEvent): Promise<unknown> {
         : operation();
     switch (action) {
       case 'session.bootstrap':
-        return success(requestId, publicProfile(user));
+        return success(requestId, publicProfile(user, productMode));
       case 'session.qrCode': {
         return success(
           requestId,
@@ -155,7 +155,7 @@ export async function main(event: ApiEvent): Promise<unknown> {
             avatarUrl: optionalNullableString(event.payload, 'avatarUrl'),
           }),
         );
-        return success(requestId, publicProfile(updated));
+        return success(requestId, publicProfile(updated, productMode));
       }
       case 'session.deleteAccount':
         await write(() => service.deleteAccount(user, socialRepository));
@@ -422,13 +422,17 @@ function failure(
   return { ok: false as const, requestId, error: { code, message, retryable, details } };
 }
 
-function publicProfile(user: Awaited<ReturnType<LedgerService['bootstrapSession']>>) {
+function publicProfile(
+  user: Awaited<ReturnType<LedgerService['bootstrapSession']>>,
+  productMode: 'solo' | 'collaboration',
+) {
   return {
     userId: user.id,
     publicId: user.publicId,
     displayName: user.displayName,
     signature: user.signature,
     avatarUrl: user.avatarUrl,
+    productMode,
   };
 }
 

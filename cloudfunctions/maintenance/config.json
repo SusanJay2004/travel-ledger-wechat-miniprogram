@@ -1,0 +1,9 @@
+{
+  "triggers": [
+    {
+      "name": "daily-maintenance",
+      "type": "timer",
+      "config": "0 30 3 * * * *"
+    }
+  ]
+}

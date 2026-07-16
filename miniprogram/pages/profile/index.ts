@@ -36,7 +36,12 @@ Page<ProfileData, ProfileMethods>({
     this.setData({ errorMessage: '', loading: true });
     try {
       const profile = await getSessionProfile(true);
-      this.setData({ avatarText: [...profile.displayName][0] ?? '旅', loading: false, profile });
+      this.setData({
+        avatarText: [...profile.displayName][0] ?? '旅',
+        collaborationEnabled: profile.productMode === 'collaboration',
+        loading: false,
+        profile,
+      });
     } catch (error: unknown) {
       this.setData({
         errorMessage: error instanceof Error ? error.message : '资料加载失败，请稍后重试。',

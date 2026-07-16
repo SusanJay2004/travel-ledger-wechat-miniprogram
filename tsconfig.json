@@ -4,6 +4,7 @@
     { "path": "./packages/domain" },
     { "path": "./miniprogram" },
     { "path": "./cloudfunctions/api" },
-    { "path": "./cloudfunctions/maintenance" }
+    { "path": "./cloudfunctions/maintenance" },
+    { "path": "./cloudfunctions/backup" }
   ]
 }

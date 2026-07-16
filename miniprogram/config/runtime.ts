@@ -1,11 +1,12 @@
 export type ProductMode = 'solo' | 'collaboration';
 
-// Release automation replaces this value with "collaboration" only after the platform gate passes.
-const buildMode: string = 'solo';
-const mode: ProductMode = buildMode === 'collaboration' ? 'collaboration' : 'solo';
-
-export const runtimeConfig = Object.freeze({
-  mode,
-  collaborationEnabled: mode === 'collaboration',
+export const runtimeConfig = {
+  mode: 'solo' as ProductMode,
+  collaborationEnabled: false,
   productName: '同行账本',
-});
+};
+
+export function configureRuntimeMode(mode: ProductMode): void {
+  runtimeConfig.mode = mode;
+  runtimeConfig.collaborationEnabled = mode === 'collaboration';
+}

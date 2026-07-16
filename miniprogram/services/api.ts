@@ -34,6 +34,7 @@ export interface SessionProfile {
   displayName: string;
   signature: string;
   avatarUrl: string | null;
+  productMode: 'solo' | 'collaboration';
 }
 
 export interface TripMember {

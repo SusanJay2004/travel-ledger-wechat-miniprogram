@@ -1,0 +1,22 @@
+<view class="page-shell archived-page">
+  <view wx:if="{{loading}}" class="skeleton archived-skeleton"></view>
+  <view wx:elif="{{errorMessage}}" class="error-banner">{{errorMessage}}</view>
+  <view wx:elif="{{trips.length === 0}}" class="empty-state">
+    <view class="empty-state__mark">归</view>
+    <view class="empty-state__title">还没有已完结行程</view>
+    <view class="empty-state__description">完结后的行程可以从详情页移到这里，30 天内随时恢复。</view>
+  </view>
+  <view wx:else>
+    <view wx:for="{{trips}}" wx:key="id" class="archived-card surface-card" data-trip-id="{{item.id}}" bindtap="handleOpenTrip">
+      <view class="archived-card__main">
+        <view class="archived-card__name">{{item.name}}</view>
+        <view class="archived-card__date">{{item.dateText}}</view>
+        <view class="archived-card__hint">{{item.purgeText}}</view>
+      </view>
+      <view class="archived-card__side">
+        <view class="archived-card__amount">{{item.totalText}}</view>
+        <button class="restore-button" catchtap="handleRestore" data-trip-id="{{item.id}}" data-version="{{item.version}}">恢复</button>
+      </view>
+    </view>
+  </view>
+</view>

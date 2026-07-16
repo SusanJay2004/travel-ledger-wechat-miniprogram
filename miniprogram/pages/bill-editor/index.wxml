@@ -1,0 +1,44 @@
+<view class="page-shell bill-editor">
+  <view class="bill-editor__date">{{dateText}}</view>
+
+  <view wx:if="{{loading}}" class="skeleton editor-skeleton"></view>
+  <view wx:else>
+    <view class="form-card surface-card">
+      <view class="field-block">
+        <view class="field-label">事件</view>
+        <input class="text-input" maxlength="12" placeholder="例如：海边晚餐" value="{{title}}" bindinput="handleTitleInput" />
+      </view>
+      <view class="field-block">
+        <view class="field-label">消费金额</view>
+        <view class="money-input"><text>¥</text><input type="digit" placeholder="0.00" value="{{amountYuan}}" bindinput="handleAmountInput" /></view>
+      </view>
+    </view>
+
+    <view class="section-title">参与人与份额</view>
+    <view class="member-list surface-card">
+      <view wx:for="{{memberRows}}" wx:key="userId" class="member-row">
+        <view class="member-toggle {{item.participantSelected ? 'member-toggle--active' : ''}}" data-user-id="{{item.userId}}" bindtap="toggleParticipant">
+          <view class="check-mark">{{item.participantSelected ? '✓' : ''}}</view>
+          <view class="member-name">{{item.displayNameSnapshot}}</view>
+        </view>
+        <input wx:if="{{item.participantSelected}}" class="share-input" type="number" data-user-id="{{item.userId}}" value="{{item.shares}}" bindinput="handleShareInput" />
+      </view>
+      <view class="section-hint">默认每人 1 份；所有份额之和应等于参与人数，可填 0 表示由他人承担。</view>
+    </view>
+
+    <view class="section-title">付款人与实付金额</view>
+    <view class="member-list surface-card">
+      <view wx:for="{{memberRows}}" wx:key="userId" class="member-row">
+        <view class="member-toggle {{item.payerSelected ? 'member-toggle--active' : ''}}" data-user-id="{{item.userId}}" bindtap="togglePayer">
+          <view class="check-mark">{{item.payerSelected ? '✓' : ''}}</view>
+          <view class="member-name">{{item.displayNameSnapshot}}</view>
+        </view>
+        <input wx:if="{{item.payerSelected}}" class="paid-input" type="digit" placeholder="0.00" data-user-id="{{item.userId}}" value="{{item.paidYuan}}" bindinput="handlePaidInput" />
+      </view>
+      <view class="section-hint">可以选择多名付款人；实付金额之和应等于消费金额。</view>
+    </view>
+
+    <view wx:if="{{errorMessage}}" class="error-banner">{{errorMessage}}</view>
+    <button class="primary-button save-button" loading="{{saving}}" disabled="{{saving}}" bindtap="handleSubmit">保存账单</button>
+  </view>
+</view>

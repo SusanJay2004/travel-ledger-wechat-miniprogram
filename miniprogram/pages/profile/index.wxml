@@ -15,7 +15,7 @@
   <view wx:else class="profile-card surface-card">
     <view class="avatar">
       <image wx:if="{{profile.avatarUrl}}" class="avatar__image" src="{{profile.avatarUrl}}" mode="aspectFill" />
-      <text wx:else>{{profile.displayName.slice(0, 1)}}</text>
+      <text wx:else>{{avatarText}}</text>
     </view>
     <view class="profile-lines">
       <view class="profile-name">{{profile.displayName}}</view>

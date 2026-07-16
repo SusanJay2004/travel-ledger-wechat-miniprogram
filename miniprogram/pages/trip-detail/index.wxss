@@ -2,6 +2,26 @@
   padding-bottom: 170rpx;
 }
 
+.loading-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 30rpx;
+  margin-top: 20rpx;
+}
+
+.detail-skeleton {
+  height: 230rpx;
+}
+
+.section-skeleton {
+  height: 360rpx;
+}
+
+.error-panel {
+  margin-top: 80rpx;
+  padding: 28rpx;
+}
+
 .detail-head {
   background: linear-gradient(145deg, #167d73, #236d65);
   color: #fff;
@@ -26,8 +46,127 @@
   margin-top: 18rpx;
 }
 
+.detail-head__warning {
+  background: rgba(255, 240, 209, 0.16);
+  border-radius: 16rpx;
+  color: #ffe5b1;
+  font-size: 22rpx;
+  margin-top: 20rpx;
+  padding: 14rpx 18rpx;
+}
+
 .detail-empty {
   min-height: 52vh;
+}
+
+.date-sections {
+  padding-top: 36rpx;
+}
+
+.date-section {
+  border-left: 3rpx solid #c9dfda;
+  margin-left: 14rpx;
+  padding: 0 0 42rpx 28rpx;
+}
+
+.date-heading {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 20rpx;
+  position: relative;
+}
+
+.date-heading::before {
+  background: var(--color-primary);
+  border: 7rpx solid var(--color-bg);
+  border-radius: 50%;
+  content: '';
+  height: 18rpx;
+  left: -39rpx;
+  position: absolute;
+  width: 18rpx;
+}
+
+.date-heading__value {
+  font-size: 31rpx;
+  font-weight: 750;
+}
+
+.date-heading__add {
+  background: var(--color-primary-soft);
+  border-radius: 18rpx;
+  color: var(--color-primary);
+  font-size: 23rpx;
+  line-height: 64rpx;
+  margin: 0;
+  min-height: 64rpx;
+  padding: 0 20rpx;
+}
+
+.date-heading__add::after {
+  border: 0;
+}
+
+.date-empty {
+  color: var(--color-muted);
+  font-size: 24rpx;
+  padding: 28rpx;
+}
+
+.bill-card {
+  margin-bottom: 20rpx;
+  padding: 26rpx;
+}
+
+.bill-card__top {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.bill-card__title,
+.bill-card__amount {
+  font-size: 30rpx;
+  font-weight: 750;
+}
+
+.bill-card__meta {
+  color: var(--color-muted);
+  font-size: 22rpx;
+  line-height: 1.55;
+  margin-top: 12rpx;
+}
+
+.bill-card__invalid {
+  color: var(--color-danger);
+  font-size: 22rpx;
+  margin-top: 14rpx;
+}
+
+.add-another-date {
+  border: 2rpx dashed #b8cbc7;
+  border-radius: 22rpx;
+  color: var(--color-primary);
+  font-size: 25rpx;
+  margin: 0 0 30rpx 12rpx;
+  padding: 24rpx;
+  text-align: center;
+}
+
+.trip-lifecycle {
+  padding: 10rpx 0 30rpx;
+  text-align: center;
+}
+
+.text-button {
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 25rpx;
+}
+
+.text-button::after {
+  border: 0;
 }
 
 .bottom-actions {

@@ -1,18 +1,67 @@
 <view class="page-shell detail-page">
-  <view class="detail-head surface-card">
-    <view class="detail-head__eyebrow">进行中</view>
-    <view class="detail-head__title">新的旅程</view>
-    <view class="detail-head__meta">待添加日期 · 总支出 ¥0.00</view>
+  <view wx:if="{{loading}}" class="loading-stack">
+    <view class="skeleton detail-skeleton"></view>
+    <view class="skeleton section-skeleton"></view>
   </view>
 
-  <view class="empty-state detail-empty">
-    <view class="empty-state__mark">日</view>
-    <view class="empty-state__title">先为旅程添加第一个日期</view>
-    <view class="empty-state__description">同一天发生的账单会自然收拢在一起，回看旅程时一目了然。</view>
-    <button class="secondary-button" bindtap="handleAddDate">添加日期</button>
+  <view wx:elif="{{errorMessage}}" class="error-panel surface-card">
+    <view class="error-banner">{{errorMessage}}</view>
+    <button class="secondary-button" bindtap="handleRetry">重新加载</button>
   </view>
 
-  <view class="bottom-actions">
-    <button class="primary-button" bindtap="handleSettle">计算分账</button>
-  </view>
+  <block wx:else>
+    <view class="detail-head surface-card">
+      <view class="detail-head__eyebrow">{{trip.status === 'active' ? '进行中' : '已完结'}}</view>
+      <view class="detail-head__title">{{trip.name}}</view>
+      <view class="detail-head__meta">{{trip.dates.length}} 个日期 · 总支出 {{totalText}}</view>
+      <view wx:if="{{trip.invalidBillCount > 0}}" class="detail-head__warning">
+        {{trip.invalidBillCount}} 笔账单待完善，不会纳入分账
+      </view>
+    </view>
+
+    <view wx:if="{{dateSections.length === 0}}" class="empty-state detail-empty">
+      <view class="empty-state__mark">日</view>
+      <view class="empty-state__title">先为旅程添加第一个日期</view>
+      <view class="empty-state__description">同一天发生的账单会自然收拢在一起，回看旅程时一目了然。</view>
+      <picker wx:if="{{trip.status === 'active'}}" mode="date" value="{{selectedDate}}" bindchange="handleDateChange">
+        <view class="secondary-button">{{addingDate ? '正在添加…' : '添加日期'}}</view>
+      </picker>
+    </view>
+
+    <view wx:else class="date-sections">
+      <view wx:for="{{dateSections}}" wx:key="date" class="date-section">
+        <view class="date-heading">
+          <view class="date-heading__value">{{item.dateText}}</view>
+          <button
+            wx:if="{{trip.status === 'active'}}"
+            class="date-heading__add"
+            data-date="{{item.date}}"
+            bindtap="handleAddBill"
+          >＋ 记一笔</button>
+        </view>
+        <view wx:if="{{item.bills.length === 0}}" class="date-empty surface-card">这一天还没有账单</view>
+        <view wx:for="{{item.bills}}" wx:for-item="bill" wx:key="id" class="bill-card surface-card">
+          <view class="bill-card__top">
+            <view class="bill-card__title">{{bill.title}}</view>
+            <view class="bill-card__amount">{{bill.amountText}}</view>
+          </view>
+          <view class="bill-card__meta">参与：{{bill.participantText}}</view>
+          <view class="bill-card__meta">付款：{{bill.payerText}}</view>
+          <view wx:if="{{bill.invalid}}" class="bill-card__invalid">份额或付款金额待完善</view>
+        </view>
+      </view>
+      <picker wx:if="{{trip.status === 'active'}}" mode="date" value="{{selectedDate}}" bindchange="handleDateChange">
+        <view class="add-another-date">＋ 插入新日期</view>
+      </picker>
+    </view>
+
+    <view class="trip-lifecycle">
+      <button wx:if="{{trip.status === 'active'}}" class="text-button" bindtap="handleComplete">完结行程</button>
+      <button wx:else class="text-button" bindtap="handleArchive">移入已完结行程</button>
+    </view>
+
+    <view class="bottom-actions">
+      <button class="primary-button" bindtap="handleSettle">计算分账</button>
+    </view>
+  </block>
 </view>

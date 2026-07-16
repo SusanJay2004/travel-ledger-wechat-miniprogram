@@ -4,7 +4,7 @@
   "private": true,
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json"
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node18 --format=cjs --outfile=dist/index.js --external:wx-server-sdk"
   },
   "dependencies": {
     "wx-server-sdk": "^3.0.1"

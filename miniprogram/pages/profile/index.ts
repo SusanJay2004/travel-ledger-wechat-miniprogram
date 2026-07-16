@@ -1,6 +1,7 @@
 import { callApi, type SessionProfile } from '../../services/api';
 
 interface ProfileData {
+  avatarText: string;
   errorMessage: string;
   loading: boolean;
   profile: SessionProfile | null;
@@ -13,6 +14,7 @@ interface ProfileMethods {
 
 Page<ProfileData, ProfileMethods>({
   data: {
+    avatarText: '旅',
     errorMessage: '',
     loading: true,
     profile: null,
@@ -26,7 +28,7 @@ Page<ProfileData, ProfileMethods>({
     this.setData({ errorMessage: '', loading: true });
     try {
       const profile = await callApi<SessionProfile>('session.bootstrap');
-      this.setData({ loading: false, profile });
+      this.setData({ avatarText: [...profile.displayName][0] ?? '旅', loading: false, profile });
     } catch (error: unknown) {
       this.setData({
         errorMessage: error instanceof Error ? error.message : '资料加载失败，请稍后重试。',
@@ -36,6 +38,6 @@ Page<ProfileData, ProfileMethods>({
   },
 
   handleArchivedTrips() {
-    void wx.showToast({ icon: 'none', title: '已完结行程功能正在建设' });
+    void wx.navigateTo({ url: '/pages/archived-trips/index' });
   },
 });

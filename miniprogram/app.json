@@ -5,7 +5,9 @@
     "pages/messages/index",
     "pages/profile/index",
     "pages/trip-editor/index",
-    "pages/trip-detail/index"
+    "pages/trip-detail/index",
+    "pages/bill-editor/index",
+    "pages/archived-trips/index"
   ],
   "requiredPrivateInfos": ["chooseAvatar"],
   "sitemapLocation": "sitemap.json",

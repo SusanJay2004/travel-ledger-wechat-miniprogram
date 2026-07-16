@@ -6,6 +6,6 @@ export default defineConfig({
       include: ['packages/domain/src/**/*.ts'],
       reporter: ['text', 'html'],
     },
-    include: ['packages/**/*.test.ts'],
+    include: ['packages/**/*.test.ts', 'cloudfunctions/**/*.test.ts'],
   },
 });

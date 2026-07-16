@@ -1,0 +1,126 @@
+.bill-editor {
+  padding-bottom: 60rpx;
+}
+
+.bill-editor__date {
+  color: var(--color-primary);
+  font-size: 25rpx;
+  font-weight: 700;
+  letter-spacing: 2rpx;
+  margin: 8rpx 0 24rpx 8rpx;
+}
+
+.editor-skeleton {
+  height: 420rpx;
+}
+
+.form-card {
+  padding: 32rpx;
+}
+
+.field-block + .field-block {
+  border-top: 1rpx solid var(--color-line);
+  margin-top: 28rpx;
+  padding-top: 28rpx;
+}
+
+.field-label,
+.section-title {
+  font-size: 25rpx;
+  font-weight: 700;
+}
+
+.text-input {
+  font-size: 33rpx;
+  height: 84rpx;
+}
+
+.money-input {
+  align-items: center;
+  display: flex;
+  font-size: 40rpx;
+  font-weight: 750;
+  margin-top: 8rpx;
+}
+
+.money-input input {
+  flex: 1;
+  font-size: 42rpx;
+  height: 84rpx;
+  margin-left: 10rpx;
+}
+
+.section-title {
+  margin: 38rpx 0 16rpx 8rpx;
+}
+
+.member-list {
+  overflow: hidden;
+  padding: 0 28rpx;
+}
+
+.member-row {
+  align-items: center;
+  border-bottom: 1rpx solid var(--color-line);
+  display: flex;
+  min-height: 96rpx;
+}
+
+.member-toggle {
+  align-items: center;
+  display: flex;
+  flex: 1;
+}
+
+.check-mark {
+  border: 2rpx solid #b9c1be;
+  border-radius: 50%;
+  box-sizing: border-box;
+  color: #fff;
+  font-size: 20rpx;
+  height: 42rpx;
+  line-height: 38rpx;
+  text-align: center;
+  width: 42rpx;
+}
+
+.member-toggle--active .check-mark {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.member-name {
+  font-size: 27rpx;
+  margin-left: 18rpx;
+}
+
+.share-input,
+.paid-input {
+  background: #f3f1eb;
+  border-radius: 14rpx;
+  box-sizing: border-box;
+  font-size: 26rpx;
+  height: 62rpx;
+  padding: 0 14rpx;
+  text-align: right;
+}
+
+.share-input {
+  width: 100rpx;
+}
+
+.paid-input {
+  width: 180rpx;
+}
+
+.section-hint {
+  color: var(--color-muted);
+  font-size: 21rpx;
+  line-height: 1.55;
+  padding: 20rpx 0 24rpx;
+}
+
+.save-button {
+  margin-top: 36rpx;
+  width: 100%;
+}

@@ -10,6 +10,7 @@ export interface ApiFailure {
     code: string;
     message: string;
     retryable: boolean;
+    details?: Readonly<Record<string, unknown>>;
   };
   requestId: string;
 }
@@ -35,6 +36,65 @@ export interface SessionProfile {
   avatarUrl: string | null;
 }
 
+export interface TripMember {
+  userId: string;
+  displayNameSnapshot: string;
+  viewState: 'home' | 'archived' | 'detached';
+}
+
+export interface BillParticipant {
+  memberId: string;
+  displayName: string;
+  shares: number;
+}
+
+export interface BillPayer {
+  memberId: string;
+  displayName: string;
+  paidCents: number;
+}
+
+export interface TripBill {
+  id: string;
+  date: string;
+  title: string;
+  amountCents: number;
+  participants: readonly BillParticipant[];
+  payers: readonly BillPayer[];
+  validationCodes: readonly string[];
+  createdAt: string;
+  deletedAt: string | null;
+}
+
+export interface TripDetail {
+  id: string;
+  name: string;
+  status: 'active' | 'completed';
+  members: readonly TripMember[];
+  dates: readonly string[];
+  bills: readonly TripBill[];
+  totalCents: number;
+  invalidBillCount: number;
+  version: number;
+  ledgerRevision: number;
+}
+
+export interface SettlementTransfer {
+  fromMemberId: string;
+  toMemberId: string;
+  amountCents: number;
+}
+
+export interface SettlementResponse {
+  result: {
+    transfers: readonly SettlementTransfer[];
+    minimumTransferCount: number;
+  };
+  ignoredBillIds: readonly string[];
+  includedCents: number;
+  ledgerRevision: number;
+}
+
 export async function callApi<T>(action: string, payload: unknown = {}): Promise<T> {
   if (wx.cloud === undefined) throw new Error('当前微信版本不支持云开发。');
   const requestId = createRequestId();
@@ -46,8 +106,14 @@ export async function callApi<T>(action: string, payload: unknown = {}): Promise
   if (response === undefined || response === null || typeof response !== 'object') {
     throw new Error('服务器返回了无法识别的数据。');
   }
-  if (!response.ok)
-    throw new ApiError(response.error.code, response.error.message, response.error.retryable);
+  if (!response.ok) {
+    throw new ApiError(
+      response.error.code,
+      response.error.message,
+      response.error.retryable,
+      response.error.details,
+    );
+  }
   return response.data;
 }
 
@@ -56,6 +122,7 @@ export class ApiError extends Error {
     public readonly code: string,
     message: string,
     public readonly retryable: boolean,
+    public readonly details?: Readonly<Record<string, unknown>>,
   ) {
     super(message);
     this.name = 'ApiError';

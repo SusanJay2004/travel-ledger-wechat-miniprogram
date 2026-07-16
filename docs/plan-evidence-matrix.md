@@ -34,6 +34,8 @@
 | CI 与公开仓库敏感信息扫描                      | 本地已证实；GitHub 待运行  | `.github/workflows/ci.yml`、`npm run security:secrets` | 创建 remote 后观察首个 Actions     |
 | 后台资料、双模式审核说明与截图清单             | 本地文案已完成；平台待确认 | `docs/store-listing.md`                                | 真实主体、类目、后台填写和审核     |
 | 私有账本页面搜索索引保护                       | 本地已证实；平台待验证     | `sitemap.json`、品牌/配置测试                          | 体验版 sitemap 警告与搜索验证      |
+| 头像文件所有权与内容安全                       | 本地已证实；云规则待验证   | 资料服务测试、内容安全测试、账号路径约束               | 真云存储创建者规则与越权测试       |
+| 账单成员 ID 与可信姓名快照                     | 本地已证实                 | 服务端成员校验、姓名归一化与回归测试                   | 三账号真云历史展示                 |
 
 ## 自动化基线
 
@@ -46,7 +48,7 @@ npm run build
 npm audit --audit-level=critical
 ```
 
-最近本地结果为 20 个测试文件、96 项测试通过，三个云函数构建成功，无 critical 依赖公告。微信官方 `wx-server-sdk 4.0.2` 仍带 5 high + 1 moderate 上游公告，处置规则见 `dependency-security.md`，因此依赖发布门禁仍未通过。
+最近本地结果为 20 个测试文件、98 项测试通过，三个云函数构建成功，无 critical 依赖公告。微信官方 `wx-server-sdk 4.0.2` 仍带 5 high + 1 moderate 上游公告，处置规则见 `dependency-security.md`，因此依赖发布门禁仍未通过。
 
 ## 真实环境与发布阻断
 

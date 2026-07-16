@@ -183,6 +183,11 @@ export class LedgerService {
       'AVATAR_URL_INVALID',
       '头像地址格式不正确。',
     );
+    assertBusiness(
+      input.avatarUrl === null || avatarBelongsToUser(input.avatarUrl, user.id),
+      'AVATAR_OWNERSHIP_INVALID',
+      '只能使用当前账号上传的头像。',
+    );
     await this.contentSecurity.checkText(user.openId, 2, displayName, signature);
     if (input.avatarUrl !== null && input.avatarUrl !== user.avatarUrl) {
       await this.contentSecurity.checkImage(user.openId, input.avatarUrl);
@@ -414,12 +419,13 @@ export class LedgerService {
       'BILL_HISTORY_LIMIT_REACHED',
       '近期删除记录较多，请等待满 30 天自动清理后再新增账单。',
     );
-    const validationCodes = validateBillForTrip(trip, input.bill);
+    const normalizedBill = billWithTrustedMemberNames(trip, input.bill);
+    const validationCodes = validateBillForTrip(trip, normalizedBill);
     await this.checkTextForUser(userId, 3, input.bill.title);
 
     const timestamp = this.clock.now().toISOString();
     const bill: BillDocument = {
-      ...structuredClone(input.bill),
+      ...normalizedBill,
       id: this.ids.entityId('bil'),
       date: input.date,
       validationCodes,
@@ -451,11 +457,12 @@ export class LedgerService {
     assertBusiness(trip.dates.includes(input.date), 'DATE_NOT_FOUND', '请先添加账单所属日期。');
     const existing = requiredBill(trip, input.billId);
     assertBusiness(existing.deletedAt === null, 'BILL_DELETED', '已删除账单不能直接修改。');
-    const validationCodes = validateBillForTrip(trip, input.bill);
+    const normalizedBill = billWithTrustedMemberNames(trip, input.bill);
+    const validationCodes = validateBillForTrip(trip, normalizedBill);
     await this.checkTextForUser(userId, 3, input.bill.title);
     const timestamp = this.clock.now().toISOString();
     const replacement: BillDocument = {
-      ...structuredClone(input.bill),
+      ...normalizedBill,
       id: existing.id,
       date: input.date,
       validationCodes,
@@ -853,6 +860,24 @@ function validateBillForTrip(trip: TripDocument, bill: BillInput) {
   return validationCodes;
 }
 
+function billWithTrustedMemberNames(trip: TripDocument, bill: BillInput): BillInput {
+  const names = new Map(trip.members.map((member) => [member.userId, member.displayNameSnapshot]));
+  return {
+    title: bill.title,
+    amountCents: bill.amountCents,
+    participants: bill.participants.map((participant) => ({
+      memberId: participant.memberId,
+      displayName: names.get(participant.memberId) ?? '',
+      shares: participant.shares,
+    })),
+    payers: bill.payers.map((payer) => ({
+      memberId: payer.memberId,
+      displayName: names.get(payer.memberId) ?? '',
+      paidCents: payer.paidCents,
+    })),
+  };
+}
+
 function toTripSummary(trip: TripDocument): TripSummaryDocument {
   const dates = [...trip.dates].sort();
   return {
@@ -881,4 +906,10 @@ function assertCalendarDate(value: string): void {
     'DATE_INVALID',
     '请选择真实存在的日期。',
   );
+}
+
+function avatarBelongsToUser(fileId: string, userId: string): boolean {
+  if (!fileId.startsWith('cloud://')) return false;
+  const cloudPath = fileId.slice('cloud://'.length).split('/').slice(1);
+  return cloudPath.length === 3 && cloudPath[0] === 'avatars' && cloudPath[1] === userId;
 }

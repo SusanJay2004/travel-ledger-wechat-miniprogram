@@ -405,6 +405,23 @@ describe('LedgerService solo flow', () => {
     expect(updated.displayName).toBe('苏同学');
   });
 
+  it('only accepts avatar files from the current account directory', async () => {
+    await expect(
+      service.updateProfile(user, {
+        displayName: user.displayName,
+        signature: user.signature,
+        avatarUrl: 'cloud://development/avatars/usr_other/avatar.png',
+      }),
+    ).rejects.toMatchObject({ code: 'AVATAR_OWNERSHIP_INVALID' });
+
+    const updated = await service.updateProfile(user, {
+      displayName: user.displayName,
+      signature: user.signature,
+      avatarUrl: `cloud://development/avatars/${user.id}/avatar.png`,
+    });
+    expect(updated.avatarUrl).toBe(`cloud://development/avatars/${user.id}/avatar.png`);
+  });
+
   it('anonymizes ledger history and permits a fresh account after deletion', async () => {
     const trip = await service.createTrip(user, { name: '注销前行程' });
     const dated = await service.addDate(user.id, {
@@ -485,6 +502,29 @@ describe('LedgerService solo flow', () => {
     });
     expect(restored.totalCents).toBe(250);
     expect(restored.bills[0]?.deletedAt).toBeNull();
+  });
+
+  it('replaces forged bill display names with trusted member snapshots', async () => {
+    const trip = await service.createTrip(user, { name: '可信姓名' });
+    const dated = await service.addDate(user.id, {
+      tripId: trip.id,
+      date: '2026-07-10',
+      expectedVersion: trip.version,
+    });
+    const added = await service.addBill(user.id, {
+      tripId: trip.id,
+      date: '2026-07-10',
+      expectedVersion: dated.version,
+      bill: {
+        title: '午餐',
+        amountCents: 100,
+        participants: [{ memberId: user.id, displayName: '伪造参与人', shares: 1 }],
+        payers: [{ memberId: user.id, displayName: '伪造付款人', paidCents: 100 }],
+      },
+    });
+
+    expect(added.bills[0]?.participants[0]?.displayName).toBe(user.displayName);
+    expect(added.bills[0]?.payers[0]?.displayName).toBe(user.displayName);
   });
 
   it('enforces the 100 home-trip limit at the service boundary', async () => {

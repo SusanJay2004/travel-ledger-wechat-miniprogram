@@ -10,6 +10,7 @@ interface ProfileEditorData {
   saving: boolean;
   signature: string;
   originalAvatarUrl: string;
+  userId: string;
 }
 
 interface ProfileEditorMethods {
@@ -31,6 +32,7 @@ Page<ProfileEditorData, ProfileEditorMethods>({
     saving: false,
     signature: '',
     originalAvatarUrl: '',
+    userId: '',
   },
 
   onLoad() {
@@ -46,6 +48,7 @@ Page<ProfileEditorData, ProfileEditorMethods>({
         loading: false,
         originalAvatarUrl: profile.avatarUrl ?? '',
         signature: profile.signature,
+        userId: profile.userId,
       });
     } catch (error: unknown) {
       this.setData({ errorMessage: toMessage(error), loading: false });
@@ -107,10 +110,11 @@ Page<ProfileEditorData, ProfileEditorMethods>({
 
   async uploadAvatar(localPath: string) {
     if (wx.cloud === undefined) throw new Error('当前微信版本不支持云存储。');
+    if (this.data.userId.length === 0) throw new Error('账号资料尚未加载，请稍后重试。');
     const extension = /\.([A-Za-z0-9]+)$/.exec(localPath)?.[1]?.toLowerCase() ?? 'jpg';
     const safeExtension = ['jpg', 'jpeg', 'png', 'webp'].includes(extension) ? extension : 'jpg';
     const result = await wx.cloud.uploadFile({
-      cloudPath: `avatars/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${safeExtension}`,
+      cloudPath: `avatars/${this.data.userId}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${safeExtension}`,
       filePath: localPath,
     });
     return result.fileID;

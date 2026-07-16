@@ -13,6 +13,7 @@
 - `openId`：微信环境内用户身份，只允许云端读取。
 - `publicId`：10 位公开搜索 ID。
 - `displayName`、`signature`、`avatarUrl`：用户资料。
+- `avatarUrl` 必须位于 `avatars/<当前内部用户ID>/`，并由云存储“创建者本人写入/删除”规则与云端路径校验共同保护，不能引用其他账号文件。
 - `qrCodeFileId`、`qrSceneToken`：协作版个人小程序码文件和 20 位随机不透明场景令牌；二维码不包含公开 ID、内部 ID 或 `OpenID`，云端解析后只返回可申请好友的公开资料。
 - `status`、`createdAt`、`updatedAt`：生命周期字段。
 
@@ -25,6 +26,7 @@
 - `members`：成员显示名快照和每用户 `home|archived|detached` 状态。
 - `dates`：有序日历日期。
 - `bills`：账单、参与份额、付款明细、校验码和软删除字段。
+- 参与人与付款人的显示名由云端根据行程成员快照重建；客户端提交的显示名不作为权威数据。
 - `totalCents`、`invalidBillCount`：列表派生摘要。
 - `version`：所有写入的乐观并发版本。
 - `ledgerRevision`：影响分账结果的账本版本。

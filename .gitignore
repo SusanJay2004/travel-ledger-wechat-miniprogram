@@ -1,0 +1,38 @@
+# Dependencies and build output
+node_modules/
+miniprogram_npm/
+dist/
+coverage/
+*.tsbuildinfo
+
+# WeChat DevTools private/local configuration
+project.private.config.json
+upload.private.key
+private.*.key
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.secret.json
+secrets/
+
+# Cloud development local state
+.cloudbase/
+cloudbaserc.private.json
+
+# Logs and temporary files
+*.log
+logs/
+.cache/
+.temp/
+tmp/
+
+# Editors and OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.DS_Store
+Thumbs.db
+desktop.ini

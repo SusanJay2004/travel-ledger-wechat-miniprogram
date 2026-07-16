@@ -1,4 +1,7 @@
 {
-  "desc": "同行账本页面索引配置",
-  "rules": [{ "action": "allow", "page": "*" }]
+  "desc": "仅允许索引不包含用户数据的欢迎页；搜索入口由小程序后台名称与关键词控制",
+  "rules": [
+    { "action": "allow", "page": "pages/welcome/index" },
+    { "action": "disallow", "page": "*" }
+  ]
 }

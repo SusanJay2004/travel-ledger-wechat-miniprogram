@@ -12,6 +12,13 @@ interface AppConfig {
   };
 }
 
+interface SitemapConfig {
+  rules: readonly {
+    action: 'allow' | 'disallow';
+    page: string;
+  }[];
+}
+
 describe('brand assets', () => {
   it('keeps every tab icon present, compact, transparent and 81px square', () => {
     const app = JSON.parse(
@@ -32,6 +39,16 @@ describe('brand assets', () => {
   it('provides a 1024px square RGB application avatar', () => {
     const bytes = readFileSync(resolve(process.cwd(), 'assets/brand/app-icon.png'));
     expect(readPngHeader(bytes)).toEqual({ bitDepth: 8, colorType: 2, height: 1024, width: 1024 });
+  });
+
+  it('keeps private account and ledger pages out of content indexing', () => {
+    const sitemap = JSON.parse(
+      readFileSync(resolve(process.cwd(), 'miniprogram/sitemap.json'), 'utf8'),
+    ) as SitemapConfig;
+    expect(sitemap.rules).toEqual([
+      { action: 'allow', page: 'pages/welcome/index' },
+      { action: 'disallow', page: '*' },
+    ]);
   });
 });
 

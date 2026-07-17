@@ -105,8 +105,8 @@ class MemoryCollection<T> implements CloudCollection<T> {
 describe('RateLimiter', () => {
   it('counts a retried request only once', async () => {
     const limiter = new RateLimiter(new MemoryDb(), new TestClock());
-    await limiter.consume('openid', 'request-1', 'social.search');
-    await limiter.consume('openid', 'request-1', 'social.search');
+    await limiter.consume('openid', 'request-1', 'social.search', 'payload-a');
+    await limiter.consume('openid', 'request-1', 'social.search', 'payload-a');
   });
 
   it('rejects the next request at the policy limit and resets next window', async () => {
@@ -114,16 +114,24 @@ describe('RateLimiter', () => {
     const clock = new TestClock();
     const limiter = new RateLimiter(database, clock);
     for (let index = 0; index < 30; index += 1) {
-      await limiter.consume('openid', `request-${index}`, 'social.search');
+      await limiter.consume('openid', `request-${index}`, 'social.search', `payload-${index}`);
     }
-    await expect(limiter.consume('openid', 'request-over', 'social.search')).rejects.toMatchObject({
-      code: 'RATE_LIMITED',
-      retryable: true,
-    });
+    await expect(
+      limiter.consume('openid', 'request-over', 'social.search', 'payload-over'),
+    ).rejects.toMatchObject({ code: 'RATE_LIMITED', retryable: true });
     clock.advance(1);
     await expect(
-      limiter.consume('openid', 'request-new-window', 'social.search'),
+      limiter.consume('openid', 'request-new-window', 'social.search', 'payload-new-window'),
     ).resolves.toBeUndefined();
+  });
+
+  it('charges reused request ids separately when the read intent changes', async () => {
+    const database = new MemoryDb();
+    const limiter = new RateLimiter(database, new TestClock());
+    await limiter.consume('openid', 'same-request', 'social.search', 'payload-a');
+    await limiter.consume('openid', 'same-request', 'social.search', 'payload-b');
+
+    expect(database.documents.values().next().value?.['requestKeys']).toHaveLength(2);
   });
 
   it('allows exactly the policy limit when distinct requests arrive concurrently', async () => {
@@ -131,21 +139,23 @@ describe('RateLimiter', () => {
     const limiter = new RateLimiter(database, new TestClock());
     const outcomes = await Promise.allSettled(
       Array.from({ length: 31 }, (_, index) =>
-        limiter.consume('openid', `concurrent-${index}`, 'social.search'),
+        limiter.consume('openid', `concurrent-${index}`, 'social.search', `payload-${index}`),
       ),
     );
 
     expect(outcomes.filter((result) => result.status === 'fulfilled')).toHaveLength(30);
     expect(outcomes.filter((result) => result.status === 'rejected')).toHaveLength(1);
     expect(database.documents).toHaveLength(1);
-    expect(database.documents.values().next().value?.['requestIds']).toHaveLength(30);
+    expect(database.documents.values().next().value?.['requestKeys']).toHaveLength(30);
   });
 
   it('uses separate counters per account', async () => {
     const limiter = new RateLimiter(new MemoryDb(), new TestClock());
     for (let index = 0; index < 30; index += 1) {
-      await limiter.consume('alice', `request-${index}`, 'social.search');
+      await limiter.consume('alice', `request-${index}`, 'social.search', `payload-${index}`);
     }
-    await expect(limiter.consume('bob', 'request-1', 'social.search')).resolves.toBeUndefined();
+    await expect(
+      limiter.consume('bob', 'request-1', 'social.search', 'payload-1'),
+    ).resolves.toBeUndefined();
   });
 });

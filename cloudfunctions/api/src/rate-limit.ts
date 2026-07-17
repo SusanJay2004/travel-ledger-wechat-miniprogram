@@ -21,12 +21,18 @@ export class RateLimiter {
     private readonly clock: Clock,
   ) {}
 
-  async consume(ownerOpenId: string, requestId: string, action: string): Promise<void> {
+  async consume(
+    ownerOpenId: string,
+    requestId: string,
+    action: string,
+    payloadHash: string,
+  ): Promise<void> {
     const policy = policyFor(action);
     const now = this.clock.now();
     const ownerHash = hash(ownerOpenId);
     const bucket = String(Math.floor(now.getTime() / policy.windowMs));
     const id = hash(`${ownerHash}:${policy.scope}:${bucket}`);
+    const requestKey = hash(`${requestId}:${action}:${payloadHash}`);
     await this.db.runTransaction(async (transaction) => {
       const reference = transaction
         .collection<RateLimitRecordDocument>('rate_limit_records')
@@ -37,8 +43,8 @@ export class RateLimiter {
       } catch (error: unknown) {
         if (!isNotFound(error)) throw error;
       }
-      if (current?.requestIds.includes(requestId) === true) return;
-      if ((current?.requestIds.length ?? 0) >= policy.limit) {
+      if (current?.requestKeys.includes(requestKey) === true) return;
+      if ((current?.requestKeys.length ?? 0) >= policy.limit) {
         const retryAfterSeconds = Math.max(
           1,
           Math.ceil((policy.windowMs - (now.getTime() % policy.windowMs)) / 1000),
@@ -50,7 +56,7 @@ export class RateLimiter {
       const record: RateLimitRecordDocument = {
         id,
         ownerHash,
-        requestIds: [...(current?.requestIds ?? []), requestId],
+        requestKeys: [...(current?.requestKeys ?? []), requestKey],
         scope: policy.scope,
         bucket,
         createdAt: current?.createdAt ?? now.toISOString(),

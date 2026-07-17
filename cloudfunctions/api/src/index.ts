@@ -135,7 +135,7 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
     if (!isKnownAction(action)) {
       throw new BusinessError('UNKNOWN_ACTION', '无法识别该操作。');
     }
-    await rateLimiter.consume(openId, requestId, action);
+    await rateLimiter.consume(openId, requestId, action, payloadHash);
     const existingUser = await repository.findUserByOpenId(openId);
     if (action === 'session.deleteAccount' && existingUser === null) {
       await idempotency.executeWithPayloadHash(

@@ -371,6 +371,7 @@ export class LedgerService {
           new Date(member.purgeAfter).getTime() > this.clock.now().getTime()
         );
       })
+      .map((trip) => ({ ...trip, bills: retainRestorableBills(trip, this.clock.now()) }))
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   }
 
@@ -383,7 +384,7 @@ export class LedgerService {
       'TRIP_RESTORE_EXPIRED',
       '该行程已超过 30 天恢复期。',
     );
-    return trip;
+    return { ...trip, bills: retainRestorableBills(trip, this.clock.now()) };
   }
 
   async createTrip(user: UserDocument, input: CreateTripInput): Promise<TripDocument> {

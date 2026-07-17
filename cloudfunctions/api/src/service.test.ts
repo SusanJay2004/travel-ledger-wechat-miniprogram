@@ -512,6 +512,47 @@ describe('LedgerService solo flow', () => {
     expect(restored.totalCents).toBe(100);
   });
 
+  it('hides expired soft-deleted bills from reads before maintenance removes storage data', async () => {
+    const trip = await service.createTrip(user, { name: '账单恢复期限' });
+    const dated = await service.addDate(user.id, {
+      tripId: trip.id,
+      date: '2026-07-10',
+      expectedVersion: trip.version,
+    });
+    const billed = await service.addBill(user.id, {
+      tripId: trip.id,
+      date: '2026-07-10',
+      expectedVersion: dated.version,
+      bill: {
+        title: '车票',
+        amountCents: 100,
+        participants: [{ memberId: user.id, displayName: user.displayName, shares: 1 }],
+        payers: [{ memberId: user.id, displayName: user.displayName, paidCents: 100 }],
+      },
+    });
+    const deleted = await service.deleteBill(user.id, {
+      tripId: trip.id,
+      billId: billed.bills[0]!.id,
+      expectedVersion: billed.version,
+    });
+    clock.advanceDays(29);
+    const completed = await service.completeTrip(user.id, {
+      tripId: trip.id,
+      expectedVersion: deleted.version,
+      ignoreInvalidBills: false,
+    });
+    await service.archiveTrip(user.id, {
+      tripId: trip.id,
+      expectedVersion: completed.version,
+    });
+
+    clock.advanceDays(1);
+
+    expect((await service.getTrip(user.id, trip.id)).bills).toEqual([]);
+    expect((await service.listArchivedTrips(user.id))[0]?.bills).toEqual([]);
+    expect((await repository.getTrip(trip.id))?.bills).toHaveLength(1);
+  });
+
   it('moves an existing bill to another date without changing the total', async () => {
     const trip = await service.createTrip(user, { name: '移动账单' });
     const firstDate = await service.addDate(user.id, {

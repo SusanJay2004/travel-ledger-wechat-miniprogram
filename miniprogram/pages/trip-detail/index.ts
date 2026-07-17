@@ -20,6 +20,7 @@ import {
 } from '../../services/local-cache';
 import { getLocallyCachedSessionProfile, getSessionProfile } from '../../services/session';
 import { isVersionConflict, showVersionConflictAndRefresh } from '../../services/conflict';
+import { isDeletedBillRestorable } from '../../services/bill-retention';
 
 interface BillCard extends TripBill {
   amountText: string;
@@ -130,7 +131,9 @@ Page<DetailData, DetailMethods>({
       this.setData({
         collaborationEnabled: profile.productMode === 'collaboration',
         dateSections: buildDateSections(trip),
-        deletedBills: trip.bills.filter((bill) => bill.deletedAt !== null).map(toBillCard),
+        deletedBills: trip.bills
+          .filter((bill) => isDeletedBillRestorable(bill.deletedAt))
+          .map(toBillCard),
         loading: false,
         networkNotice: connectivity.notice,
         readOnly: false,
@@ -167,7 +170,9 @@ Page<DetailData, DetailMethods>({
       cacheNotice: `显示 ${formatCacheTime(cached.savedAt)} 保存的内容`,
       collaborationEnabled: profile?.productMode === 'collaboration',
       dateSections: buildDateSections(trip),
-      deletedBills: trip.bills.filter((bill) => bill.deletedAt !== null).map(toBillCard),
+      deletedBills: trip.bills
+        .filter((bill) => isDeletedBillRestorable(bill.deletedAt))
+        .map(toBillCard),
       errorMessage: '',
       loading: false,
       networkNotice: notice,

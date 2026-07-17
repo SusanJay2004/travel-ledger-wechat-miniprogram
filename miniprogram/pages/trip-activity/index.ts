@@ -1,5 +1,6 @@
 import { callApi, type TripActivity, type TripDetail } from '../../services/api';
 import { isVersionConflict, showVersionConflictAndRefresh } from '../../services/conflict';
+import { isDeletedBillRestorable } from '../../services/bill-retention';
 
 interface ActivityItem extends TripActivity {
   actorName: string;
@@ -51,10 +52,7 @@ Page<ActivityData, ActivityMethods>({
             trip.status === 'active' &&
             activity.action === 'bill.deleted' &&
             trip.bills.some(
-              (bill) =>
-                bill.id === activity.entityId &&
-                bill.deletedAt !== null &&
-                Date.now() - new Date(bill.deletedAt).getTime() < 30 * 24 * 60 * 60 * 1000,
+              (bill) => bill.id === activity.entityId && isDeletedBillRestorable(bill.deletedAt),
             ),
           timeText: formatTime(activity.createdAt),
         })),

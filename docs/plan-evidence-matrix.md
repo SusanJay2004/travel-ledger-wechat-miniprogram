@@ -31,7 +31,7 @@
 | 30 天备份、恢复手册、180 天审计                | 本地实现；演练待完成       | 页级 manifest、失败文件清理、备份/维护测试与运维文档                                          | 云存储备份、隔离恢复和告警                 |
 | 88rpx、核心 WCAG AA、字体放大适配              | 本地令牌已证实；真机待证实 | accessibility 测试和 WXSS                                                                     | 常见 iOS/Android 尺寸截图验收              |
 | 应用头像与底栏品牌图标                         | 本地素材已完成；平台待确认 | `assets/brand`、`miniprogram/assets/tabbar`                                                   | 后台上传、圆形/圆角裁切与真机显示          |
-| CI 与公开仓库敏感信息扫描                      | 本地已证实；GitHub 待运行  | `.github/workflows/ci.yml`、`npm run security:secrets`                                        | 创建 remote 后观察首个 Actions             |
+| CI、部署锁与公开仓库敏感信息扫描               | 本地已证实；GitHub 待运行  | `security:cloud-locks`、四函数独立 lockfile、CI、`security:secrets`                           | 创建 remote 后观察首个 Actions             |
 | 后台资料、双模式审核说明与截图清单             | 本地文案已完成；平台待确认 | `docs/store-listing.md`                                                                       | 真实主体、类目、后台填写和审核             |
 | 私有账本页面搜索索引保护                       | 本地已证实；平台待验证     | `sitemap.json`、品牌/配置测试                                                                 | 体验版 sitemap 警告与搜索验证              |
 | 头像文件所有权与内容安全                       | 本地已证实；云规则待验证   | `7fa4470`：CDN 受控暂存、摘要/大小/魔数、SSRF、短期 URL、引用安全清理和全禁客户端存储规则测试 | 真 CDN 地址、回调 `SOURCE`、规则与越权矩阵 |

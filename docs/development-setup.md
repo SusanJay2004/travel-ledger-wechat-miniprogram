@@ -28,7 +28,7 @@
    - `trips.memberIds` 与 `trips.memberIds + _id`：普通索引，用于普通成员查询和注销恢复的游标分页。
    - `trips.version`：普通索引，用于乐观并发更新。
 8. 执行 `npm install`、`npm run check` 和 `npm run build`。
-9. 在开发者工具中依次上传并部署 `cloudfunctions/api`、`cloudfunctions/avatar-review`、`cloudfunctions/maintenance` 和 `cloudfunctions/backup`，均选择“云端安装依赖”。
+9. 在开发者工具中依次上传并部署 `cloudfunctions/api`、`cloudfunctions/avatar-review`、`cloudfunctions/maintenance` 和 `cloudfunctions/backup`，均选择“云端安装依赖”；确认各函数目录的 `package-lock.json` 一并上传，部署日志解析到 `wx-server-sdk 4.0.2`，且没有缺少 `ws` 的警告。
 10. 在“云开发—设置—其他设置—消息推送”把 `wxa_media_check` 事件指向 `avatar-review`；用一张测试头像确认回调能凭未公开的 `trace_id` 命中待审用户，且实际 `SOURCE` 未被函数拒绝。
 11. 为 `maintenance` 配置每天北京时间 03:30 的定时触发器，为 `backup` 配置每天 04:30 的定时触发器；两者必须由官方 `wx_trigger` 来源调用。
 

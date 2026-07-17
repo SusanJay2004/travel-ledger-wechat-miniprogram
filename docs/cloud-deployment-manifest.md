@@ -73,7 +73,7 @@
 ## 云函数
 
 1. 在根目录执行 `npm ci && npm run check && npm run build`。
-2. 部署 `api`、`avatar-review`、`maintenance`、`backup`，选择云端安装依赖。
+2. 部署 `api`、`avatar-review`、`maintenance`、`backup`，选择云端安装依赖；每个函数必须同时上传本目录的 `package.json` 与 `package-lock.json`，不得删除独立 lockfile 或改用“更新到最新依赖”。
 3. `api` 配置 `security.msgSecCheck`、`security.mediaCheckAsync`、`wxacode.getUnlimited` 权限。
 4. 在“云开发—设置—其他设置—消息推送”新增事件类型 `wxa_media_check`，目标函数选择 `avatar-review`；部署后用真实头像验证回调日志与 `trace_id` 匹配。该函数拒绝小程序、开发者工具、HTTP 与云函数主动调用来源。
 5. `maintenance` 每天北京时间 03:30 运行；`backup` 每天 04:30 运行。

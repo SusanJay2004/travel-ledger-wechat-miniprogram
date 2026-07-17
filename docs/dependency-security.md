@@ -13,6 +13,7 @@
 - 尝试降级到审计建议的 `wx-server-sdk 2.5.3` 后，结果恶化为 16 个漏洞（含 3 个 critical），且带来旧版类型兼容问题，因此已否决。
 - 尝试通过根级 `overrides` 跨主版本替换 Axios，`npm ls` 与锁文件证明嵌套 `axios 0.27.2` 仍然存在，因此没有把无效配置保留在仓库。
 - 尝试使用本地兼容包替换 Lodash 单函数依赖，发现 npm workspace 与云函数独立安装会产生去重和相对路径不一致，无法证明线上部署可靠，因此也已回退。
+- 四个云函数现分别保留独立 `package-lock.json`，直接依赖精确锁定为 `wx-server-sdk 4.0.2` 和无公告的可选 peer `ws 8.21.1`；后者消除官方 CloudBase 适配器冷启动时的“缺少依赖 ws”日志。2026-07-17 在四个隔离目录分别执行 `npm ci --omit=dev` 并加载 SDK 成功，均解析为 CloudBase 3.17.2、Axios 0.27.2、Database 1.4.3。`security:cloud-locks` 会阻止 manifest、独立 lockfile 与根 workspace lock 漂移，但不会把上游公告视为已修复。
 
 ## 风险边界
 

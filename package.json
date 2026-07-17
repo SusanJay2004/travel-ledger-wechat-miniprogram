@@ -17,6 +17,8 @@
     "cloud:smoke-packages": "npm run build && node scripts/smoke-cloud-packages.mjs",
     "cloud:config:prepare": "node scripts/cloud-private-config.mjs prepare",
     "cloud:config:check": "node scripts/cloud-private-config.mjs check",
+    "cloud:infra:check": "node scripts/cloud-infrastructure.mjs check",
+    "cloud:infra:apply": "node scripts/cloud-infrastructure.mjs apply",
     "cloud:deploy": "node scripts/deploy-cloud-functions.mjs",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",

@@ -4,7 +4,7 @@
 
 ## 集合与客户端权限
 
-规则模板位于 `config/cloud-database-rules.json` 和 `config/cloud-storage-rules.json`。微信控制台按集合分别保存数据库规则，因此部署时逐项复制模板并执行本清单的允许/拒绝烟测；模板存在不等于云端已生效。
+规则模板位于 `config/cloud-database-rules.json` 和 `config/cloud-storage-rules.json`。优先使用下文受控基础设施命令读取、应用并回读核验；也可在微信控制台逐项配置。规则更新属于完整覆盖，不是合并，所以受控写入要求独立确认。无论使用哪种方式，都必须执行本清单的允许/拒绝烟测；模板存在或命令成功都不等于真实规则已经按预期生效。
 
 除 `sync_events` 外，下列集合全部设置为客户端不可读、不可写：
 
@@ -68,6 +68,30 @@
 
 <!-- cloud-indexes:end -->
 
+## 受控基础设施核验与应用
+
+完成 `cloud:config:prepare` 并人工确认 `cloudbaserc.private.json` 绑定的真实环境后，先执行默认只读检查：
+
+```powershell
+npm run cloud:infra:check
+```
+
+该命令用固定 CloudBase CLI 3.6.3 回读所有集合、每个集合的索引和数据库安全规则，以及云存储安全规则；输出只显示数量和资源名，不输出环境 ID 或规则原文。只有 12 个集合、34 个登记索引和全部规则一致，且没有未登记集合/索引时才退出成功。它不执行任何写操作。
+
+首次开发环境初始化或已人工审查的漂移修复才允许执行写入：
+
+```powershell
+$env:CONFIRM_CLOUD_INFRASTRUCTURE='APPLY_REVIEWED_INFRASTRUCTURE'
+$env:CONFIRM_RULE_REPLACEMENT='REPLACE_REVIEWED_CLIENT_RULES'
+# 只有目标环境尚未向任何小程序版本开放、且确实需要创建缺失集合时才设置：
+$env:CONFIRM_COLLECTION_CREATION='CREATE_REVIEWED_EMPTY_COLLECTIONS'
+npm run cloud:infra:apply
+```
+
+`cloud:infra:apply` 会要求 Git 工作区干净并先重跑完整本地门禁。它在任何写入前读取全量状态；发现未登记集合或索引会立即停止，绝不删除或覆盖未知资源。平台必须先创建集合才能设置规则，因此缺失集合还要求第三项“目标环境尚未向小程序开放”的确认，然后采用创建后立即设置客户端规则的顺序；若环境已经开放，先停止入口/流量并人工制定变更窗口，不能设置确认值掩盖风险。缺失索引逐个发送只含 `CreateIndexes` 的请求，永不发送 `DropIndexes`；每次写入前重新读取集合，若确定性索引名被不同结构占用就停止，避免触发平台的同名索引先删后建。数据库和存储规则按本地模板完整覆盖，因此需要第二项确认；每次覆盖前也会重读并要求状态仍与已审查快照相同。写入后最多回读约一分钟，只有全部状态收敛才成功；接口成功但异步状态未收敛不会被当成完成。协作和生产仍须分别再次提供 `ALLOW_COLLABORATION_DEPLOY`、`ALLOW_PRODUCTION_DEPLOY`，且这些确认不替代平台许可或人工目标审查。
+
+官方能力依据：[管理 SDK 文档型数据库](https://docs.cloudbase.net/api-reference/manager/node/database)、[管理 SDK 安全规则](https://docs.cloudbase.net/api-reference/manager/node/rule)和 [CloudBase CLI 通用 API](https://docs.cloudbase.net/cli-v1/)；其中 `UpdateTable` 明确把 `CreateIndexes` 与 `DropIndexes` 分为独立操作。
+
 ## 云函数
 
 1. 在根目录执行 `npm ci && npm run check && npm run build && npm run cloud:smoke-packages`；最后一项会在四个隔离临时目录中按真实上传清单执行生产依赖安装和根入口冷加载，完成后校验边界并自动清理。
@@ -112,6 +136,9 @@ Remove-Item Env:PRODUCT_MODE
 Remove-Item Env:MINIPROGRAM_ENV_VERSION
 Remove-Item Env:CONTENT_SECURITY_MODE -ErrorAction SilentlyContinue
 Remove-Item Env:CONFIRM_CLOUD_DEPLOY
+Remove-Item Env:CONFIRM_CLOUD_INFRASTRUCTURE -ErrorAction SilentlyContinue
+Remove-Item Env:CONFIRM_RULE_REPLACEMENT -ErrorAction SilentlyContinue
+Remove-Item Env:CONFIRM_COLLECTION_CREATION -ErrorAction SilentlyContinue
 ```
 
 若 `project.private.config.json` 中还有需要保留的开发者工具本地设置，不要在工作期间清理它；生成器会保留其他字段并只更新 `appid`、`miniprogramRoot` 和 `srcMiniprogramRoot`。上面的删除步骤适用于部署/验收批次结束且不再需要该本机项目配置时。

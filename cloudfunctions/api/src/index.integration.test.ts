@@ -37,6 +37,19 @@ describe('cloud API command integration', () => {
     expect(cloud.database.documents('rate_limit_records')).toEqual([]);
   });
 
+  it('rejects unknown actions before creating account or rate-limit data', async () => {
+    const cloud = createMemoryCloudSdk('openid-alice');
+
+    const response = await handleApiEvent(
+      { action: 'trip.typo', requestId: 'request-unknown', payload: {} },
+      cloud.sdk,
+    );
+
+    expect(response).toMatchObject({ ok: false, error: { code: 'UNKNOWN_ACTION' } });
+    expect(cloud.database.documents('users')).toEqual([]);
+    expect(cloud.database.documents('rate_limit_records')).toEqual([]);
+  });
+
   it('runs an idempotent create/date/delete command chain and hides internal projections', async () => {
     const cloud = createMemoryCloudSdk('openid-alice');
     const bootstrap = await command(cloud.sdk, 'session.bootstrap', {}, 'request-boot');

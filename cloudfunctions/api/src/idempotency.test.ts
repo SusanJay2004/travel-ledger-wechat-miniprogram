@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { CloudCollection, CloudDatabase, QueryResult, UpdateResult } from './cloud-repository';
 import { BusinessError } from './errors';
-import { IdempotencyService, isWriteAction } from './idempotency';
+import { IdempotencyService, isKnownAction, isWriteAction } from './idempotency';
 import type { Clock, IdempotencyRecordDocument } from './models';
 
 class TestClock implements Clock {
@@ -84,6 +84,8 @@ describe('IdempotencyService', () => {
     expect(isWriteAction('trip.deleteDate')).toBe(true);
     expect(isWriteAction('trip.clearArchived')).toBe(true);
     expect(isWriteAction('trip.calculate')).toBe(false);
+    expect(isKnownAction('trip.calculate')).toBe(true);
+    expect(isKnownAction('trip.unknown')).toBe(false);
   });
   it('returns the stored response without executing a duplicate request', async () => {
     const database = new MemoryCloudDatabase();

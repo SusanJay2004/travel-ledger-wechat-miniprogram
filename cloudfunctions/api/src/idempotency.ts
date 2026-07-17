@@ -17,6 +17,47 @@ interface PayloadBudget {
 const MAX_PAYLOAD_DEPTH = 8;
 const MAX_PAYLOAD_NODES = 256;
 const MAX_PAYLOAD_STRING_CODE_UNITS = 16_384;
+const READ_ACTIONS = new Set([
+  'session.bootstrap',
+  'social.search',
+  'social.resolveQrScene',
+  'social.listFriends',
+  'social.listBlocked',
+  'social.listNotifications',
+  'trip.list',
+  'trip.listArchived',
+  'trip.get',
+  'trip.activity',
+  'trip.calculate',
+]);
+const WRITE_ACTIONS = new Set([
+  'session.updateProfile',
+  'session.deleteAccount',
+  'session.qrCode',
+  'trip.create',
+  'trip.rename',
+  'trip.addDate',
+  'trip.deleteDate',
+  'trip.addBill',
+  'trip.updateBill',
+  'trip.deleteBill',
+  'trip.restoreBill',
+  'trip.complete',
+  'trip.reopen',
+  'trip.archive',
+  'trip.restore',
+  'trip.removeArchived',
+  'trip.clearArchived',
+  'social.sendFriendRequest',
+  'social.respondFriendRequest',
+  'social.deleteFriend',
+  'social.blockUser',
+  'social.unblockUser',
+  'social.markNotificationRead',
+  'social.inviteToTrip',
+  'social.leaveTrip',
+  'social.respondTripInvitation',
+]);
 
 export class IdempotencyService {
   constructor(
@@ -109,34 +150,11 @@ export class IdempotencyService {
 }
 
 export function isWriteAction(action: string): boolean {
-  return new Set([
-    'session.updateProfile',
-    'session.deleteAccount',
-    'session.qrCode',
-    'trip.create',
-    'trip.rename',
-    'trip.addDate',
-    'trip.deleteDate',
-    'trip.addBill',
-    'trip.updateBill',
-    'trip.deleteBill',
-    'trip.restoreBill',
-    'trip.complete',
-    'trip.reopen',
-    'trip.archive',
-    'trip.restore',
-    'trip.removeArchived',
-    'trip.clearArchived',
-    'social.sendFriendRequest',
-    'social.respondFriendRequest',
-    'social.deleteFriend',
-    'social.blockUser',
-    'social.unblockUser',
-    'social.markNotificationRead',
-    'social.inviteToTrip',
-    'social.leaveTrip',
-    'social.respondTripInvitation',
-  ]).has(action);
+  return WRITE_ACTIONS.has(action);
+}
+
+export function isKnownAction(action: string): boolean {
+  return READ_ACTIONS.has(action) || WRITE_ACTIONS.has(action);
 }
 
 function validateRequestId(requestId: string): void {

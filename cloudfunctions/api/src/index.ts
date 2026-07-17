@@ -6,7 +6,12 @@ import { WechatContentSecurity } from './content-security';
 import { BusinessError } from './errors';
 import { EventPublisher } from './event-publisher';
 import { secureIdGenerator, systemClock } from './generators';
-import { IdempotencyService, isWriteAction, requestPayloadHash } from './idempotency';
+import {
+  IdempotencyService,
+  isKnownAction,
+  isWriteAction,
+  requestPayloadHash,
+} from './idempotency';
 import { LedgerService } from './service';
 import { RateLimiter } from './rate-limit';
 import { successResponse } from './response';
@@ -127,6 +132,9 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
   try {
     // Validate a bounded JSON shape for reads and writes before any database or domain work.
     const payloadHash = requestPayloadHash(event.payload);
+    if (!isKnownAction(action)) {
+      throw new BusinessError('UNKNOWN_ACTION', '无法识别该操作。');
+    }
     await rateLimiter.consume(openId, requestId, action);
     const existingUser = await repository.findUserByOpenId(openId);
     if (action === 'session.deleteAccount' && existingUser === null) {

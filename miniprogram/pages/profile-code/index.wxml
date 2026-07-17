@@ -9,7 +9,7 @@
   <view wx:else class="surface-card code-card">
     <view class="code-name">{{profile.displayName}}</view>
     <view class="code-id">ID {{profile.publicId}}</view>
-    <image class="profile-code" src="{{fileId}}" mode="aspectFit" show-menu-by-longpress />
+    <image class="profile-code" src="{{url}}" mode="aspectFit" show-menu-by-longpress />
     <view class="code-hint">微信扫一扫，向我发送好友申请</view>
     <button class="secondary-button copy-button" bindtap="handleCopyId">复制账号 ID</button>
   </view>

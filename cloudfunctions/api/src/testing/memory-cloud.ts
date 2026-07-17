@@ -84,11 +84,14 @@ export function createMemoryCloudSdk(openId = 'test-openid'): {
     },
     downloadFile: async () => ({ fileContent: Buffer.from([0xff, 0xd8, 0xff, 0x00]) }),
     getTempFileURL: async ({ fileList }) => ({
-      fileList: fileList.map((fileID) => ({
-        fileID,
-        status: 0,
-        tempFileURL: `https://example.test/${encodeURIComponent(fileID)}`,
-      })),
+      fileList: fileList.map((entry) => {
+        const fileID = typeof entry === 'string' ? entry : entry.fileID;
+        return {
+          fileID,
+          status: 0,
+          tempFileURL: `https://example.test/${encodeURIComponent(fileID)}`,
+        };
+      }),
     }),
     uploadFile: async ({ cloudPath }) => ({ fileID: `cloud://memory/${cloudPath}` }),
   };

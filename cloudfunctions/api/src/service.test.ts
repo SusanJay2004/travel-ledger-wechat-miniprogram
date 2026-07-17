@@ -685,7 +685,6 @@ describe('LedgerService solo flow', () => {
     const updated = await service.updateProfile(reviewingUser, {
       displayName: '只改名字',
       signature: '继续等待头像审核',
-      avatarUrl: reviewingUser.avatarUrl,
     });
 
     expect(updated).toMatchObject({
@@ -695,6 +694,19 @@ describe('LedgerService solo flow', () => {
       pendingAvatarExpiresAt: '2026-07-10T08:35:00.000Z',
       pendingFileDeletionIds: [],
     });
+  });
+
+  it('preserves the authoritative avatar when a display-only URL is omitted', async () => {
+    const authoritative = `cloud://development/avatars/${user.id}/current.png`;
+    const withAvatar = { ...user, avatarUrl: authoritative };
+    await repository.updateUser(withAvatar, user.version);
+
+    const updated = await service.updateProfile(withAvatar, {
+      displayName: '只改签名',
+      signature: '短期展示地址不会写回数据库',
+    });
+
+    expect(updated.avatarUrl).toBe(authoritative);
   });
 
   it('anonymizes ledger history and permits a fresh account after deletion', async () => {
@@ -726,6 +738,11 @@ describe('LedgerService solo flow', () => {
       pendingAvatarFileId: `cloud://development/avatars/${user.id}/pending.png`,
       pendingAvatarReviewId: 'trace-delete-pending',
       pendingAvatarExpiresAt: '2026-07-10T08:35:00.000Z',
+      stagedAvatarFileId: `cloud://development/avatars/${user.id}/staged.png`,
+      stagedAvatarToken: 'staged-avatar-token',
+      stagedAvatarExpiresAt: '2026-07-10T08:35:00.000Z',
+      stagedAvatarSha256: 'a'.repeat(64),
+      stagedAvatarSize: 123,
       qrCodeFileId: `cloud://development/profile-codes/${user.id}/code.png`,
       pendingFileDeletionIds: [`cloud://development/avatars/${user.id}/older.png`],
       version: withAvatar.version + 1,
@@ -741,11 +758,17 @@ describe('LedgerService solo flow', () => {
         `cloud://development/avatars/${user.id}/older.png`,
         `cloud://development/avatars/${user.id}/avatar.png`,
         `cloud://development/avatars/${user.id}/pending.png`,
+        `cloud://development/avatars/${user.id}/staged.png`,
         `cloud://development/profile-codes/${user.id}/code.png`,
       ],
       pendingAvatarFileId: null,
       pendingAvatarReviewId: null,
       pendingAvatarExpiresAt: null,
+      stagedAvatarFileId: null,
+      stagedAvatarToken: null,
+      stagedAvatarExpiresAt: null,
+      stagedAvatarSha256: null,
+      stagedAvatarSize: null,
     });
 
     const historical = await repository.getTrip(trip.id);

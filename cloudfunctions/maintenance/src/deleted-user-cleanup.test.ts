@@ -47,4 +47,28 @@ describe('cleanDeletedUserFiles', () => {
 
     expect(summary).toEqual({ failed: 1, removed: 0 });
   });
+
+  it('never deletes a marked file that the current user document still references', async () => {
+    const deleteFiles = vi.fn(async () => undefined);
+    const clearMarker = vi.fn(async () => true);
+    const activeAvatar = 'cloud://env/avatar-active.png';
+    const obsoleteAvatar = 'cloud://env/avatar-old.png';
+
+    const summary = await cleanDeletedUserFiles(
+      [
+        {
+          avatarUrl: activeAvatar,
+          id: 'user-1',
+          pendingFileDeletionIds: [activeAvatar, obsoleteAvatar],
+          version: 3,
+        },
+      ],
+      { clearMarker, deleteFiles },
+      now,
+    );
+
+    expect(deleteFiles).toHaveBeenCalledWith([obsoleteAvatar]);
+    expect(clearMarker).toHaveBeenCalledOnce();
+    expect(summary).toEqual({ failed: 0, removed: 1 });
+  });
 });

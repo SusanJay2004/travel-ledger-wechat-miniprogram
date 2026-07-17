@@ -1,4 +1,4 @@
 {
-  "read": "auth != null && (/^avatars\\//.test(resource.path) || /^profile-codes\\//.test(resource.path))",
-  "write": "/^avatars\\//.test(resource.path) && resource.openid == auth.openid"
+  "read": false,
+  "write": false
 }

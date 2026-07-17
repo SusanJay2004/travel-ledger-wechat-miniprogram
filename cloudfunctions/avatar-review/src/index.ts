@@ -73,10 +73,11 @@ export async function applyAvatarReview(
     user.status === 'active' &&
     Number.isFinite(expiresAt) &&
     expiresAt > now.getTime();
+  const nextAvatar = accepted ? candidate : user.avatarUrl;
   const pendingFileDeletionIds = uniqueFileIds(user.pendingFileDeletionIds, [
     ...(accepted ? [user.avatarUrl] : []),
     ...(accepted ? [] : [candidate]),
-  ]);
+  ]).filter((fileId) => fileId !== nextAvatar);
   const updated = await db
     .collection<ReviewUser>('users')
     .where({
@@ -86,7 +87,7 @@ export async function applyAvatarReview(
     })
     .update({
       data: {
-        avatarUrl: accepted ? candidate : user.avatarUrl,
+        avatarUrl: nextAvatar,
         pendingAvatarFileId: null,
         pendingAvatarReviewId: null,
         pendingAvatarExpiresAt: null,

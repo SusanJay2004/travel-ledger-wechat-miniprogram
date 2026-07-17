@@ -1,6 +1,7 @@
 import { callApi, clearPendingApiWrites, type SessionProfile } from './api';
 import { configureRuntimeMode } from '../config/runtime';
 import { clearLocalAccountData, readCachedProfile, writeCachedProfile } from './local-cache';
+import { clearPendingAvatarStage } from './avatar-upload';
 
 let cachedProfile: SessionProfile | null = null;
 let pendingProfile: Promise<SessionProfile> | null = null;
@@ -56,6 +57,7 @@ export function signOutLocalSession(): void {
   wx.setStorageSync(SIGNED_OUT_KEY, true);
   clearCachedSessionProfile();
   clearPendingApiWrites();
+  clearPendingAvatarStage();
   clearLocalAccountData();
 }
 

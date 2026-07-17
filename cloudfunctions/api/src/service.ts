@@ -74,7 +74,8 @@ export interface AddBillInput {
 export interface UpdateProfileInput {
   displayName: string;
   signature: string;
-  avatarUrl: string | null;
+  avatarUrl?: string | null;
+  consumeStagedAvatar?: boolean;
 }
 
 export interface RenameTripInput {
@@ -188,23 +189,24 @@ export class LedgerService {
   async updateProfile(user: UserDocument, input: UpdateProfileInput): Promise<UserDocument> {
     const displayName = input.displayName.trim();
     const signature = input.signature.trim() || DEFAULT_SIGNATURE;
+    const requestedAvatar = input.avatarUrl === undefined ? user.avatarUrl : input.avatarUrl;
     assertBusiness(isValidUsername(displayName), 'USERNAME_INVALID', '用户名格式不正确。');
     assertBusiness(isValidSignature(signature), 'SIGNATURE_INVALID', '个人签名格式不正确。');
     assertBusiness(
-      input.avatarUrl === null || input.avatarUrl.length <= 512,
+      requestedAvatar === null || requestedAvatar.length <= 512,
       'AVATAR_URL_INVALID',
       '头像地址格式不正确。',
     );
     assertBusiness(
-      input.avatarUrl === null || avatarBelongsToUser(input.avatarUrl, user.id),
+      requestedAvatar === null || avatarBelongsToUser(requestedAvatar, user.id),
       'AVATAR_OWNERSHIP_INVALID',
       '只能使用当前账号上传的头像。',
     );
     await this.contentSecurity.checkText(user.openId, 1, displayName, signature);
-    const avatarChanged = input.avatarUrl !== user.avatarUrl;
+    const avatarChanged = input.avatarUrl !== undefined && requestedAvatar !== user.avatarUrl;
     const review =
-      avatarChanged && input.avatarUrl !== null
-        ? await this.contentSecurity.startImageReview(user.openId, input.avatarUrl)
+      avatarChanged && requestedAvatar !== null
+        ? await this.contentSecurity.startImageReview(user.openId, requestedAvatar)
         : { status: 'pass' as const };
     const now = this.clock.now();
     const supersededCandidate =
@@ -212,19 +214,25 @@ export class LedgerService {
         ? [user.pendingAvatarFileId]
         : [];
     const immediatelyApplied =
-      !avatarChanged || input.avatarUrl === null || review.status === 'pass';
+      !avatarChanged || requestedAvatar === null || review.status === 'pass';
     const replacedAvatar =
       immediatelyApplied && avatarChanged && user.avatarUrl?.startsWith('cloud://') === true
         ? [user.avatarUrl]
+        : [];
+    const abandonedStagedAvatar =
+      input.consumeStagedAvatar === true &&
+      user.stagedAvatarFileId?.startsWith('cloud://') === true &&
+      user.stagedAvatarFileId !== requestedAvatar
+        ? [user.stagedAvatarFileId]
         : [];
     const next: UserDocument = {
       ...user,
       displayName,
       signature,
-      avatarUrl: immediatelyApplied ? input.avatarUrl : user.avatarUrl,
+      avatarUrl: immediatelyApplied ? requestedAvatar : user.avatarUrl,
       ...(avatarChanged
         ? {
-            pendingAvatarFileId: review.status === 'pending' ? input.avatarUrl : null,
+            pendingAvatarFileId: review.status === 'pending' ? requestedAvatar : null,
             pendingAvatarReviewId: review.status === 'pending' ? review.traceId : null,
             pendingAvatarExpiresAt:
               review.status === 'pending'
@@ -232,9 +240,19 @@ export class LedgerService {
                 : null,
           }
         : {}),
+      ...(input.consumeStagedAvatar === true
+        ? {
+            stagedAvatarFileId: null,
+            stagedAvatarToken: null,
+            stagedAvatarExpiresAt: null,
+            stagedAvatarSha256: null,
+            stagedAvatarSize: null,
+          }
+        : {}),
       pendingFileDeletionIds: uniqueFileIds(user.pendingFileDeletionIds, [
         ...supersededCandidate,
         ...replacedAvatar,
+        ...abandonedStagedAvatar,
       ]),
       version: user.version + 1,
       updatedAt: now.toISOString(),
@@ -261,6 +279,11 @@ export class LedgerService {
             pendingAvatarFileId: null,
             pendingAvatarReviewId: null,
             pendingAvatarExpiresAt: null,
+            stagedAvatarFileId: null,
+            stagedAvatarToken: null,
+            stagedAvatarExpiresAt: null,
+            stagedAvatarSha256: null,
+            stagedAvatarSize: null,
             qrCodeFileId: null,
             qrSceneToken: null,
             pendingFileDeletionIds: accountFileIds(user),
@@ -1120,6 +1143,7 @@ function accountFileIds(user: UserDocument): readonly string[] {
   return uniqueFileIds(user.pendingFileDeletionIds, [
     user.avatarUrl,
     user.pendingAvatarFileId,
+    user.stagedAvatarFileId,
     user.qrCodeFileId,
   ]);
 }

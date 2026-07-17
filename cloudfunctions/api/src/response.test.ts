@@ -34,4 +34,15 @@ describe('sanitizeClientData', () => {
 
     expect(sanitizeClientData(value)).toEqual({ profile: { displayName: '旅人' } });
   });
+
+  it('fails closed when an endpoint accidentally returns a raw cloud file id', () => {
+    expect(
+      sanitizeClientData({
+        avatarUrl: 'cloud://env/avatars/user/avatar.jpg',
+        eventTitle: 'cloud://x',
+        fileId: 'cloud://env/private.png',
+        safe: 'https://ok',
+      }),
+    ).toEqual({ avatarUrl: null, eventTitle: 'cloud://x', fileId: null, safe: 'https://ok' });
+  });
 });

@@ -3,7 +3,7 @@ import { getSessionProfile } from '../../services/session';
 
 interface CodeData {
   errorMessage: string;
-  fileId: string;
+  url: string;
   loading: boolean;
   profile: SessionProfile | null;
 }
@@ -14,7 +14,7 @@ interface CodeMethods {
 }
 
 Page<CodeData, CodeMethods>({
-  data: { errorMessage: '', fileId: '', loading: true, profile: null },
+  data: { errorMessage: '', loading: true, profile: null, url: '' },
 
   onLoad() {
     void this.loadCode();
@@ -24,10 +24,10 @@ Page<CodeData, CodeMethods>({
     this.setData({ errorMessage: '', loading: true });
     try {
       const [profile, code] = await Promise.all([
-        getSessionProfile(),
-        callApi<{ fileId: string }>('session.qrCode'),
+        getSessionProfile(true),
+        callApi<{ url: string }>('session.qrCode'),
       ]);
-      this.setData({ fileId: code.fileId, loading: false, profile });
+      this.setData({ loading: false, profile, url: code.url });
     } catch (error: unknown) {
       this.setData({ errorMessage: toMessage(error), loading: false });
     }

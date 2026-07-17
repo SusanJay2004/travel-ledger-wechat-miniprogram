@@ -5,7 +5,7 @@
 - `api`：调用量、P50/P95 时延、错误率、`INTERNAL_ERROR`、`REQUEST_RESULT_UNCERTAIN`、内容审核不可用和限流次数。
 - 协作：`trip-change-publish-failed`、`notification-publish-failed`、同步信号到客户端刷新延迟。
 - 头像审核：`avatar-review-applied` 的通过/拒绝数量、`CONTENT_CHECK_UNAVAILABLE`、35 分钟超时数和回调更新连续冲突；不得记录头像 URL 或 `trace_id`。
-- 维护：每日 `maintenance-complete` 是否出现、`projectionsRepaired`、`projectionFailures`、`accountDeletionsCompleted`、`accountDeletionConflicts`、`accountDeletionTripsUpdated`、`expiredAvatarReviewsRemoved`、`oldAuditLogsRemoved`、冲突跳过数、清理数和执行时长。
+- 维护：每日 `maintenance-complete` 是否出现、`projectionsRepaired`、`projectionFailures`、`accountDeletionsCompleted`、`accountDeletionConflicts`、`accountDeletionTripsUpdated`、`expiredAvatarReviewsRemoved`、`expiredStagedAvatarsRemoved`、`oldAuditLogsRemoved`、冲突跳过数、清理数和执行时长。
 - 备份：每日 `backup-complete`、manifest 状态、集合页/文档数突变、连续失败和存储用量。
 - 资源：数据库读写量、云函数 GBs、云存储容量/流量、费用与预算余额。
 

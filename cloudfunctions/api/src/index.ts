@@ -20,6 +20,9 @@ import { CloudTripInvitationAcceptance } from './trip-invitation-transaction';
 import { CloudFriendRequestTransition } from './friend-request-transaction';
 import { CloudSocialRelationshipTransition } from './social-relationship-transaction';
 import { deleteFilesCompletely, type DeleteFileResultItem } from './file-deletion';
+import { attachTemporaryAvatarUrls, temporaryDisplayUrl } from './file-access';
+import { stageAvatar } from './avatar-staging';
+import type { UserDocument } from './models';
 
 export interface ApiEvent {
   action?: unknown;
@@ -65,7 +68,7 @@ export interface CloudSdk {
     };
   };
   downloadFile(options: { fileID: string }): Promise<{ fileContent: Buffer }>;
-  getTempFileURL(options: { fileList: string[] }): Promise<{
+  getTempFileURL(options: { fileList: (string | { fileID: string; maxAge?: number })[] }): Promise<{
     fileList: readonly { fileID: string; tempFileURL: string; status: number }[];
   }>;
   uploadFile(options: { cloudPath: string; fileContent: Buffer }): Promise<{ fileID: string }>;
@@ -87,7 +90,11 @@ function runtimeCloud(): CloudSdk {
   return sdk;
 }
 
-export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<unknown> {
+export async function handleApiEvent(
+  event: ApiEvent,
+  sdk: CloudSdk,
+  dependencies: { avatarDownloader?: (url: string) => Promise<Buffer> } = {},
+): Promise<unknown> {
   const requestId = typeof event.requestId === 'string' ? event.requestId : 'missing-request-id';
   const action = typeof event.action === 'string' ? event.action : '';
   const openId = sdk.getWXContext().OPENID;
@@ -131,10 +138,18 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
 
   try {
     // Validate a bounded JSON shape for reads and writes before any database or domain work.
-    const payloadHash = requestPayloadHash(event.payload);
+    const structuralPayloadHash = requestPayloadHash(event.payload);
     if (!isKnownAction(action)) {
       throw new BusinessError('UNKNOWN_ACTION', '无法识别该操作。');
     }
+    const payloadHash =
+      action === 'session.stageAvatar'
+        ? requestPayloadHash({
+            avatarToken: requiredString(event.payload, 'avatarToken'),
+            sha256: requiredString(event.payload, 'sha256'),
+            size: requiredInteger(event.payload, 'size'),
+          })
+        : structuralPayloadHash;
     await rateLimiter.consume(openId, requestId, action, payloadHash);
     const existingUser = await repository.findUserByOpenId(openId);
     if (action === 'session.deleteAccount' && existingUser === null) {
@@ -154,7 +169,7 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
       await service.deleteAccount(existingUser, socialRepository);
       await cleanPendingUserFiles(sdk, repository, existingUser.id);
       const replacement = await service.bootstrapSession(openId);
-      return success(requestId, publicProfile(replacement, productMode));
+      return success(requestId, await displaySessionProfile(sdk, replacement, productMode));
     }
     const user =
       action === 'session.deleteAccount' && existingUser?.status === 'deleting'
@@ -166,82 +181,117 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
         : operation();
     switch (action) {
       case 'session.bootstrap':
-        return success(requestId, publicProfile(user, productMode));
+        return success(requestId, await displaySessionProfile(sdk, user, productMode));
+      case 'session.stageAvatar': {
+        const staged = await write(() =>
+          stageAvatar(
+            repository,
+            {
+              delete: async (fileId) => deleteFilesCompletely(sdk, [fileId]),
+              upload: async (cloudPath, fileContent) =>
+                (await sdk.uploadFile({ cloudPath, fileContent })).fileID,
+            },
+            systemClock,
+            user,
+            {
+              avatarToken: requiredString(event.payload, 'avatarToken'),
+              sha256: requiredString(event.payload, 'sha256'),
+              size: requiredInteger(event.payload, 'size'),
+              sourceUrl: requiredString(event.payload, 'sourceUrl'),
+            },
+            dependencies.avatarDownloader,
+          ),
+        );
+        await cleanPendingUserFiles(sdk, repository, user.id);
+        return success(requestId, staged);
+      }
       case 'session.qrCode': {
-        return success(
-          requestId,
-          await write(async () => {
-            if (productMode !== 'collaboration') {
-              throw new BusinessError('FEATURE_DISABLED', '当前发布版本未开放好友二维码。');
-            }
-            if (
-              user.qrCodeFileId !== undefined &&
-              user.qrCodeFileId !== null &&
-              user.qrSceneToken !== undefined &&
-              user.qrSceneToken !== null
-            ) {
-              return { fileId: user.qrCodeFileId };
-            }
-            const qrSceneToken = secureIdGenerator.sceneToken();
-            const code = await sdk.openapi.wxacode.getUnlimited({
-              scene: `t=${qrSceneToken}`,
-              page: 'pages/messages/index',
-              checkPath: false,
-              envVersion:
-                process.env['MINIPROGRAM_ENV_VERSION'] === 'release'
-                  ? 'release'
-                  : process.env['MINIPROGRAM_ENV_VERSION'] === 'trial'
-                    ? 'trial'
-                    : 'develop',
-            });
-            if (code.buffer === undefined) {
+        const code = await write(async () => {
+          if (productMode !== 'collaboration') {
+            throw new BusinessError('FEATURE_DISABLED', '当前发布版本未开放好友二维码。');
+          }
+          if (
+            user.qrCodeFileId !== undefined &&
+            user.qrCodeFileId !== null &&
+            user.qrSceneToken !== undefined &&
+            user.qrSceneToken !== null
+          ) {
+            return { fileId: user.qrCodeFileId };
+          }
+          const qrSceneToken = secureIdGenerator.sceneToken();
+          const code = await sdk.openapi.wxacode.getUnlimited({
+            scene: `t=${qrSceneToken}`,
+            page: 'pages/messages/index',
+            checkPath: false,
+            envVersion:
+              process.env['MINIPROGRAM_ENV_VERSION'] === 'release'
+                ? 'release'
+                : process.env['MINIPROGRAM_ENV_VERSION'] === 'trial'
+                  ? 'trial'
+                  : 'develop',
+          });
+          if (code.buffer === undefined) {
+            throw new BusinessError('QR_CODE_FAILED', '暂时无法生成个人二维码，请稍后重试。', true);
+          }
+          const uploaded = await sdk.uploadFile({
+            cloudPath: `profile-codes/${user.id}/${qrSceneToken}.png`,
+            fileContent: code.buffer,
+          });
+          try {
+            const updated = await repository.updateUser(
+              {
+                ...user,
+                qrCodeFileId: uploaded.fileID,
+                qrSceneToken,
+                version: user.version + 1,
+                updatedAt: systemClock.now().toISOString(),
+              },
+              user.version,
+            );
+            if (!updated) {
               throw new BusinessError(
-                'QR_CODE_FAILED',
-                '暂时无法生成个人二维码，请稍后重试。',
+                'PROFILE_VERSION_CONFLICT',
+                '个人资料刚刚发生变化，请重新生成二维码。',
                 true,
               );
             }
-            const uploaded = await sdk.uploadFile({
-              cloudPath: `profile-codes/${user.id}/${qrSceneToken}.png`,
-              fileContent: code.buffer,
-            });
-            try {
-              const updated = await repository.updateUser(
-                {
-                  ...user,
-                  qrCodeFileId: uploaded.fileID,
-                  qrSceneToken,
-                  version: user.version + 1,
-                  updatedAt: systemClock.now().toISOString(),
-                },
-                user.version,
-              );
-              if (!updated) {
-                throw new BusinessError(
-                  'PROFILE_VERSION_CONFLICT',
-                  '个人资料刚刚发生变化，请重新生成二维码。',
-                  true,
-                );
-              }
-            } catch (error: unknown) {
-              await deleteFilesCompletely(sdk, [uploaded.fileID]).catch(() => undefined);
-              if (error instanceof BusinessError) throw error;
-              throw new BusinessError('QR_CODE_FAILED', '二维码资料保存失败，请稍后重试。', true);
-            }
-            return { fileId: uploaded.fileID };
-          }),
-        );
+          } catch (error: unknown) {
+            await deleteFilesCompletely(sdk, [uploaded.fileID]).catch(() => undefined);
+            if (error instanceof BusinessError) throw error;
+            throw new BusinessError('QR_CODE_FAILED', '二维码资料保存失败，请稍后重试。', true);
+          }
+          return { fileId: uploaded.fileID };
+        });
+        const url = await temporaryDisplayUrl(sdk, code.fileId);
+        if (url === null) {
+          throw new BusinessError('QR_CODE_URL_FAILED', '二维码暂时无法显示，请稍后重试。', true);
+        }
+        return success(requestId, { url });
       }
       case 'session.updateProfile': {
-        const updated = await write(() =>
-          service.updateProfile(user, {
+        if (payloadValue(event.payload, 'avatarUrl') !== undefined) {
+          throw new BusinessError(
+            'REQUEST_INVALID',
+            '头像必须通过受控暂存后使用 avatarToken 保存。',
+          );
+        }
+        const avatarToken = optionalNullableString(event.payload, 'avatarToken');
+        const updated = await write(() => {
+          const avatarChange =
+            avatarToken === undefined
+              ? {}
+              : {
+                  avatarUrl: resolveStagedAvatar(user, avatarToken, systemClock.now()),
+                  consumeStagedAvatar: true as const,
+                };
+          return service.updateProfile(user, {
             displayName: requiredString(event.payload, 'displayName'),
             signature: requiredString(event.payload, 'signature'),
-            avatarUrl: optionalNullableString(event.payload, 'avatarUrl'),
-          }),
-        );
+            ...avatarChange,
+          });
+        });
         await cleanPendingUserFiles(sdk, repository, updated.id);
-        return success(requestId, publicProfile(updated, productMode));
+        return success(requestId, await displaySessionProfile(sdk, updated, productMode));
       }
       case 'session.deleteAccount':
         await write(async () => {
@@ -252,12 +302,18 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
       case 'social.search':
         return success(
           requestId,
-          await social.searchByPublicId(user.id, requiredString(event.payload, 'publicId')),
+          await displayOptionalProfile(
+            sdk,
+            await social.searchByPublicId(user.id, requiredString(event.payload, 'publicId')),
+          ),
         );
       case 'social.resolveQrScene':
         return success(
           requestId,
-          await social.resolveQrScene(user.id, requiredString(event.payload, 'token')),
+          await displayOptionalProfile(
+            sdk,
+            await social.resolveQrScene(user.id, requiredString(event.payload, 'token')),
+          ),
         );
       case 'social.sendFriendRequest':
         return success(
@@ -278,7 +334,10 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
           ),
         );
       case 'social.listFriends':
-        return success(requestId, await social.listFriends(user.id));
+        return success(
+          requestId,
+          await attachTemporaryAvatarUrls(sdk, await social.listFriends(user.id)),
+        );
       case 'social.deleteFriend':
         await write(() =>
           social.deleteFriend(user.id, requiredString(event.payload, 'friendUserId')),
@@ -290,7 +349,10 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
         );
         return success(requestId, null);
       case 'social.listBlocked':
-        return success(requestId, await social.listBlockedUsers(user.id));
+        return success(
+          requestId,
+          await attachTemporaryAvatarUrls(sdk, await social.listBlockedUsers(user.id)),
+        );
       case 'social.unblockUser':
         await write(() =>
           social.unblockUser(user.id, requiredString(event.payload, 'blockedUserId')),
@@ -504,18 +566,20 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
 
 async function cleanPendingUserFiles(sdk: CloudSdk, repository: CloudRepository, userId: string) {
   const user = await repository.getUser(userId);
-  const fileList = user?.pendingFileDeletionIds ?? [];
-  if (fileList.length === 0) return;
+  if (user === null) return;
+  const markedFiles = user.pendingFileDeletionIds ?? [];
+  if (markedFiles.length === 0) return;
+  const fileList = deletableUserFiles(user);
   try {
-    await deleteFilesCompletely(sdk, fileList);
+    if (fileList.length > 0) await deleteFilesCompletely(sdk, fileList);
     const cleared = await repository.updateUser(
       {
-        ...user!,
+        ...user,
         pendingFileDeletionIds: [],
-        version: user!.version + 1,
+        version: user.version + 1,
         updatedAt: systemClock.now().toISOString(),
       },
-      user!.version,
+      user.version,
     );
     if (!cleared) {
       console.error('account-file-cleanup-conflict', { userId, fileCount: fileList.length });
@@ -523,6 +587,17 @@ async function cleanPendingUserFiles(sdk: CloudSdk, repository: CloudRepository,
   } catch {
     console.error('account-file-cleanup-failed', { userId, fileCount: fileList.length });
   }
+}
+
+function deletableUserFiles(user: UserDocument): readonly string[] {
+  const referenced = new Set(
+    [user.avatarUrl, user.pendingAvatarFileId, user.stagedAvatarFileId, user.qrCodeFileId].filter(
+      (value): value is string => typeof value === 'string' && value.startsWith('cloud://'),
+    ),
+  );
+  return [...new Set(user.pendingFileDeletionIds ?? [])].filter(
+    (fileId) => fileId.startsWith('cloud://') && !referenced.has(fileId),
+  );
 }
 
 function success<T>(requestId: string, data: T) {
@@ -554,6 +629,25 @@ function publicProfile(
     avatarReviewPending,
     productMode,
   };
+}
+
+async function displaySessionProfile(
+  sdk: CloudSdk,
+  user: Awaited<ReturnType<LedgerService['bootstrapSession']>>,
+  productMode: 'solo' | 'collaboration',
+) {
+  const profile = publicProfile(user, productMode);
+  const [displayed] = await attachTemporaryAvatarUrls(sdk, [profile]);
+  return displayed!;
+}
+
+async function displayOptionalProfile<T extends { avatarUrl: string | null }>(
+  sdk: CloudSdk,
+  profile: T | null,
+): Promise<T | null> {
+  if (profile === null) return null;
+  const [displayed] = await attachTemporaryAvatarUrls(sdk, [profile]);
+  return displayed ?? null;
 }
 
 function requiredString(payload: unknown, key: string): string {
@@ -589,13 +683,32 @@ function requiredBoolean(payload: unknown, key: string): boolean {
   return value;
 }
 
-function optionalNullableString(payload: unknown, key: string): string | null {
+function optionalNullableString(payload: unknown, key: string): string | null | undefined {
   const value = payloadValue(payload, key);
-  if (value === undefined || value === null || value === '') return null;
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
   if (typeof value !== 'string') {
     throw new BusinessError('REQUEST_INVALID', `字段 ${key} 必须是字符串。`);
   }
   return value;
+}
+
+function resolveStagedAvatar(
+  user: Awaited<ReturnType<LedgerService['bootstrapSession']>>,
+  avatarToken: string | null,
+  now: Date,
+): string | null {
+  if (avatarToken === null) return null;
+  const expiresAt = Date.parse(user.stagedAvatarExpiresAt ?? '');
+  if (
+    user.stagedAvatarToken !== avatarToken ||
+    user.stagedAvatarFileId?.startsWith('cloud://') !== true ||
+    !Number.isFinite(expiresAt) ||
+    expiresAt <= now.getTime()
+  ) {
+    throw new BusinessError('AVATAR_STAGE_EXPIRED', '头像暂存已失效，请重新选择。');
+  }
+  return user.stagedAvatarFileId;
 }
 
 function payloadValue(payload: unknown, key: string): unknown {

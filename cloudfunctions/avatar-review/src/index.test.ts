@@ -51,6 +51,24 @@ describe('avatar review application', () => {
     });
   });
 
+  it('removes an accepted candidate from any stale deletion marker', async () => {
+    const candidate = 'cloud://env/avatars/user-1/new.jpg';
+    const memory = database(user({ pendingFileDeletionIds: [candidate] }));
+
+    await expect(
+      applyAvatarReview(
+        memory.db as unknown as Parameters<typeof applyAvatarReview>[0],
+        { accepted: true, label: 100, traceId: 'trace-1' },
+        now,
+      ),
+    ).resolves.toBe('applied');
+
+    expect(memory.read()).toMatchObject({
+      avatarUrl: candidate,
+      pendingFileDeletionIds: ['cloud://env/avatars/user-1/old.jpg'],
+    });
+  });
+
   it('keeps the old avatar and queues a risky candidate for deletion', async () => {
     const memory = database(user());
     await expect(

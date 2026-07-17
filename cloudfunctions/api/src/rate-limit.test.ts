@@ -158,4 +158,14 @@ describe('RateLimiter', () => {
       limiter.consume('bob', 'request-1', 'social.search', 'payload-1'),
     ).resolves.toBeUndefined();
   });
+
+  it('limits controlled avatar staging to ten distinct attempts per hour', async () => {
+    const limiter = new RateLimiter(new MemoryDb(), new TestClock());
+    for (let index = 0; index < 10; index += 1) {
+      await limiter.consume('alice', `avatar-${index}`, 'session.stageAvatar', `payload-${index}`);
+    }
+    await expect(
+      limiter.consume('alice', 'avatar-over', 'session.stageAvatar', 'payload-over'),
+    ).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+  });
 });

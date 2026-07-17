@@ -80,7 +80,7 @@ export class WechatContentSecurity implements ContentSecurity {
       if (downloaded.fileContent.byteLength > 1024 * 1024) {
         throw new BusinessError('AVATAR_TOO_LARGE', '头像文件不能超过 1 MB。');
       }
-      detectImageType(downloaded.fileContent);
+      detectSupportedImageType(downloaded.fileContent);
       const urls = await this.cloud.getTempFileURL({ fileList: [fileId] });
       const temporary = urls.fileList.find((item) => item.fileID === fileId);
       if (temporary?.status !== 0 || !temporary.tempFileURL.startsWith('https://')) {
@@ -127,7 +127,7 @@ export function disabledContentSecurity(): ContentSecurity {
   return noop;
 }
 
-function detectImageType(buffer: Buffer): string {
+export function detectSupportedImageType(buffer: Buffer): 'image/jpeg' | 'image/png' {
   if (buffer.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) return 'image/jpeg';
   if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
     return 'image/png';

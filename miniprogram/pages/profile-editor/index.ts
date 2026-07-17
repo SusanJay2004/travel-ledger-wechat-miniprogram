@@ -1,5 +1,10 @@
 import { callApi, type SessionProfile } from '../../services/api';
-import { avatarSaveErrorMessage, canDiscardUploadedAvatar } from '../../services/avatar-upload';
+import {
+  avatarSaveErrorMessage,
+  canDiscardUploadedAvatar,
+  clearPendingAvatarStage,
+  stageAvatar,
+} from '../../services/avatar-upload';
 import { getSessionProfile, updateCachedSessionProfile } from '../../services/session';
 
 interface ProfileEditorData {
@@ -10,8 +15,6 @@ interface ProfileEditorData {
   loading: boolean;
   saving: boolean;
   signature: string;
-  originalAvatarUrl: string;
-  userId: string;
 }
 
 interface ProfileEditorMethods {
@@ -20,7 +23,6 @@ interface ProfileEditorMethods {
   handleSignatureInput(event: WechatMiniprogram.Input): void;
   handleSubmit(): Promise<void>;
   loadProfile(): Promise<void>;
-  uploadAvatar(localPath: string): Promise<string>;
 }
 
 Page<ProfileEditorData, ProfileEditorMethods>({
@@ -32,8 +34,6 @@ Page<ProfileEditorData, ProfileEditorMethods>({
     loading: true,
     saving: false,
     signature: '',
-    originalAvatarUrl: '',
-    userId: '',
   },
 
   onLoad() {
@@ -42,14 +42,12 @@ Page<ProfileEditorData, ProfileEditorMethods>({
 
   async loadProfile() {
     try {
-      const profile = await getSessionProfile();
+      const profile = await getSessionProfile(true);
       this.setData({
         avatarUrl: profile.avatarUrl ?? '',
         displayName: profile.displayName,
         loading: false,
-        originalAvatarUrl: profile.avatarUrl ?? '',
         signature: profile.signature,
-        userId: profile.userId,
       });
     } catch (error: unknown) {
       this.setData({ errorMessage: toMessage(error), loading: false });
@@ -81,53 +79,25 @@ Page<ProfileEditorData, ProfileEditorMethods>({
     }
     this.setData({ errorMessage: '', saving: true });
     try {
-      const uploadedAvatar = this.data.avatarChanged
-        ? await this.uploadAvatar(this.data.avatarUrl)
-        : null;
-      let updated: SessionProfile;
-      try {
-        updated = await callApi<SessionProfile>('session.updateProfile', {
-          displayName,
-          signature: this.data.signature.trim() || '这个人很懒，什么也没留下～',
-          avatarUrl: uploadedAvatar ?? (this.data.avatarUrl || null),
-        });
-      } catch (error: unknown) {
-        if (uploadedAvatar !== null && canDiscardUploadedAvatar(error)) {
-          await deleteCloudFile(uploadedAvatar);
-        }
-        throw error;
-      }
+      const avatarToken = this.data.avatarChanged ? await stageAvatar(this.data.avatarUrl) : null;
+      const updated = await callApi<SessionProfile>('session.updateProfile', {
+        displayName,
+        signature: this.data.signature.trim() || '这个人很懒，什么也没留下～',
+        ...(this.data.avatarChanged ? { avatarToken } : {}),
+      });
       updateCachedSessionProfile(updated);
+      if (this.data.avatarChanged) clearPendingAvatarStage();
       if (updated.avatarReviewPending) {
         await wx.showToast({ icon: 'none', title: '新头像审核中，通过后自动显示' });
       }
       void wx.navigateBack();
     } catch (error: unknown) {
+      if (this.data.avatarChanged && canDiscardUploadedAvatar(error)) clearPendingAvatarStage();
       this.setData({ errorMessage: avatarSaveErrorMessage(error), saving: false });
     }
-  },
-
-  async uploadAvatar(localPath: string) {
-    if (wx.cloud === undefined) throw new Error('当前微信版本不支持云存储。');
-    if (this.data.userId.length === 0) throw new Error('账号资料尚未加载，请稍后重试。');
-    const extension = /\.([A-Za-z0-9]+)$/.exec(localPath)?.[1]?.toLowerCase() ?? 'jpg';
-    const safeExtension = ['jpg', 'jpeg', 'png'].includes(extension) ? extension : 'jpg';
-    const result = await wx.cloud.uploadFile({
-      cloudPath: `avatars/${this.data.userId}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${safeExtension}`,
-      filePath: localPath,
-    });
-    return result.fileID;
   },
 });
 
 function toMessage(error: unknown): string {
   return error instanceof Error ? error.message : '保存失败，请稍后重试。';
-}
-
-async function deleteCloudFile(fileId: string): Promise<void> {
-  try {
-    await wx.cloud?.deleteFile({ fileList: [fileId] });
-  } catch {
-    console.warn('avatar-cleanup-failed');
-  }
 }

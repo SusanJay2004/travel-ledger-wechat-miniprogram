@@ -32,6 +32,7 @@ const READ_ACTIONS = new Set([
 ]);
 const WRITE_ACTIONS = new Set([
   'session.updateProfile',
+  'session.stageAvatar',
   'session.deleteAccount',
   'session.qrCode',
   'trip.create',

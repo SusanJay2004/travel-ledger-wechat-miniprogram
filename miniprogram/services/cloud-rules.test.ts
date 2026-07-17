@@ -42,10 +42,10 @@ describe('cloud client security rules', () => {
     );
   });
 
-  it('allows client writes only for creator-owned avatar files', () => {
+  it('keeps all storage access behind authorized cloud functions', () => {
     expect(storageRules).toEqual({
-      read: 'auth != null && (/^avatars\\//.test(resource.path) || /^profile-codes\\//.test(resource.path))',
-      write: '/^avatars\\//.test(resource.path) && resource.openid == auth.openid',
+      read: false,
+      write: false,
     });
   });
 });

@@ -57,6 +57,7 @@ export function clearLocalAccountData(): void {
   try {
     wx.removeStorageSync('pending-launch-v1');
     wx.removeStorageSync('pending-api-writes-v1');
+    wx.removeStorageSync('pending-avatar-stage-v1');
   } catch {
     // Ignore unavailable local storage during sign-out.
   }

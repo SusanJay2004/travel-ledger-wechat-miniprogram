@@ -11,6 +11,7 @@ vi.mock('wx-server-sdk', () => ({
 
 import {
   expireAvatarReviews,
+  expireStagedAvatars,
   maintainTrip,
   resumeDeletingAccounts,
   visitDocumentsById,
@@ -409,6 +410,32 @@ describe('expired avatar review maintenance', () => {
     expect(database.read<Document>('users', 'alice')).toMatchObject({
       pendingAvatarReviewId: 'trace-pending',
       version: 4,
+    });
+  });
+});
+
+describe('expired staged avatar maintenance', () => {
+  it('clears an unused staged avatar and queues its cloud file for deletion', async () => {
+    const database = new MemoryDatabase();
+    database.seed('users', {
+      _id: 'alice',
+      id: 'alice',
+      stagedAvatarFileId: 'cloud://env/avatars/alice/staged.jpg',
+      stagedAvatarToken: 'avatar-stage-token',
+      stagedAvatarExpiresAt: '2026-08-19T23:59:59.000Z',
+      pendingFileDeletionIds: [],
+      status: 'active',
+      updatedAt: '2026-08-19T23:00:00.000Z',
+      version: 4,
+    });
+
+    await expect(expireStagedAvatars(database, now.toISOString())).resolves.toBe(1);
+    expect(database.read<Document>('users', 'alice')).toMatchObject({
+      stagedAvatarFileId: null,
+      stagedAvatarToken: null,
+      stagedAvatarExpiresAt: null,
+      pendingFileDeletionIds: ['cloud://env/avatars/alice/staged.jpg'],
+      version: 5,
     });
   });
 });

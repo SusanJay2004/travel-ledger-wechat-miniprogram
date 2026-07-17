@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { describe, expect, it } from 'vitest';
 
 import { handleApiEvent } from './index';
@@ -110,31 +112,178 @@ describe('cloud API command integration', () => {
     const cloud = createMemoryCloudSdk('openid-avatar');
     const bootstrap = await command(cloud.sdk, 'session.bootstrap', {}, 'avatar-bootstrap');
     const profile = successData(bootstrap) as { userId: string; displayName: string };
-    const firstAvatar = `cloud://memory/avatars/${profile.userId}/first.jpg`;
-    const secondAvatar = `cloud://memory/avatars/${profile.userId}/second.jpg`;
+    const firstToken = 'avatar-first-token';
+    const secondToken = 'avatar-second-token';
+
+    await stageAvatarCommand(cloud.sdk, firstToken, 'avatar-stage-first');
 
     const first = await command(
       cloud.sdk,
       'session.updateProfile',
-      { displayName: profile.displayName, signature: '第一张头像', avatarUrl: firstAvatar },
+      { displayName: profile.displayName, signature: '第一张头像', avatarToken: firstToken },
       'avatar-first',
     );
     expect(successData(first)).toMatchObject({ avatarReviewPending: true, avatarUrl: null });
+    const replayedFirst = await command(
+      cloud.sdk,
+      'session.updateProfile',
+      { displayName: profile.displayName, signature: '第一张头像', avatarToken: firstToken },
+      'avatar-first',
+    );
+    expect(replayedFirst).toEqual(first);
+    const firstAvatar = String(cloud.database.documents('users')[0]?.['pendingAvatarFileId']);
+    await stageAvatarCommand(cloud.sdk, secondToken, 'avatar-stage-second');
     const replaced = await command(
       cloud.sdk,
       'session.updateProfile',
-      { displayName: profile.displayName, signature: '第二张头像', avatarUrl: secondAvatar },
+      { displayName: profile.displayName, signature: '第二张头像', avatarToken: secondToken },
       'avatar-second',
     );
 
     expect(successData(replaced)).toMatchObject({ avatarReviewPending: true, avatarUrl: null });
     expect(cloud.deletedFileIds).toEqual([firstAvatar]);
-    expect(cloud.database.documents('users')[0]).toMatchObject({
+    const storedAfterReplacement = cloud.database.documents('users')[0]!;
+    expect(storedAfterReplacement).toMatchObject({
       avatarUrl: null,
-      pendingAvatarFileId: secondAvatar,
       pendingAvatarReviewId: 'memory-avatar-trace',
       pendingFileDeletionIds: [],
     });
+    expect(storedAfterReplacement['pendingAvatarFileId']).toContain(
+      `cloud://memory/avatars/${profile.userId}/`,
+    );
+  });
+
+  it('returns a temporary HTTPS avatar URL without replacing the stored cloud file id', async () => {
+    const cloud = createMemoryCloudSdk('openid-display-avatar');
+    const profile = successData(
+      await command(cloud.sdk, 'session.bootstrap', {}, 'display-avatar-bootstrap'),
+    ) as { displayName: string; userId: string };
+    const users = cloud.database.collection<Record<string, unknown>>('users');
+    const stored = cloud.database.documents('users')[0]!;
+    const fileId = `cloud://memory/avatars/${profile.userId}/accepted.jpg`;
+    await users.doc(profile.userId).set({
+      data: { ...stored, avatarUrl: fileId, version: Number(stored['version']) + 1 },
+    });
+
+    const displayed = successData(
+      await command(cloud.sdk, 'session.bootstrap', {}, 'display-avatar-refresh'),
+    ) as { avatarUrl: string };
+    expect(displayed.avatarUrl).toBe(`https://example.test/${encodeURIComponent(fileId)}`);
+
+    await command(
+      cloud.sdk,
+      'session.updateProfile',
+      { displayName: profile.displayName, signature: '只更新文本' },
+      'display-avatar-text-update',
+    );
+    expect(cloud.database.documents('users')[0]?.['avatarUrl']).toBe(fileId);
+  });
+
+  it('does not delete a cleanup marker that still points at the current avatar', async () => {
+    const cloud = createMemoryCloudSdk('test-active-avatar-cleanup');
+    const profile = successData(
+      await command(cloud.sdk, 'session.bootstrap', {}, 'active-avatar-cleanup-bootstrap'),
+    ) as { displayName: string; userId: string };
+    const users = cloud.database.collection<Record<string, unknown>>('users');
+    const stored = cloud.database.documents('users')[0]!;
+    const activeAvatar = `cloud://memory/avatars/${profile.userId}/active.jpg`;
+    await users.doc(profile.userId).set({
+      data: {
+        ...stored,
+        avatarUrl: activeAvatar,
+        pendingFileDeletionIds: [activeAvatar],
+        version: Number(stored['version']) + 1,
+      },
+    });
+
+    const updated = await command(
+      cloud.sdk,
+      'session.updateProfile',
+      { displayName: profile.displayName, signature: '保留当前头像' },
+      'active-avatar-cleanup-update',
+    );
+
+    expect(updated).toMatchObject({ ok: true });
+    expect(cloud.deletedFileIds).not.toContain(activeAvatar);
+    expect(cloud.database.documents('users')[0]).toMatchObject({
+      avatarUrl: activeAvatar,
+      pendingFileDeletionIds: [],
+    });
+  });
+
+  it('accepts avatar changes only through a current server-staged token', async () => {
+    const cloud = createMemoryCloudSdk('openid-avatar-gate');
+    const profile = successData(
+      await command(cloud.sdk, 'session.bootstrap', {}, 'avatar-gate-bootstrap'),
+    ) as { displayName: string; userId: string };
+
+    const legacy = await command(
+      cloud.sdk,
+      'session.updateProfile',
+      {
+        displayName: profile.displayName,
+        signature: '旧直传字段应被忽略',
+        avatarUrl: `cloud://memory/avatars/${profile.userId}/forged.jpg`,
+      },
+      'avatar-gate-legacy',
+    );
+    expect(legacy).toMatchObject({ ok: false, error: { code: 'REQUEST_INVALID' } });
+    expect(cloud.database.documents('users')[0]?.['avatarUrl']).toBeNull();
+
+    const forged = await command(
+      cloud.sdk,
+      'session.updateProfile',
+      {
+        displayName: profile.displayName,
+        signature: '伪造令牌',
+        avatarToken: 'forged-avatar-token',
+      },
+      'avatar-gate-forged',
+    );
+    expect(forged).toMatchObject({ ok: false, error: { code: 'AVATAR_STAGE_EXPIRED' } });
+  });
+
+  it('binds an avatar staging request to token, size, and digest while allowing URL refresh', async () => {
+    const cloud = createMemoryCloudSdk('openid-avatar-intent');
+    await command(cloud.sdk, 'session.bootstrap', {}, 'avatar-intent-bootstrap');
+    const token = 'avatar-intent-token';
+    const digest = createHash('sha256').update(AVATAR_JPEG).digest('hex');
+    const first = await command(
+      cloud.sdk,
+      'session.stageAvatar',
+      {
+        avatarToken: token,
+        sha256: digest,
+        size: AVATAR_JPEG.byteLength,
+        sourceUrl: 'https://cdn.test/one',
+      },
+      'avatar-intent-stage',
+    );
+    const replay = await command(
+      cloud.sdk,
+      'session.stageAvatar',
+      {
+        avatarToken: token,
+        sha256: digest,
+        size: AVATAR_JPEG.byteLength,
+        sourceUrl: 'https://cdn.test/two',
+      },
+      'avatar-intent-stage',
+    );
+    expect(replay).toEqual(first);
+
+    const changed = await command(
+      cloud.sdk,
+      'session.stageAvatar',
+      {
+        avatarToken: token,
+        sha256: 'f'.repeat(64),
+        size: AVATAR_JPEG.byteLength,
+        sourceUrl: 'https://cdn.test/three',
+      },
+      'avatar-intent-stage',
+    );
+    expect(changed).toMatchObject({ ok: false, error: { code: 'REQUEST_ID_REUSED' } });
   });
 
   it('generates and resolves an opaque QR scene without embedding a public id', async () => {
@@ -144,8 +293,12 @@ describe('cloud API command integration', () => {
       const cloud = createMemoryCloudSdk('openid-alice');
       const bootstrap = await command(cloud.sdk, 'session.bootstrap', {}, 'qr-bootstrap-alice');
       const alice = successData(bootstrap) as { publicId: string };
-      await command(cloud.sdk, 'session.qrCode', {}, 'qr-generate-alice');
+      const generated = successData(
+        await command(cloud.sdk, 'session.qrCode', {}, 'qr-generate-alice'),
+      ) as { url: string };
       const stored = cloud.database.documents('users')[0]!;
+      expect(generated.url).toMatch(/^https:\/\//);
+      expect(generated).not.toHaveProperty('fileId');
       expect(stored['qrSceneToken']).toMatch(/^[A-Za-z0-9_-]{20}$/);
       expect(String(stored['qrSceneToken'])).not.toContain(alice.publicId);
       expect(stored['qrCodeFileId']).toBe(
@@ -249,8 +402,8 @@ describe('cloud API command integration', () => {
       const bootstrapped = successData(
         await command(cloud.sdk, 'session.bootstrap', {}, 'cleanup-bootstrap'),
       ) as { userId: string };
-      const generated = await command(cloud.sdk, 'session.qrCode', {}, 'cleanup-qr');
-      const qrCodeFileId = (successData(generated) as { fileId: string }).fileId;
+      await command(cloud.sdk, 'session.qrCode', {}, 'cleanup-qr');
+      const qrCodeFileId = String(cloud.database.documents('users')[0]?.['qrCodeFileId']);
       const activeAvatar = `cloud://memory/avatars/${bootstrapped.userId}/active.jpg`;
       const pendingAvatar = `cloud://memory/avatars/${bootstrapped.userId}/pending.jpg`;
       const oldAvatar = `cloud://memory/avatars/${bootstrapped.userId}/old.jpg`;
@@ -874,7 +1027,31 @@ async function command(
   payload: Record<string, unknown>,
   requestId: string,
 ) {
-  return handleApiEvent({ action, payload, requestId }, sdk) as Promise<Record<string, unknown>>;
+  return handleApiEvent(
+    { action, payload, requestId },
+    sdk,
+    action === 'session.stageAvatar' ? { avatarDownloader: async () => AVATAR_JPEG } : {},
+  ) as Promise<Record<string, unknown>>;
+}
+
+const AVATAR_JPEG = Buffer.from([0xff, 0xd8, 0xff, 0x00]);
+
+async function stageAvatarCommand(
+  sdk: Parameters<typeof handleApiEvent>[1],
+  avatarToken: string,
+  requestId: string,
+) {
+  return command(
+    sdk,
+    'session.stageAvatar',
+    {
+      avatarToken,
+      sha256: createHash('sha256').update(AVATAR_JPEG).digest('hex'),
+      size: AVATAR_JPEG.byteLength,
+      sourceUrl: `https://cdn.test/${avatarToken}`,
+    },
+    requestId,
+  );
 }
 
 function successData(response: Record<string, unknown>): unknown {

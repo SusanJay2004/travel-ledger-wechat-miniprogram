@@ -13,6 +13,11 @@ export interface UserDocument {
   pendingAvatarFileId?: string | null;
   pendingAvatarReviewId?: string | null;
   pendingAvatarExpiresAt?: string | null;
+  stagedAvatarFileId?: string | null;
+  stagedAvatarToken?: string | null;
+  stagedAvatarExpiresAt?: string | null;
+  stagedAvatarSha256?: string | null;
+  stagedAvatarSize?: number | null;
   qrCodeFileId?: string | null;
   qrSceneToken?: string | null;
   pendingFileDeletionIds?: readonly string[];

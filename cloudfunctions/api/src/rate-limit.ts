@@ -76,6 +76,9 @@ function policyFor(action: string): Policy {
   if (action === 'session.qrCode') {
     return { limit: 5, scope: action, windowMs: 60 * 60 * 1000 };
   }
+  if (action === 'session.stageAvatar') {
+    return { limit: 10, scope: action, windowMs: 60 * 60 * 1000 };
+  }
   if (action === 'social.sendFriendRequest' || action === 'social.inviteToTrip') {
     return { limit: 20, scope: action, windowMs: 60 * 60 * 1000 };
   }

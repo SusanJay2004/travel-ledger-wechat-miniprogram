@@ -33,6 +33,8 @@
 | `users`               | 普通 | `pendingAvatarReviewId ASC`                 |
 | `users`               | 普通 | `pendingAvatarExpiresAt ASC`                |
 | `users`               | 普通 | `pendingAvatarExpiresAt ASC, _id ASC`       |
+| `users`               | 普通 | `stagedAvatarExpiresAt ASC`                 |
+| `users`               | 普通 | `stagedAvatarExpiresAt ASC, _id ASC`        |
 | `users`               | 普通 | `_id ASC, version ASC`                      |
 | `users`               | 普通 | `status ASC`                                |
 | `users`               | 普通 | `status ASC, _id ASC`                       |
@@ -80,17 +82,17 @@
 
 ## 云存储
 
-- 使用下列自定义规则。登录用户可读取需要展示的头像与个人码；客户端只能写入/删除由自己创建的 `avatars/` 文件。云函数管理端不受客户端规则限制，因此仍可生成个人码、备份并执行清理。
+- 使用下列自定义规则，客户端对整个云存储读写全禁。云函数管理端不受客户端规则限制，可生成/暂存头像、生成个人码、备份和执行清理；授权 API 只返回短期 HTTPS 展示地址，不返回原始云文件 ID。
 
 ```json
 {
-  "read": "auth != null && (/^avatars\\//.test(resource.path) || /^profile-codes\\//.test(resource.path))",
-  "write": "/^avatars\\//.test(resource.path) && resource.openid == auth.openid"
+  "read": false,
+  "write": false
 }
 ```
 
-- `avatars/<内部用户ID>/`：用户头像；云函数保存资料时还会校验文件路径与当前内部用户 ID 一致，内容审核明确通过前不启用，注销时删除。
-- `profile-codes/<内部用户ID>/<随机场景令牌>.png`：云函数生成的小程序码；每次生成使用独立路径，冲突请求只清理自己的文件，注销时删除。
+- `avatars/<内部用户ID>/`：API 通过官方 `wx.cloud.CDN` 接收小程序本地临时文件，重新校验 SHA-256、大小、格式与账号路径，内容审核明确通过前不启用；未采用、拒绝、超时和注销文件均进入可靠清理。
+- `profile-codes/<内部用户ID>/<随机场景令牌>.png`：云函数生成的小程序码；每次生成使用独立路径，冲突请求只清理自己的文件，注销时删除；页面只接收短期 HTTPS 地址。
 - `private-backups/`：只允许备份/恢复云函数与管理员访问，客户端完全不可访问。
 
 部署后分别用客户端和云函数测试允许/拒绝矩阵，不能只凭规则保存成功判断生效。
@@ -98,6 +100,7 @@
 ## 部署后烟测
 
 - 首次微信身份登录、资料保存和内容安全拒绝样例。
+- 验证客户端无法直接下载、上传或删除 `avatars/`、`profile-codes/` 和 `private-backups/`；基础库 2.12.0+ 的 CDN 暂存、1 MB/JPG/PNG 拒绝、断网同图片重试与 35 分钟孤儿清理均通过。
 - 在 99 条首页行程时并发创建两条，确认仅一条成功、计数与首页均严格为 100；再覆盖邀请加入、归档、恢复、重开和退出的计数守恒。
 - 创建行程、日期增删、账单跨日期移动、有效/无效账单、分账复制、完结、归档、恢复、退出登录和离线只读缓存。
 - 协作版再测搜索、申请、拉黑、邀请、三账号实时同步与二维码。

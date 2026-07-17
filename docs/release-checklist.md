@@ -19,6 +19,7 @@
 - [x] 最近检查点 `git status` 干净，`npm run security:secrets` 通过，且人工确认无 AppSecret、上传私钥、真实 AppID/环境 ID 和用户数据（2026-07-17，当前待提交扫描 233 个文件；项目配置仍为游客 AppID）。
 - [x] 四个云函数使用独立 lockfile 和精确生产依赖，隔离执行 `npm ci --omit=dev` 与 SDK 冷加载成功；`security:cloud-locks` 校验 manifest、独立锁与根锁一致（2026-07-17；官方 SDK 上游 high 门禁仍单独保留）。
 - [x] `cloudbaserc.json` 锁定 Nodejs20.19、根入口、内存/超时和触发器；34 个索引覆盖 12 个集合、与部署文档双向校验并锁定 56 个生产查询调用的审计指纹，备份租约严格长于 900 秒平台执行上限（2026-07-17，本地门禁；真云配置仍待核对）。
+- [x] 公开 MIT 仓库已由 `SusanJay2004` 独立拥有并推送；首轮 GitHub Actions `29571833182` 全部通过（2026-07-17）。Actions 使用完整提交 SHA 锁定，Dependabot 每周检查 npm 与工作流依赖。
 - [ ] 发布 commit 已打语义化版本标签，并保留上一稳定构建。
 
 ## 云环境（阻断）

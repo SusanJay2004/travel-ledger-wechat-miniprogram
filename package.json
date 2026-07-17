@@ -28,7 +28,7 @@
     "check": "npm run typecheck && npm run lint && npm run format && npm run security:cloud-locks && npm run security:cloud-config && npm run security:cloud-indexes && npm run security:secrets && npm test"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.1.1",
     "esbuild": "^0.28.0",
     "eslint": "^9.30.0",
     "miniprogram-api-typings": "^4.0.0",

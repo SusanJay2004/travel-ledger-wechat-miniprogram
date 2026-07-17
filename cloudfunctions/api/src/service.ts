@@ -378,6 +378,11 @@ export class LedgerService {
     const trip = await this.requiredTrip(tripId);
     const member = memberFor(trip, userId);
     assertBusiness(member.viewState !== 'detached', 'FORBIDDEN', '你已永久移除此行程。');
+    assertBusiness(
+      !isExpiredArchive(member, this.clock.now()),
+      'TRIP_RESTORE_EXPIRED',
+      '该行程已超过 30 天恢复期。',
+    );
     return trip;
   }
 
@@ -722,11 +727,16 @@ export class LedgerService {
   async reopenTrip(userId: string, input: ReopenTripInput): Promise<TripDocument> {
     const trip = await this.versionedTrip(userId, input.tripId, input.expectedVersion);
     assertBusiness(trip.status === 'completed', 'TRIP_NOT_COMPLETED', '该行程尚未完结。');
-    const members = trip.members.map((member) =>
-      member.viewState === 'archived'
-        ? { ...member, viewState: 'home' as const, archivedAt: null, purgeAfter: null }
-        : member,
+    const now = this.clock.now();
+    const retainedArchived = trip.members.filter(
+      (member) => member.viewState === 'archived' && !isExpiredArchive(member, now),
     );
+    const members = trip.members.map((member) => {
+      if (member.viewState !== 'archived') return member;
+      return isExpiredArchive(member, now)
+        ? { ...member, viewState: 'detached' as const, archivedAt: null, purgeAfter: null }
+        : { ...member, viewState: 'home' as const, archivedAt: null, purgeAfter: null };
+    });
     return this.saveTripWithHomeCapacity(
       trip,
       userId,
@@ -739,11 +749,7 @@ export class LedgerService {
       'trip.reopened',
       'trip',
       trip.id,
-      Object.fromEntries(
-        trip.members
-          .filter((member) => member.viewState === 'archived')
-          .map((member) => [member.userId, 1]),
-      ),
+      Object.fromEntries(retainedArchived.map((member) => [member.userId, 1])),
       'MEMBER_TRIP_LIMIT_REACHED',
       '有同行人的首页已满，暂时无法重新开启。',
     );
@@ -983,6 +989,12 @@ function memberFor(trip: TripDocument, userId: string): TripMemberDocument {
   const member = trip.members.find((item) => item.userId === userId);
   assertBusiness(member !== undefined, 'FORBIDDEN', '你不是该行程的成员。');
   return member;
+}
+
+function isExpiredArchive(member: TripMemberDocument, now: Date): boolean {
+  if (member.viewState !== 'archived' || member.purgeAfter === null) return false;
+  const purgeAfter = new Date(member.purgeAfter).getTime();
+  return Number.isFinite(purgeAfter) && purgeAfter <= now.getTime();
 }
 
 function activeBills(trip: TripDocument) {

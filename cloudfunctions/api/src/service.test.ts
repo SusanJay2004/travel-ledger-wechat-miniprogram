@@ -235,6 +235,9 @@ describe('LedgerService solo flow', () => {
       }),
     ).rejects.toMatchObject({ code: 'TRIP_RESTORE_EXPIRED' });
     expect(await service.listArchivedTrips(user.id)).toEqual([]);
+    await expect(service.getTrip(user.id, expiredTrip.id)).rejects.toMatchObject({
+      code: 'TRIP_RESTORE_EXPIRED',
+    });
 
     const removable = await service.createTrip(user, { name: '主动清理' });
     const removableCompleted = await service.completeTrip(user.id, {
@@ -357,6 +360,58 @@ describe('LedgerService solo flow', () => {
       archivedAt: null,
       purgeAfter: null,
     });
+  });
+
+  it('permanently detaches expired archived members instead of restoring them on reopen', async () => {
+    const bob = await service.bootstrapSession('openid-bob');
+    const trip = await service.createTrip(user, { name: '到期成员不回归' });
+    const joined = {
+      ...trip,
+      memberIds: [...trip.memberIds, bob.id],
+      members: [
+        ...trip.members,
+        {
+          userId: bob.id,
+          displayNameSnapshot: bob.displayName,
+          joinedAt: clock.now().toISOString(),
+          viewState: 'home' as const,
+          archivedAt: null,
+          purgeAfter: null,
+        },
+      ],
+      version: trip.version + 1,
+    };
+    await repository.replaceTrip(joined, trip.version);
+    const completed = await service.completeTrip(bob.id, {
+      tripId: trip.id,
+      expectedVersion: joined.version,
+      ignoreInvalidBills: false,
+    });
+    const archived = await service.archiveTrip(user.id, {
+      tripId: trip.id,
+      expectedVersion: completed.version,
+    });
+    const archivedUser = (await repository.getUser(user.id))!;
+    await repository.updateUser(
+      { ...archivedUser, homeTripCount: 100, version: archivedUser.version + 1 },
+      archivedUser.version,
+    );
+
+    clock.advanceDays(30);
+    const reopened = await service.reopenTrip(bob.id, {
+      tripId: trip.id,
+      expectedVersion: archived.version,
+    });
+
+    expect(reopened.status).toBe('active');
+    expect(reopened.members.find((member) => member.userId === user.id)).toMatchObject({
+      viewState: 'detached',
+      archivedAt: null,
+      purgeAfter: null,
+    });
+    expect(reopened.members.find((member) => member.userId === bob.id)?.viewState).toBe('home');
+    expect((await repository.getUser(user.id))?.homeTripCount).toBe(100);
+    await expect(service.getTrip(user.id, trip.id)).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 
   it('rejects stale writes without overwriting current data', async () => {

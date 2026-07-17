@@ -3,18 +3,24 @@ import { describe, expect, it } from 'vitest';
 import {
   BACKUP_COLLECTIONS,
   appendBackupProgress,
+  backupDay,
+  backupIdForDay,
   backupPrefix,
   expiresAt,
   pagePath,
 } from './backup';
 
 describe('backup helpers', () => {
-  it('uses UTC day partitions and stable padded page paths', () => {
+  it('uses Beijing calendar days, deterministic ids, isolated attempts, and padded paths', () => {
     const now = new Date('2026-07-17T20:30:00.000Z');
-    const prefix = backupPrefix(now, 'bak_123');
-    expect(prefix).toBe('private-backups/2026-07-17/bak_123');
+    const day = backupDay(now);
+    const backupId = backupIdForDay(day);
+    const prefix = backupPrefix(day, backupId, 'attempt-1');
+    expect(day).toBe('2026-07-18');
+    expect(backupId).toBe('bak_20260718');
+    expect(prefix).toBe('private-backups/2026-07-18/bak_20260718/attempt_attempt-1');
     expect(pagePath(prefix, 'trips', 12)).toBe(
-      'private-backups/2026-07-17/bak_123/trips/00012.json.gz',
+      'private-backups/2026-07-18/bak_20260718/attempt_attempt-1/trips/00012.json.gz',
     );
   });
 

@@ -31,11 +31,12 @@ Android 设备 / 系统 / 微信：
 
 1. 核对开发与生产是两个独立环境；截图只保留环境别名，公开摘要不得写环境 ID。
 2. 按 `cloud-deployment-manifest.md` 创建全部集合、唯一/组合索引、数据库规则和云存储规则。
-3. 部署 `api`、`avatar-review`、`maintenance`、`backup`，确认云端安装依赖成功；记录每个函数的部署时间和版本。
+3. 按 `cloudbaserc.json` 部署 `api`、`avatar-review`、`maintenance`、`backup`，确认云端安装依赖成功；记录每个函数的部署时间、版本、运行时、入口、内存和超时。特别确认备份/维护为 `Nodejs20.19`、512MB、900 秒，上传包含根入口、构建产物和独立 lockfile。
 4. 配置 `PRODUCT_MODE`、`MINIPROGRAM_ENV_VERSION`；体验/生产不得存在 `CONTENT_SECURITY_MODE=disabled`。
 5. 把 `wxa_media_check` 消息推送指向 `avatar-review`。先确认客户端云存储读写均被拒绝，再通过页面上传正常 JPG/PNG，确认 CDN 暂存、旧头像审核中继续展示、回调通过后才切换；记录真实回调 `SOURCE`，验证当前鉴权后再决定是否能改为严格白名单。
 6. 验证非 JPG/PNG、超过 1 MB、其他用户目录文件和客户端越权写权威集合均被拒绝；客户端不能直接读写或删除 `avatars/`、`profile-codes/`、`private-backups/` 中的任何文件，所有暂存与删除只能由授权云函数执行。
 7. 手动触发定时函数的官方测试方式，确认 `maintenance` 与 `backup` 只接受 `wx_trigger`；客户端、开发者工具、HTTP 和其他云函数主动调用均被拒绝。
+8. 同一北京时间自然日重复触发备份，确认只保留一个 `bak_YYYYMMDD` 且第二次不重复上传；制造一次页面上传后失败、一次清理失败和一次过期租约接管，确认旧 attempt 文件最终删除、失败当天仍可安全重试、完成备份不被误删。
 
 ## 2. 单人主流程（iOS 与 Android 各执行一次）
 
@@ -70,7 +71,7 @@ Android 设备 / 系统 / 微信：
 
 1. 在开发环境临时阻断一次审计或同步投影，确认账本写入成功且 outbox 保留；恢复后运行维护，确认投影补齐、outbox 清空且确定性 ID 无重复。
 2. 让一次头像或二维码文件删除失败，确认用户文档保留待删清单；恢复后运行维护，确认文件和标记最终清理。
-3. 运行备份并核对 manifest、全部分页文件、文档数和到期时间；验证客户端无法读取 `private-backups/`。
+3. 运行备份并核对日 ID、attempt、租约、manifest、全部分页文件、文档数和到期时间；验证客户端无法读取 `private-backups/`。
 4. 按 `backup-restore.md` 恢复到隔离环境，核对用户/行程数量、金额、成员关系与公开 ID 唯一性，并重算至少 20 段行程。
 5. 演练关闭协作开关、回退上一稳定小程序版本和只读维护提示；记录恢复时间与数据一致性结论。
 6. 配置 `operations.md` 中的错误率、投影、头像回调、维护、备份、资源和预算告警，并主动触发一次测试告警证明通知链路有效。

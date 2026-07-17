@@ -23,7 +23,11 @@
 
 ## 索引
 
-在开发环境先创建并用实际查询验证，确认后逐项复制到生产环境：
+`config/cloud-database-indexes.json` 是索引的机器可读权威目录；下表必须与它完全一致。组合索引遵循官方前缀规则，因此不重复创建已经由前缀覆盖的单字段索引。平台自动提供的 `_id` 主键索引不在表中重复登记；带精确 `_id` 的乐观并发条件先用主键定位唯一文档，再校验版本和状态。目录还保存当前 56 个生产 `.where/.orderBy` 调用的 AST 审计指纹；查询代码变化会让 `security:cloud-indexes` 失败，必须重新逐项核对并显式更新指纹。
+
+在开发环境先创建并用实际查询验证命中情况，确认后逐项复制到生产环境：
+
+<!-- cloud-indexes:start -->
 
 | 集合                  | 类型 | 字段顺序                                    |
 | --------------------- | ---- | ------------------------------------------- |
@@ -31,19 +35,12 @@
 | `users`               | 唯一 | `publicId ASC`                              |
 | `users`               | 普通 | `qrSceneToken ASC`                          |
 | `users`               | 普通 | `pendingAvatarReviewId ASC`                 |
-| `users`               | 普通 | `pendingAvatarExpiresAt ASC`                |
 | `users`               | 普通 | `pendingAvatarExpiresAt ASC, _id ASC`       |
-| `users`               | 普通 | `stagedAvatarExpiresAt ASC`                 |
 | `users`               | 普通 | `stagedAvatarExpiresAt ASC, _id ASC`        |
-| `users`               | 普通 | `_id ASC, version ASC`                      |
-| `users`               | 普通 | `status ASC`                                |
 | `users`               | 普通 | `status ASC, _id ASC`                       |
-| `trips`               | 普通 | `memberIds ASC`                             |
 | `trips`               | 普通 | `memberIds ASC, _id ASC`                    |
-| `trips`               | 普通 | `_id ASC, version ASC`                      |
-| `friend_requests`     | 普通 | `fromUserId ASC, toUserId ASC, status ASC`  |
 | `friend_requests`     | 唯一 | `pendingKey ASC`                            |
-| `friend_requests`     | 普通 | `fromUserId ASC`                            |
+| `friend_requests`     | 普通 | `fromUserId ASC, toUserId ASC, status ASC`  |
 | `friend_requests`     | 普通 | `toUserId ASC`                              |
 | `friend_requests`     | 普通 | `expiresAt ASC`                             |
 | `friendships`         | 普通 | `userIds ASC`                               |
@@ -54,13 +51,12 @@
 | `notifications`       | 普通 | `tripId ASC`                                |
 | `notifications`       | 普通 | `requestId ASC`                             |
 | `notifications`       | 普通 | `invitationId ASC`                          |
-| `trip_invitations`    | 普通 | `tripId ASC, inviteeUserId ASC, status ASC` |
 | `trip_invitations`    | 唯一 | `pendingKey ASC`                            |
+| `trip_invitations`    | 普通 | `tripId ASC, inviteeUserId ASC, status ASC` |
 | `trip_invitations`    | 普通 | `inviterUserId ASC`                         |
 | `trip_invitations`    | 普通 | `inviteeUserId ASC`                         |
 | `trip_invitations`    | 普通 | `expiresAt ASC`                             |
 | `sync_events`         | 普通 | `userId ASC, tripId ASC`                    |
-| `sync_events`         | 普通 | `userId ASC`                                |
 | `sync_events`         | 普通 | `tripId ASC`                                |
 | `sync_events`         | 普通 | `createdAt ASC`                             |
 | `audit_logs`          | 普通 | `tripId ASC`                                |
@@ -70,15 +66,28 @@
 | `backup_manifests`    | 普通 | `createdAt DESC`                            |
 | `backup_manifests`    | 普通 | `expiresAt ASC`                             |
 
+<!-- cloud-indexes:end -->
+
 ## 云函数
 
-1. 在根目录执行 `npm ci && npm run check && npm run build`。
-2. 部署 `api`、`avatar-review`、`maintenance`、`backup`，选择云端安装依赖；每个函数必须同时上传本目录的 `package.json` 与 `package-lock.json`，不得删除独立 lockfile 或改用“更新到最新依赖”。
-3. `api` 配置 `security.msgSecCheck`、`security.mediaCheckAsync`、`wxacode.getUnlimited` 权限。
-4. 在“云开发—设置—其他设置—消息推送”新增事件类型 `wxa_media_check`，目标函数选择 `avatar-review`；部署后用真实头像验证回调日志与 `trace_id` 匹配。该函数拒绝小程序、开发者工具、HTTP 与云函数主动调用来源。
-5. `maintenance` 每天北京时间 03:30 运行；`backup` 每天 04:30 运行。
-6. 开发环境可设置 `CONTENT_SECURITY_MODE=disabled`；体验和生产必须删除该变量。
-7. 根据发布门禁设置 `PRODUCT_MODE=solo` 或 `collaboration`；`MINIPROGRAM_ENV_VERSION` 与当前开发/体验/正式版一致。
+1. 在根目录执行 `npm ci && npm run check && npm run build && npm run cloud:smoke-packages`；最后一项会在四个隔离临时目录中按真实上传清单执行生产依赖安装和根入口冷加载，完成后校验边界并自动清理。
+2. `cloudbaserc.json` 是不含真实环境 ID 的公开部署模板：四个函数锁定 `Nodejs20.19`、根入口 `index.main`、云端安装依赖及内存/超时；其中 `maintenance`、`backup` 均为 512MB/900 秒。用本机环境变量 `CLOUDBASE_ENV_ID` 注入目标环境，不把值写进 Git；执行 `npm run security:cloud-config` 后用固定版本的 CloudBase CLI 部署。若改用微信开发者工具，必须在“更多设置”逐项配成相同值并在部署后核对函数信息。
+3. 部署 `api`、`avatar-review`、`maintenance`、`backup`；每个函数必须上传根入口 `index.js`、`dist/index.js`、本目录 `package.json` 与独立 `package-lock.json`。不得删除 lockfile、上传 `src/` 替代构建产物或改用“更新到最新依赖”。
+4. `api` 配置 `security.msgSecCheck`、`security.mediaCheckAsync`、`wxacode.getUnlimited` 权限。
+5. 在“云开发—设置—其他设置—消息推送”新增事件类型 `wxa_media_check`，目标函数选择 `avatar-review`；部署后用真实头像验证回调日志与 `trace_id` 匹配。该函数拒绝小程序、开发者工具、HTTP 与云函数主动调用来源。
+6. `maintenance` 每天北京时间 03:30 运行；`backup` 每天 04:30 运行。部署后确认 Cron 为七段格式、时区为 UTC+8，并验证实际 `SOURCE === 'wx_trigger'`。
+7. 开发环境可设置 `CONTENT_SECURITY_MODE=disabled`；体验和生产必须删除该变量。
+8. 根据发布门禁设置 `PRODUCT_MODE=solo` 或 `collaboration`；`MINIPROGRAM_ENV_VERSION` 与当前开发/体验/正式版一致。
+
+PowerShell 部署命令（尖括号内容只在本机填写，禁止提交）：
+
+```powershell
+$env:CLOUDBASE_ENV_ID='<private-environment-id>'
+npx --yes --package @cloudbase/cli@3.6.3 tcb fn deploy --all
+npx --yes --package @cloudbase/cli@3.6.3 tcb config diff fn --all -e $env:CLOUDBASE_ENV_ID
+```
+
+部署结束后关闭当前终端，或执行 `Remove-Item Env:CLOUDBASE_ENV_ID`。官方能力依据：[CloudBase CLI 云函数配置](https://docs.cloudbase.net/cli-v1/functions/configs)、[云函数运行时](https://docs.cloudbase.net/cloud-function/runtime-support)和[基础配置](https://docs.cloudbase.net/cloud-function/function-configuration/config)。
 
 ## 云存储
 
@@ -106,4 +115,4 @@
 - 协作版再测搜索、申请、拉黑、邀请、三账号实时同步与二维码。
 - 临时阻断一次 `audit_logs` 或 `sync_events` 写入，确认行程 outbox 保留；恢复权限后触发 `maintenance`，确认投影被补齐、outbox 清空且无重复记录。
 - 用专用测试账号把状态置于注销中断后的 `deleting`，手动触发 `maintenance`，确认共享账务金额不变、姓名快照匿名化、社交入口清除、旧 `OpenID` 解绑且再次触发幂等。
-- 手动触发维护和备份，核对结构化摘要、manifest 和权限拒绝。
+- 用官方定时触发器重复投递同一北京时间自然日的备份，确认只有一个 `bak_YYYYMMDD`、完成态复用且没有重复分页；再制造一次中途失败和一次过期租约，确认旧尝试文件清理后当天可安全重试。核对结构化摘要、manifest 和权限拒绝。

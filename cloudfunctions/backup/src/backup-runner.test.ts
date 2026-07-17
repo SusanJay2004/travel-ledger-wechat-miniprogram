@@ -49,7 +49,10 @@ class MemoryCollection<T> implements Collection<T> {
     throw new Error('not implemented');
   }
 
-  doc(): { set(options: { data: T }): Promise<unknown> } {
+  doc(): {
+    get(): Promise<{ data: T }>;
+    set(options: { data: T | Omit<T, '_id'> }): Promise<unknown>;
+  } {
     throw new Error('not implemented');
   }
 
@@ -90,6 +93,45 @@ class MemoryCollection<T> implements Collection<T> {
 }
 
 describe('backup collection runner', () => {
+  it('persists the deterministic path before upload and the file id after upload', async () => {
+    const collection = new MemoryCollection<Record<string, unknown>>(
+      new Map([['doc_001', { _id: 'doc_001', value: 1 }]]),
+    );
+    const db: Database = {
+      collection: <T>() => collection as unknown as Collection<T>,
+      command: {
+        gt: (value) => ({ kind: 'gt', value }),
+        lt: (value) => ({ kind: 'lt', value }),
+      },
+      runTransaction: async () => undefined,
+    };
+    const calls: string[] = [];
+
+    await backupCollection(
+      db,
+      'users',
+      'private-backups/test',
+      async (cloudPath) => {
+        calls.push(`before:${cloudPath}`);
+      },
+      async (cloudPath, fileId) => {
+        calls.push(`after:${cloudPath}:${fileId}`);
+      },
+      {
+        uploadFile: async ({ cloudPath }) => {
+          calls.push(`upload:${cloudPath}`);
+          return { fileID: `cloud://${cloudPath}` };
+        },
+      },
+    );
+
+    expect(calls).toEqual([
+      'before:private-backups/test/users/00000.json.gz',
+      'upload:private-backups/test/users/00000.json.gz',
+      'after:private-backups/test/users/00000.json.gz:cloud://private-backups/test/users/00000.json.gz',
+    ]);
+  });
+
   it('uses a stable id cursor so deletions behind the cursor cannot skip later documents', async () => {
     const records = new Map<string, Document>(
       Array.from({ length: 101 }, (_, index) => {
@@ -99,11 +141,12 @@ describe('backup collection runner', () => {
     );
     const collection = new MemoryCollection<Record<string, unknown>>(records);
     const db: Database = {
-      collection: <T>() => collection as Collection<T>,
+      collection: <T>() => collection as unknown as Collection<T>,
       command: {
         gt: (value) => ({ kind: 'gt', value }),
         lt: (value) => ({ kind: 'lt', value }),
       },
+      runTransaction: async () => undefined,
     };
     const pages: Document[][] = [];
     const storage = {
@@ -120,7 +163,8 @@ describe('backup collection runner', () => {
       db,
       'users',
       'private-backups/test',
-      async (_fileId, summary) => {
+      async () => undefined,
+      async (_cloudPath, _fileId, summary) => {
         if (summary.pages === 1) {
           records.delete('doc_050');
           records.set('doc_050a', { _id: 'doc_050a', value: 'inserted-behind-cursor' });
@@ -139,17 +183,25 @@ describe('backup collection runner', () => {
       new Map([['broken', { _id: '', value: 1 }]]),
     );
     const db: Database = {
-      collection: <T>() => collection as Collection<T>,
+      collection: <T>() => collection as unknown as Collection<T>,
       command: {
         gt: (value) => ({ kind: 'gt', value }),
         lt: (value) => ({ kind: 'lt', value }),
       },
+      runTransaction: async () => undefined,
     };
 
     await expect(
-      backupCollection(db, 'users', 'private-backups/test', async () => undefined, {
-        uploadFile: async () => ({ fileID: 'unused' }),
-      }),
+      backupCollection(
+        db,
+        'users',
+        'private-backups/test',
+        async () => undefined,
+        async () => undefined,
+        {
+          uploadFile: async () => ({ fileID: 'unused' }),
+        },
+      ),
     ).rejects.toMatchObject({ code: 'BACKUP_CURSOR_INVALID' });
   });
 });

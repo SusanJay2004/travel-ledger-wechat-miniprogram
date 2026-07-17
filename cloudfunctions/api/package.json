@@ -2,7 +2,7 @@
   "name": "@travel-ledger/cloud-api",
   "version": "0.1.0",
   "private": true,
-  "main": "dist/index.js",
+  "main": "index.js",
   "scripts": {
     "build": "esbuild src/index.ts --bundle --platform=node --target=node18 --format=cjs --outfile=dist/index.js --external:wx-server-sdk"
   },

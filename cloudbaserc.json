@@ -1,0 +1,66 @@
+{
+  "$schema": "https://static.cloudbase.net/cli/cloudbaserc.schema.json",
+  "version": "2.0",
+  "envId": "{{env.CLOUDBASE_ENV_ID}}",
+  "functionRoot": "./cloudfunctions",
+  "functions": [
+    {
+      "name": "api",
+      "type": "Event",
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "timeout": 30,
+      "memorySize": 256,
+      "installDependency": true,
+      "isWaitInstall": true,
+      "ignore": ["node_modules", "node_modules/**/*", "src", "src/**/*", "tsconfig.json"]
+    },
+    {
+      "name": "avatar-review",
+      "type": "Event",
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "timeout": 30,
+      "memorySize": 256,
+      "installDependency": true,
+      "isWaitInstall": true,
+      "ignore": ["node_modules", "node_modules/**/*", "src", "src/**/*", "tsconfig.json"]
+    },
+    {
+      "name": "maintenance",
+      "type": "Event",
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "timeout": 900,
+      "memorySize": 512,
+      "installDependency": true,
+      "isWaitInstall": true,
+      "ignore": ["node_modules", "node_modules/**/*", "src", "src/**/*", "tsconfig.json"],
+      "triggers": [
+        {
+          "name": "daily-maintenance",
+          "type": "timer",
+          "config": "0 30 3 * * * *"
+        }
+      ]
+    },
+    {
+      "name": "backup",
+      "type": "Event",
+      "runtime": "Nodejs20.19",
+      "handler": "index.main",
+      "timeout": 900,
+      "memorySize": 512,
+      "installDependency": true,
+      "isWaitInstall": true,
+      "ignore": ["node_modules", "node_modules/**/*", "src", "src/**/*", "tsconfig.json"],
+      "triggers": [
+        {
+          "name": "daily-backup",
+          "type": "timer",
+          "config": "0 30 4 * * * *"
+        }
+      ]
+    }
+  ]
+}

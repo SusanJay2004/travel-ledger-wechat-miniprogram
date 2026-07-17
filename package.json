@@ -14,15 +14,18 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
+    "cloud:smoke-packages": "npm run build && node scripts/smoke-cloud-packages.mjs",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
     "security:cloud-locks": "node scripts/check-cloud-locks.mjs",
+    "security:cloud-config": "node scripts/check-cloud-deployment-config.mjs",
+    "security:cloud-indexes": "node scripts/check-cloud-indexes.mjs",
     "security:secrets": "node scripts/scan-secrets.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "check": "npm run typecheck && npm run lint && npm run format && npm run security:cloud-locks && npm run security:secrets && npm test"
+    "check": "npm run typecheck && npm run lint && npm run format && npm run security:cloud-locks && npm run security:cloud-config && npm run security:cloud-indexes && npm run security:secrets && npm test"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

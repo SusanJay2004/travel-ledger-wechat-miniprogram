@@ -21,7 +21,7 @@
 - `stagedAvatarFileId`、`stagedAvatarToken`、`stagedAvatarExpiresAt`、`stagedAvatarSha256`、`stagedAvatarSize`：受控上传暂存状态。令牌、大小与摘要共同绑定幂等意图，35 分钟内只能由同一账号资料更新原子消费；不同内容使用不同云路径，未采用或竞争失败的文件进入持久清理清单。
 - `pendingAvatarFileId`、`pendingAvatarReviewId`、`pendingAvatarExpiresAt`：2.0 异步头像审核候选、未公开的微信 `trace_id` 与 35 分钟兜底期限。旧头像在回调明确 `pass` 前继续生效；风险/超时候选进入持久化删除清单。`pendingAvatarReviewId` 与 `pendingAvatarExpiresAt` 使用普通索引；微信把 `trace_id` 定义为单次请求唯一标识，回调函数仍只在查询恰好命中一条记录时更新。
 
-唯一索引：`openId`、`publicId`；普通索引：`qrSceneToken`、`pendingAvatarReviewId`、`pendingAvatarExpiresAt`、`pendingAvatarExpiresAt + _id`、`stagedAvatarExpiresAt`、`stagedAvatarExpiresAt + _id`、`_id + version`、`status`、`status + _id`。微信云数据库唯一索引会把字段缺失和 `null` 都视为同一个空值，因此可选字段不得建立唯一索引。
+唯一索引：`openId`、`publicId`；普通索引：`qrSceneToken`、`pendingAvatarReviewId`、`pendingAvatarExpiresAt + _id`、`stagedAvatarExpiresAt + _id`、`status + _id`。组合索引的首字段同时覆盖对应单字段查询，不重复创建冗余索引。微信云数据库唯一索引会把字段缺失和 `null` 都视为同一个空值，因此可选字段不得建立唯一索引。完整权威目录见 `config/cloud-database-indexes.json`。
 
 首页 100 条上限不能通过“先查询数量、再写行程”实现，因为并发请求会同时通过。服务端以 `users.homeTripCount` 为事务内计数器：事务读取用户和行程版本，校验增量后同时写入；账号资料更新也递增同一用户版本，避免覆盖计数。部署到已有数据的环境前必须先按 `members.viewState == home` 回填并核对计数；当前首次开发环境无历史生产数据，可从 0 初始化。
 
@@ -38,7 +38,7 @@
 - `ledgerRevision`：影响分账结果的账本版本。
 - 操作者、创建/修改/完结时间字段。
 
-普通索引：`memberIds`、`memberIds + _id`、`version`。
+普通索引：`memberIds + _id`；其前缀覆盖普通成员查询，完整组合同时覆盖维护任务的 `_id` 游标分页。所有精确 `_id + version` 乐观并发写先由平台内置的唯一 `_id` 主键索引定位单一文档，再校验版本，不为此重复维护组合索引。
 
 ## 协作集合
 

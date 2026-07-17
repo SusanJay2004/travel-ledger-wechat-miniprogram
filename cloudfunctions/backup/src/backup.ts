@@ -9,9 +9,18 @@ export const BACKUP_COLLECTIONS = [
   'audit_logs',
 ] as const;
 
-export function backupPrefix(now: Date, backupId: string): string {
-  const day = now.toISOString().slice(0, 10);
-  return `private-backups/${day}/${backupId}`;
+const CHINA_STANDARD_TIME_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+export function backupDay(now: Date): string {
+  return new Date(now.getTime() + CHINA_STANDARD_TIME_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+export function backupIdForDay(day: string): string {
+  return `bak_${day.replaceAll('-', '')}`;
+}
+
+export function backupPrefix(day: string, backupId: string, attemptId: string): string {
+  return `private-backups/${day}/${backupId}/attempt_${attemptId}`;
 }
 
 export function pagePath(prefix: string, collection: string, page: number): string {

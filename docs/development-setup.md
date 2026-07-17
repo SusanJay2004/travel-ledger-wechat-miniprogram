@@ -21,16 +21,16 @@
    - `users.publicId`：唯一索引。
    - `users.qrSceneToken`：普通索引；令牌本身使用 120 位安全随机数，解析时只接受单一命中。
    - `users.pendingAvatarReviewId`：普通索引，用于匹配微信 2.0 异步头像审核回调；回调只在恰好命中一条待审记录时生效。
-   - `users.pendingAvatarExpiresAt`：普通索引，用于清理超过 35 分钟未回调的候选头像。
-   - `users.stagedAvatarExpiresAt` 与 `users.stagedAvatarExpiresAt + _id`：普通索引，用于清理超过 35 分钟未被资料保存采用的受控暂存头像。
-   - `users._id + version`：普通组合索引，用于资料和注销的乐观并发更新。
-   - `users.status` 与 `users.status + _id`：普通索引，用于维护任务按游标恢复中断的注销账号。
-   - `trips.memberIds` 与 `trips.memberIds + _id`：普通索引，用于普通成员查询和注销恢复的游标分页。
-   - `trips.version`：普通索引，用于乐观并发更新。
+   - `users.pendingAvatarExpiresAt + _id`：普通组合索引，用于清理超过 35 分钟未回调的候选头像；其前缀也覆盖单字段到期查询。
+   - `users.stagedAvatarExpiresAt + _id`：普通组合索引，用于清理超过 35 分钟未被资料保存采用的受控暂存头像。
+   - `users.status + _id`：普通组合索引，用于维护任务按游标恢复中断的注销账号。
+   - `trips.memberIds + _id`：普通组合索引，用于普通成员查询和注销恢复的游标分页。
+   - `_id` 是平台自动提供的唯一主键索引；精确 `_id + version` 条件不再创建冗余组合索引。
 8. 执行 `npm install`、`npm run check` 和 `npm run build`。
-9. 在开发者工具中依次上传并部署 `cloudfunctions/api`、`cloudfunctions/avatar-review`、`cloudfunctions/maintenance` 和 `cloudfunctions/backup`，均选择“云端安装依赖”；确认各函数目录的 `package-lock.json` 一并上传，部署日志解析到 `wx-server-sdk 4.0.2`，且没有缺少 `ws` 的警告。
+9. 优先按 `cloudbaserc.json` 用固定版本 CloudBase CLI 依次部署 `api`、`avatar-review`、`maintenance` 和 `backup`；真实环境 ID 只通过本机 `CLOUDBASE_ENV_ID` 注入。若改用开发者工具，逐项照模板设置运行时、内存和超时。确认上传包同时含 `index.js`、`dist/index.js`、`package.json`、独立 `package-lock.json`，部署日志解析到 `wx-server-sdk 4.0.2`，且没有缺少 `ws` 的警告。
 10. 在“云开发—设置—其他设置—消息推送”把 `wxa_media_check` 事件指向 `avatar-review`；用一张测试头像确认回调能凭未公开的 `trace_id` 命中待审用户，且实际 `SOURCE` 未被函数拒绝。
 11. 为 `maintenance` 配置每天北京时间 03:30 的定时触发器，为 `backup` 配置每天 04:30 的定时触发器；两者必须由官方 `wx_trigger` 来源调用。
+12. 部署后读取四个函数信息并逐项比对 `cloudbaserc.json`；特别确认 `maintenance` 与 `backup` 为 `Nodejs20.19`、512MB、900 秒，实际入口为 `index.main`，且两个 Cron 只各存在一个。
 
 当前项目尚无生产数据，用户的 `homeTripCount` 在首次登录时从 0 初始化。若未来从旧版本升级，部署事务容量版本前必须暂停写入，按每个用户 `viewState=home` 的行程数回填并抽样核对，不能直接以 0 覆盖。
 

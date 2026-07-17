@@ -34,6 +34,7 @@ docs/              架构、合规和运维文档
 npm ci
 npm run check
 npm run build
+npm run cloud:smoke-packages
 ```
 
 当前本地门禁包括领域/服务/云路由集成、容量、投影修复、离线缓存和可访问性测试。测试数量会随实现更新，以 `npm test` 的实际输出为准。

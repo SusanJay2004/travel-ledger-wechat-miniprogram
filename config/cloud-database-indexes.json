@@ -1,0 +1,197 @@
+{
+  "version": 1,
+  "sourceQueryAudit": {
+    "count": 56,
+    "sha256": "1604613f5c68db5b0a44858410ff7989a94a28415a2491f63c36ce9fde90cc8a"
+  },
+  "indexes": [
+    { "collection": "users", "unique": true, "fields": [{ "field": "openId", "order": "ASC" }] },
+    { "collection": "users", "unique": true, "fields": [{ "field": "publicId", "order": "ASC" }] },
+    {
+      "collection": "users",
+      "unique": false,
+      "fields": [{ "field": "qrSceneToken", "order": "ASC" }]
+    },
+    {
+      "collection": "users",
+      "unique": false,
+      "fields": [{ "field": "pendingAvatarReviewId", "order": "ASC" }]
+    },
+    {
+      "collection": "users",
+      "unique": false,
+      "fields": [
+        { "field": "pendingAvatarExpiresAt", "order": "ASC" },
+        { "field": "_id", "order": "ASC" }
+      ]
+    },
+    {
+      "collection": "users",
+      "unique": false,
+      "fields": [
+        { "field": "stagedAvatarExpiresAt", "order": "ASC" },
+        { "field": "_id", "order": "ASC" }
+      ]
+    },
+    {
+      "collection": "users",
+      "unique": false,
+      "fields": [
+        { "field": "status", "order": "ASC" },
+        { "field": "_id", "order": "ASC" }
+      ]
+    },
+    {
+      "collection": "trips",
+      "unique": false,
+      "fields": [
+        { "field": "memberIds", "order": "ASC" },
+        { "field": "_id", "order": "ASC" }
+      ]
+    },
+    {
+      "collection": "friend_requests",
+      "unique": true,
+      "fields": [{ "field": "pendingKey", "order": "ASC" }]
+    },
+    {
+      "collection": "friend_requests",
+      "unique": false,
+      "fields": [
+        { "field": "fromUserId", "order": "ASC" },
+        { "field": "toUserId", "order": "ASC" },
+        { "field": "status", "order": "ASC" }
+      ]
+    },
+    {
+      "collection": "friend_requests",
+      "unique": false,
+      "fields": [{ "field": "toUserId", "order": "ASC" }]
+    },
+    {
+      "collection": "friend_requests",
+      "unique": false,
+      "fields": [{ "field": "expiresAt", "order": "ASC" }]
+    },
+    {
+      "collection": "friendships",
+      "unique": false,
+      "fields": [{ "field": "userIds", "order": "ASC" }]
+    },
+    {
+      "collection": "blocks",
+      "unique": false,
+      "fields": [
+        { "field": "blockerUserId", "order": "ASC" },
+        { "field": "blockedUserId", "order": "ASC" }
+      ]
+    },
+    {
+      "collection": "blocks",
+      "unique": false,
+      "fields": [{ "field": "blockedUserId", "order": "ASC" }]
+    },
+    {
+      "collection": "notifications",
+      "unique": false,
+      "fields": [{ "field": "userId", "order": "ASC" }]
+    },
+    {
+      "collection": "notifications",
+      "unique": false,
+      "fields": [{ "field": "actorUserId", "order": "ASC" }]
+    },
+    {
+      "collection": "notifications",
+      "unique": false,
+      "fields": [{ "field": "tripId", "order": "ASC" }]
+    },
+    {
+      "collection": "notifications",
+      "unique": false,
+      "fields": [{ "field": "requestId", "order": "ASC" }]
+    },
+    {
+      "collection": "notifications",
+      "unique": false,
+      "fields": [{ "field": "invitationId", "order": "ASC" }]
+    },
+    {
+      "collection": "trip_invitations",
+      "unique": true,
+      "fields": [{ "field": "pendingKey", "order": "ASC" }]
+    },
+    {
+      "collection": "trip_invitations",
+      "unique": false,
+      "fields": [
+        { "field": "tripId", "order": "ASC" },
+        { "field": "inviteeUserId", "order": "ASC" },
+        { "field": "status", "order": "ASC" }
+      ]
+    },
+    {
+      "collection": "trip_invitations",
+      "unique": false,
+      "fields": [{ "field": "inviterUserId", "order": "ASC" }]
+    },
+    {
+      "collection": "trip_invitations",
+      "unique": false,
+      "fields": [{ "field": "inviteeUserId", "order": "ASC" }]
+    },
+    {
+      "collection": "trip_invitations",
+      "unique": false,
+      "fields": [{ "field": "expiresAt", "order": "ASC" }]
+    },
+    {
+      "collection": "sync_events",
+      "unique": false,
+      "fields": [
+        { "field": "userId", "order": "ASC" },
+        { "field": "tripId", "order": "ASC" }
+      ]
+    },
+    {
+      "collection": "sync_events",
+      "unique": false,
+      "fields": [{ "field": "tripId", "order": "ASC" }]
+    },
+    {
+      "collection": "sync_events",
+      "unique": false,
+      "fields": [{ "field": "createdAt", "order": "ASC" }]
+    },
+    {
+      "collection": "audit_logs",
+      "unique": false,
+      "fields": [{ "field": "tripId", "order": "ASC" }]
+    },
+    {
+      "collection": "audit_logs",
+      "unique": false,
+      "fields": [{ "field": "createdAt", "order": "ASC" }]
+    },
+    {
+      "collection": "idempotency_records",
+      "unique": false,
+      "fields": [{ "field": "expiresAt", "order": "ASC" }]
+    },
+    {
+      "collection": "rate_limit_records",
+      "unique": false,
+      "fields": [{ "field": "expiresAt", "order": "ASC" }]
+    },
+    {
+      "collection": "backup_manifests",
+      "unique": false,
+      "fields": [{ "field": "createdAt", "order": "DESC" }]
+    },
+    {
+      "collection": "backup_manifests",
+      "unique": false,
+      "fields": [{ "field": "expiresAt", "order": "ASC" }]
+    }
+  ]
+}

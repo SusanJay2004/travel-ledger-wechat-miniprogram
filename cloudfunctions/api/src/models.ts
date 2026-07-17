@@ -148,7 +148,7 @@ export interface IdempotencyRecordDocument {
 export interface RateLimitRecordDocument {
   id: string;
   ownerHash: string;
-  requestId: string;
+  requestIds: readonly string[];
   scope: string;
   bucket: string;
   createdAt: string;

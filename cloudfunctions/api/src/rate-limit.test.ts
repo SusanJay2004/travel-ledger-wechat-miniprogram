@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import type { CloudCollection, CloudDatabase, QueryResult, UpdateResult } from './cloud-repository';
+import type {
+  CloudCollection,
+  CloudDatabase,
+  CloudTransaction,
+  QueryResult,
+  UpdateResult,
+} from './cloud-repository';
 import type { Clock } from './models';
 import { RateLimiter } from './rate-limit';
 
@@ -18,13 +24,21 @@ class TestClock implements Clock {
 
 class MemoryDb implements CloudDatabase {
   readonly documents = new Map<string, Record<string, unknown>>();
+  private transactionQueue: Promise<void> = Promise.resolve();
 
   collection<T>(_name: string): CloudCollection<T> {
     return new MemoryCollection<T>(this);
   }
 
-  async runTransaction(): Promise<never> {
-    throw new Error('not used by rate-limit tests');
+  runTransaction(callback: (transaction: CloudTransaction) => void | Promise<unknown>) {
+    const run = this.transactionQueue.then(() =>
+      callback({ collection: (name) => this.collection(name) }),
+    );
+    this.transactionQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
   }
 }
 
@@ -110,6 +124,21 @@ describe('RateLimiter', () => {
     await expect(
       limiter.consume('openid', 'request-new-window', 'social.search'),
     ).resolves.toBeUndefined();
+  });
+
+  it('allows exactly the policy limit when distinct requests arrive concurrently', async () => {
+    const database = new MemoryDb();
+    const limiter = new RateLimiter(database, new TestClock());
+    const outcomes = await Promise.allSettled(
+      Array.from({ length: 31 }, (_, index) =>
+        limiter.consume('openid', `concurrent-${index}`, 'social.search'),
+      ),
+    );
+
+    expect(outcomes.filter((result) => result.status === 'fulfilled')).toHaveLength(30);
+    expect(outcomes.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(database.documents).toHaveLength(1);
+    expect(database.documents.values().next().value?.['requestIds']).toHaveLength(30);
   });
 
   it('uses separate counters per account', async () => {

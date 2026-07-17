@@ -26,46 +26,40 @@ export class RateLimiter {
     const now = this.clock.now();
     const ownerHash = hash(ownerOpenId);
     const bucket = String(Math.floor(now.getTime() / policy.windowMs));
-    const collection = this.db.collection<RateLimitRecordDocument>('rate_limit_records');
-    const id = hash(`${ownerOpenId}:${requestId}:${policy.scope}:${bucket}`);
-    try {
-      await collection.doc(id).get();
-      return;
-    } catch (error: unknown) {
-      if (!isNotFound(error)) throw error;
-    }
-
-    const current = await collection
-      .where({ ownerHash, scope: policy.scope, bucket })
-      .limit(policy.limit)
-      .get();
-    if (current.data.length >= policy.limit) {
-      const retryAfterSeconds = Math.max(
-        1,
-        Math.ceil((policy.windowMs - (now.getTime() % policy.windowMs)) / 1000),
-      );
-      throw new BusinessError('RATE_LIMITED', '操作太频繁，请稍后再试。', true, {
-        retryAfterSeconds,
-      });
-    }
-
-    const record: RateLimitRecordDocument & { _id: string } = {
-      _id: id,
-      id,
-      ownerHash,
-      requestId,
-      scope: policy.scope,
-      bucket,
-      createdAt: now.toISOString(),
-      expiresAt: new Date(
-        now.getTime() + Math.max(policy.windowMs * 2, 2 * 60 * 60 * 1000),
-      ).toISOString(),
-    };
-    try {
-      await collection.add({ data: record });
-    } catch (error: unknown) {
-      if (!isDuplicate(error)) throw error;
-    }
+    const id = hash(`${ownerHash}:${policy.scope}:${bucket}`);
+    await this.db.runTransaction(async (transaction) => {
+      const reference = transaction
+        .collection<RateLimitRecordDocument>('rate_limit_records')
+        .doc(id);
+      let current: RateLimitRecordDocument | null = null;
+      try {
+        current = (await reference.get()).data;
+      } catch (error: unknown) {
+        if (!isNotFound(error)) throw error;
+      }
+      if (current?.requestIds.includes(requestId) === true) return;
+      if ((current?.requestIds.length ?? 0) >= policy.limit) {
+        const retryAfterSeconds = Math.max(
+          1,
+          Math.ceil((policy.windowMs - (now.getTime() % policy.windowMs)) / 1000),
+        );
+        throw new BusinessError('RATE_LIMITED', '操作太频繁，请稍后再试。', true, {
+          retryAfterSeconds,
+        });
+      }
+      const record: RateLimitRecordDocument = {
+        id,
+        ownerHash,
+        requestIds: [...(current?.requestIds ?? []), requestId],
+        scope: policy.scope,
+        bucket,
+        createdAt: current?.createdAt ?? now.toISOString(),
+        expiresAt: new Date(
+          now.getTime() + Math.max(policy.windowMs * 2, 2 * 60 * 60 * 1000),
+        ).toISOString(),
+      };
+      await reference.set({ data: record });
+    });
   }
 }
 
@@ -118,12 +112,4 @@ function isNotFound(error: unknown): boolean {
       .toLowerCase()
       .includes('not found')
   );
-}
-
-function isDuplicate(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) return false;
-  const candidate = error as CloudError;
-  const value =
-    `${String(candidate.errCode ?? '')} ${String(candidate.message ?? '')}`.toLowerCase();
-  return value.includes('duplicate') || value.includes('already exists');
 }

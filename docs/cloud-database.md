@@ -51,7 +51,7 @@
 - `sync_events`：每个成员自己的实时同步信号，只保存内部 `userId`，不复制 `OpenID`。
 - `audit_logs`：行程变更操作审计，仅云端可读写。
 - `idempotency_records`：写命令的请求去重、完成或失败结果，保留 24 小时。
-- `rate_limit_records`：按哈希身份、操作范围和时间窗记录的限流令牌，不保存明文 `OpenID`。
+- `rate_limit_records`：按哈希身份、操作范围和时间窗存放的事务计数桶；桶内记录已计费请求 ID，重试不重复计数，并发请求不能越过上限，不保存明文 `OpenID`。
 
 需要为各集合的用户 ID、状态和到期时间组合建立查询索引。生产云函数默认 `solo`；只有平台发布门禁通过后才设置环境变量 `PRODUCT_MODE=collaboration`。
 

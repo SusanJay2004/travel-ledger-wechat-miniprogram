@@ -62,7 +62,6 @@
 | `audit_logs`          | 普通 | `tripId ASC`                                |
 | `audit_logs`          | 普通 | `createdAt ASC`                             |
 | `idempotency_records` | 普通 | `expiresAt ASC`                             |
-| `rate_limit_records`  | 普通 | `ownerHash ASC, scope ASC, bucket ASC`      |
 | `rate_limit_records`  | 普通 | `expiresAt ASC`                             |
 | `backup_manifests`    | 普通 | `createdAt DESC`                            |
 | `backup_manifests`    | 普通 | `expiresAt ASC`                             |

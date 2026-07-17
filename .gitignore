@@ -3,6 +3,7 @@ node_modules/
 miniprogram_npm/
 **/dist/
 coverage/
+test-evidence-private/
 *.tsbuildinfo
 
 # WeChat DevTools private/local configuration

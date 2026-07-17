@@ -38,7 +38,7 @@ npm run build
 
 当前本地门禁包括领域/服务/云路由集成、容量、投影修复、离线缓存和可访问性测试。测试数量会随实现更新，以 `npm test` 的实际输出为准。
 
-完整云环境与发布步骤见 [开发环境设置](./docs/development-setup.md)、[云开发部署清单](./docs/cloud-deployment-manifest.md) 和 [发布检查表](./docs/release-checklist.md)。项目尚未公开发布；真实 AppID、云环境、主体/类目、真机、灰度与微信审核均属于明确门禁。
+完整云环境与发布步骤见 [开发环境设置](./docs/development-setup.md)、[云开发部署清单](./docs/cloud-deployment-manifest.md)、[真实环境验收手册](./docs/real-environment-validation.md) 和 [发布检查表](./docs/release-checklist.md)。项目尚未公开发布；真实 AppID、云环境、主体/类目、真机、灰度与微信审核均属于明确门禁。
 
 ## 许可证
 

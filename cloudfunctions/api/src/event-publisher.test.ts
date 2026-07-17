@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { EventPublisher } from './event-publisher';
 import type { TripDocument, UserDocument } from './models';
@@ -87,10 +87,22 @@ describe('EventPublisher', () => {
     const before = createTrip(1, ['alice']);
     const after = { ...before, version: 2 };
     const publisher = new EventPublisher(new FailingSocialRepository(), repository);
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    await expect(
-      publisher.publishTripChange(before, after, 'trip.renamed', 'alice', 'trip', after.id),
-    ).resolves.toBeUndefined();
+    try {
+      await expect(
+        publisher.publishTripChange(before, after, 'trip.renamed', 'alice', 'trip', after.id),
+      ).resolves.toBeUndefined();
+      expect(log).toHaveBeenCalledWith('trip-change-publish-failed', {
+        action: 'trip.renamed',
+        errorCode: 'unknown',
+        failureCount: 1,
+      });
+      expect(JSON.stringify(log.mock.calls)).not.toContain(after.id);
+      expect(JSON.stringify(log.mock.calls)).not.toContain('alice');
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it('stores an outbox entry before commit and clears it after every projection succeeds', async () => {
@@ -133,10 +145,22 @@ describe('EventPublisher', () => {
       'bill-1',
     );
     await repository.replaceTrip(after, before.version);
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    await publisher.publishTripChange(before, after, 'bill.created', 'alice', 'bill', 'bill-1');
+    try {
+      await publisher.publishTripChange(before, after, 'bill.created', 'alice', 'bill', 'bill-1');
 
-    expect((await repository.getTrip(before.id))?.projectionOutbox).toHaveLength(1);
+      expect((await repository.getTrip(before.id))?.projectionOutbox).toHaveLength(1);
+      expect(log).toHaveBeenCalledWith('trip-change-publish-failed', {
+        action: 'bill.created',
+        errorCode: 'unknown',
+        failureCount: 2,
+      });
+      expect(JSON.stringify(log.mock.calls)).not.toContain(before.id);
+      expect(JSON.stringify(log.mock.calls)).not.toContain('alice');
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it('does not reset an existing lifecycle notification to unread when replayed', async () => {

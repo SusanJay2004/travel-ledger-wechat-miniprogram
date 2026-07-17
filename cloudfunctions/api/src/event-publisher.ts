@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { LIMITS } from '@travel-ledger/domain';
+import { LIMITS, safeDiagnosticCode } from '@travel-ledger/domain';
 
 import { BusinessError } from './errors';
 import type { AuditLogDocument, SyncEventDocument, TripDocument } from './models';
@@ -82,7 +82,7 @@ export class EventPublisher {
     if (failures.length === 0) await this.clearProjection(after, 'trip.created');
     else
       console.error('trip-create-projection-failed', {
-        tripId: after.id,
+        errorCode: safeDiagnosticCode(failures[0]),
         failureCount: failures.length,
       });
   }
@@ -154,9 +154,8 @@ export class EventPublisher {
     }
     if (failures.length > 0) {
       console.error('trip-change-publish-failed', {
-        tripId: after.id,
-        version: after.version,
         action,
+        errorCode: safeDiagnosticCode(failures[0]),
         failureCount: failures.length,
       });
     }

@@ -89,7 +89,6 @@ export async function handleApiInvocation(
     console.error('cloud-api-entry-failed', {
       action: safeAction(event.action),
       errorCode: safeDiagnosticCode(error),
-      requestId,
     });
     return failure(requestId, 'INTERNAL_ERROR', '服务暂时不可用，请稍后重试。', true);
   }
@@ -579,7 +578,6 @@ export async function handleApiEvent(
     console.error('cloud-api-unhandled', {
       action,
       errorCode: safeDiagnosticCode(error),
-      requestId,
     });
     return failure(requestId, 'INTERNAL_ERROR', '服务暂时不可用，请稍后重试。', true);
   }
@@ -615,10 +613,13 @@ async function cleanPendingUserFiles(sdk: CloudSdk, repository: CloudRepository,
       user.version,
     );
     if (!cleared) {
-      console.error('account-file-cleanup-conflict', { userId, fileCount: fileList.length });
+      console.error('account-file-cleanup-conflict', { fileCount: fileList.length });
     }
-  } catch {
-    console.error('account-file-cleanup-failed', { userId, fileCount: fileList.length });
+  } catch (error: unknown) {
+    console.error('account-file-cleanup-failed', {
+      errorCode: safeDiagnosticCode(error),
+      fileCount: fileList.length,
+    });
   }
 }
 

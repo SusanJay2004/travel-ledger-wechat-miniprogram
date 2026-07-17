@@ -105,7 +105,7 @@ describe('cloud API transport idempotency', () => {
     expect(storage.has(PENDING_WRITES_KEY)).toBe(false);
   });
 
-  it('treats a malformed write response as uncertain but keeps malformed reads ordinary', async () => {
+  it('treats a malformed write response as uncertain and gives reads a safe error', async () => {
     const storage = new Map<string, unknown>();
     const callFunction = vi.fn(async () => ({ result: null }));
     vi.stubGlobal('wx', wxStub(storage, callFunction));
@@ -116,9 +116,10 @@ describe('cloud API transport idempotency', () => {
     ).rejects.toMatchObject({ code: 'TRANSPORT_RESULT_UNCERTAIN' });
     expect(storage.has(PENDING_WRITES_KEY)).toBe(true);
 
-    await expect(callApi('trip.list', {}, { transportRetries: 0 })).rejects.toThrow(
-      '服务器返回了无法识别的数据',
-    );
+    await expect(callApi('trip.list', {}, { transportRetries: 0 })).rejects.toMatchObject({
+      code: 'READ_RESPONSE_INVALID',
+      message: '服务器响应异常，请稍后重试。',
+    });
   });
 
   it('rejects a mismatched response id and never silently replays a stale uncertain intent', async () => {
@@ -154,12 +155,15 @@ describe('cloud API transport idempotency', () => {
     ).rejects.toMatchObject({ code: 'TRANSPORT_RESULT_UNCERTAIN' });
   });
 
-  it('does not reuse an uncertain id for changed content and leaves reads as transport failures', async () => {
+  it('does not reuse an uncertain id for changed content and redacts read transport failures', async () => {
     const storage = new Map<string, unknown>();
     const calls: Array<{ data?: unknown }> = [];
     const callFunction = vi.fn(async (options: { data?: unknown }) => {
       calls.push(options);
-      throw new Error('offline');
+      throw Object.assign(new Error('private https://env.test/token'), {
+        code: 'ETIMEDOUT',
+        request: { authorization: 'private' },
+      });
     });
     vi.stubGlobal('wx', wxStub(storage, callFunction));
     configureApiAccount(TEST_USER_ID);
@@ -174,7 +178,16 @@ describe('cloud API transport idempotency', () => {
       (calls[1]!.data as { requestId: string }).requestId,
     );
 
-    await expect(callApi('trip.list', {}, { transportRetries: 0 })).rejects.toThrow('offline');
+    const readError = await callApi('trip.list', {}, { transportRetries: 0 }).catch(
+      (error: unknown) => error,
+    );
+    expect(readError).toMatchObject({
+      code: 'READ_TRANSPORT_FAILED',
+      details: { diagnosticCode: 'ETIMEDOUT' },
+      message: '网络连接失败，请检查网络后重试。',
+    });
+    expect(JSON.stringify(readError)).not.toContain('private');
+    expect(JSON.stringify(readError)).not.toContain('env.test');
   });
 
   it('reuses an uncertain id when object key order changes but the write intent does not', async () => {

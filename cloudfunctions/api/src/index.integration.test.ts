@@ -28,7 +28,6 @@ describe('cloud API command integration', () => {
       expect(log).toHaveBeenCalledWith('cloud-api-entry-failed', {
         action: 'session.bootstrap',
         errorCode: 'SDK_INIT_FAILED',
-        requestId: 'request-entry-failure',
       });
       expect(JSON.stringify(log.mock.calls)).not.toContain('private');
     } finally {

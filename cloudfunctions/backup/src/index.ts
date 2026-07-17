@@ -131,7 +131,6 @@ async function runBackup(sdk: CloudSdk): Promise<BackupManifest> {
     const persisted = { ...completed, fileIds: [...completed.fileIds, manifestFileId] };
     await manifests.doc(backupId).set({ data: persisted });
     console.info('backup-complete', {
-      backupId,
       collections: Object.keys(progress.collections).length,
       documents: Object.values(progress.collections).reduce((sum, item) => sum + item.documents, 0),
     });
@@ -156,7 +155,7 @@ async function runBackup(sdk: CloudSdk): Promise<BackupManifest> {
         .set({ data: { ...failed, fileIds: [...failed.fileIds, failedManifestFileId] } })
         .catch(() => undefined);
     }
-    console.error('backup-failed', { backupId, errorCode: failed.errorCode });
+    console.error('backup-failed', { errorCode: failed.errorCode });
     throw redactedRuntimeError(error, 'backup operation failed');
   }
 }

@@ -166,6 +166,7 @@ const PENDING_WRITES_KEY = 'pending-api-writes-v2';
 const LEGACY_PENDING_WRITES_KEY = 'pending-api-writes-v1';
 const SIGNED_OUT_KEY = 'local-session-signed-out-v1';
 const PENDING_WRITE_RETRY_WINDOW_MS = 23 * 60 * 60 * 1000;
+const SAFE_CLIENT_DIAGNOSTIC_CODE = /^(?:-?\d{1,12}|[A-Z][A-Z0-9._:-]{0,63})$/;
 const READ_ACTIONS = new Set([
   'session.bootstrap',
   'social.search',
@@ -290,14 +291,14 @@ async function performApiCall<T>(
       break;
     } catch (error: unknown) {
       if (attempt < retries) continue;
-      if (!writeAction) throw error;
+      if (!writeAction) throw readTransportFailed(error);
       throw transportResultUncertain(requestId);
     }
   }
   const response = result.result;
   if (!isApiResponse<T>(response) || response.requestId !== requestId) {
     if (writeAction) throw transportResultUncertain(requestId);
-    throw new Error('服务器返回了无法识别的数据。');
+    throw new ApiError('READ_RESPONSE_INVALID', '服务器响应异常，请稍后重试。', true);
   }
   if (
     apiGeneration !== undefined &&
@@ -388,6 +389,24 @@ function transportResultUncertain(requestId: string): ApiError {
     true,
     { requestId },
   );
+}
+
+function readTransportFailed(error: unknown): ApiError {
+  return new ApiError('READ_TRANSPORT_FAILED', '网络连接失败，请检查网络后重试。', true, {
+    diagnosticCode: safeClientDiagnosticCode(error),
+  });
+}
+
+function safeClientDiagnosticCode(error: unknown): string {
+  if (typeof error !== 'object' || error === null) return 'unknown';
+  const record = error as Readonly<Record<string, unknown>>;
+  for (const key of ['errCode', 'code'] as const) {
+    const value = record[key];
+    if (typeof value !== 'string' && typeof value !== 'number') continue;
+    const normalized = String(value);
+    if (SAFE_CLIENT_DIAGNOSTIC_CODE.test(normalized)) return normalized;
+  }
+  return 'unknown';
 }
 
 function loadPendingWrites(): PendingWriteRequest[] {

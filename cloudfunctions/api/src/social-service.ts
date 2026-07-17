@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { LIMITS, type ProductMode } from '@travel-ledger/domain';
+import { LIMITS, safeDiagnosticCode, type ProductMode } from '@travel-ledger/domain';
 
 import { assertBusiness, BusinessError } from './errors';
 import type {
@@ -691,12 +691,10 @@ export class SocialService {
   private async bestEffortNotification(item: NotificationDocument): Promise<void> {
     try {
       await this.social.createNotification(item);
-    } catch {
+    } catch (error: unknown) {
       console.error('notification-publish-failed', {
-        notificationId: item.id,
+        errorCode: safeDiagnosticCode(error),
         type: item.type,
-        userId: item.userId,
-        tripId: item.tripId,
       });
     }
   }

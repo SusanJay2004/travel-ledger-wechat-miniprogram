@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Clock, IdGenerator, UserDocument } from './models';
 import { MemoryRepository } from './repository';
@@ -119,25 +119,40 @@ describe('SocialService collaboration gates', () => {
       new MemoryFriendRequestTransition(repository, failingRepository),
       new MemorySocialRelationshipTransition(repository, failingRepository),
     );
-    const friendRequest = await failingSocial.sendFriendRequest(alice, bob.publicId);
-    await failingSocial.respondFriendRequest(bob, friendRequest.id, true);
-    const trip = await ledger.createTrip(alice, { name: '通知恢复' });
-    const invitation = await failingSocial.inviteToTrip(alice, trip.id, bob.id);
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const friendRequest = await failingSocial.sendFriendRequest(alice, bob.publicId);
+      await failingSocial.respondFriendRequest(bob, friendRequest.id, true);
+      const trip = await ledger.createTrip(alice, { name: '通知恢复' });
+      const invitation = await failingSocial.inviteToTrip(alice, trip.id, bob.id);
 
-    const recovered = await failingSocial.listNotifications(bob.id);
+      const recovered = await failingSocial.listNotifications(bob.id);
 
-    expect(recovered).toEqual([
-      expect.objectContaining({
-        type: 'trip_invitation',
-        invitationId: invitation.id,
-        userId: bob.id,
-      }),
-    ]);
-    await expect(
-      failingSocial.markNotificationRead(bob.id, recovered[0]!.id),
-    ).resolves.toBeUndefined();
-    await failingSocial.respondTripInvitation(bob, invitation.id, false);
-    expect(await failingSocial.listNotifications(bob.id)).toEqual([]);
+      expect(recovered).toEqual([
+        expect.objectContaining({
+          type: 'trip_invitation',
+          invitationId: invitation.id,
+          userId: bob.id,
+        }),
+      ]);
+      await expect(
+        failingSocial.markNotificationRead(bob.id, recovered[0]!.id),
+      ).resolves.toBeUndefined();
+      await failingSocial.respondTripInvitation(bob, invitation.id, false);
+      expect(await failingSocial.listNotifications(bob.id)).toEqual([]);
+      expect(log.mock.calls).toEqual([
+        ['notification-publish-failed', { errorCode: 'unknown', type: 'friend_request' }],
+        ['notification-publish-failed', { errorCode: 'unknown', type: 'friend_accepted' }],
+        ['notification-publish-failed', { errorCode: 'unknown', type: 'trip_invitation' }],
+        ['notification-publish-failed', { errorCode: 'unknown', type: 'trip_invitation' }],
+      ]);
+      const serializedLogs = JSON.stringify(log.mock.calls);
+      for (const identifier of [alice.id, bob.id, trip.id, invitation.id]) {
+        expect(serializedLogs).not.toContain(identifier);
+      }
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it('does not synthesize duplicates when persisted notifications already exist', async () => {

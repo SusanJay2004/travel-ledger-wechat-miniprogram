@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { sanitizeClientData } from './response';
+import { failureResponse, sanitizeClientData } from './response';
 
 describe('sanitizeClientData', () => {
   it('removes internal trip projections from individual and list responses', () => {
@@ -44,5 +44,33 @@ describe('sanitizeClientData', () => {
         safe: 'https://ok',
       }),
     ).toEqual({ avatarUrl: null, eventTitle: 'cloud://x', fileId: null, safe: 'https://ok' });
+  });
+
+  it('sanitizes business error details without removing supported recovery hints', () => {
+    expect(
+      failureResponse('request-1', 'VERSION_CONFLICT', '请刷新', true, {
+        currentVersion: 7,
+        retryAfterSeconds: 12,
+        openId: 'private-wechat-identity',
+        pendingAvatarReviewId: 'private-review-trace',
+        nested: {
+          fileId: ['cloud://env/private-1.png', 'cloud://env/private-2.png'],
+          ownerOpenId: 'private-owner-identity',
+        },
+      }),
+    ).toEqual({
+      ok: false,
+      requestId: 'request-1',
+      error: {
+        code: 'VERSION_CONFLICT',
+        message: '请刷新',
+        retryable: true,
+        details: {
+          currentVersion: 7,
+          retryAfterSeconds: 12,
+          nested: { fileId: [null, null] },
+        },
+      },
+    });
   });
 });

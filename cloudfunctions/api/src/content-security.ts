@@ -1,3 +1,5 @@
+import { safeDiagnosticCode } from '@travel-ledger/domain';
+
 import { BusinessError } from './errors';
 
 export interface ContentSecurity {
@@ -61,7 +63,7 @@ export class WechatContentSecurity implements ContentSecurity {
       }
     } catch (error: unknown) {
       if (error instanceof BusinessError) throw error;
-      console.error('text-security-check-failed', { scene, error: errorCode(error) });
+      console.error('text-security-check-failed', { scene, errorCode: safeDiagnosticCode(error) });
       throw new BusinessError(
         'CONTENT_CHECK_UNAVAILABLE',
         '内容审核服务暂时不可用，请稍后重试。',
@@ -107,8 +109,7 @@ export class WechatContentSecurity implements ContentSecurity {
       return { status: 'pending', traceId: result.traceId };
     } catch (error: unknown) {
       if (error instanceof BusinessError) throw error;
-      const code = errorCode(error);
-      console.error('image-security-check-failed', { code });
+      console.error('image-security-check-failed', { errorCode: safeDiagnosticCode(error) });
       throw new BusinessError(
         'CONTENT_CHECK_UNAVAILABLE',
         '头像审核服务暂时不可用，请稍后重试。',
@@ -133,11 +134,4 @@ export function detectSupportedImageType(buffer: Buffer): 'image/jpeg' | 'image/
     return 'image/png';
   }
   throw new BusinessError('AVATAR_TYPE_INVALID', '头像仅支持 JPG 或 PNG。');
-}
-
-function errorCode(error: unknown): string {
-  if (typeof error !== 'object' || error === null) return 'unknown';
-  if ('errCode' in error) return String(error.errCode);
-  if ('code' in error) return String(error.code);
-  return 'unknown';
 }

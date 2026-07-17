@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+import { redactedRuntimeError, safeDiagnosticCode } from '@travel-ledger/domain';
+
 import { cleanTrip, type MaintenanceBill, type MaintenanceMember } from './maintenance';
 import {
   buildProjectionDocuments,
@@ -98,7 +100,7 @@ export interface AccountDeletionMaintenanceResult {
   tripsUpdated: number;
 }
 
-interface CloudSdk {
+export interface CloudSdk {
   DYNAMIC_CURRENT_ENV: symbol;
   database(): Database;
   deleteFile(options: { fileList: string[] }): Promise<{
@@ -116,13 +118,26 @@ export interface TripMaintenanceResult {
   projectionFailures: number;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const cloud = require('wx-server-sdk') as CloudSdk;
-cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
+let initializedCloud: CloudSdk | null = null;
 
 export async function main(): Promise<Record<string, number>> {
-  assertScheduledTrigger(cloud.getWXContext());
-  const db = cloud.database();
+  return handleMaintenanceInvocation(runtimeCloud);
+}
+
+export async function handleMaintenanceInvocation(
+  cloudFactory: () => CloudSdk,
+): Promise<Record<string, number>> {
+  try {
+    return await runMaintenance(cloudFactory());
+  } catch (error: unknown) {
+    console.error('maintenance-failed', { errorCode: safeDiagnosticCode(error) });
+    throw redactedRuntimeError(error, 'maintenance task failed');
+  }
+}
+
+async function runMaintenance(sdk: CloudSdk): Promise<Record<string, number>> {
+  assertScheduledTrigger(sdk.getWXContext());
+  const db = sdk.database();
   const now = new Date();
   const nowIso = now.toISOString();
   const summary = {
@@ -165,7 +180,7 @@ export async function main(): Promise<Record<string, number>> {
   summary.oldAuditLogsRemoved += await removeExpired(db, 'audit_logs', 'createdAt', auditCutoff);
   summary.expiredAvatarReviewsRemoved += await expireAvatarReviews(db, nowIso);
   summary.expiredStagedAvatarsRemoved += await expireStagedAvatars(db, nowIso);
-  const fileCleanup = await retryDeletedUserFileCleanup(db);
+  const fileCleanup = await retryDeletedUserFileCleanup(db, sdk);
   summary.deletedUserFilesRemoved += fileCleanup.removed;
   summary.deletedUserFileCleanupFailures += fileCleanup.failed;
   const accountDeletion = await resumeDeletingAccounts(db, now);
@@ -186,6 +201,15 @@ export async function main(): Promise<Record<string, number>> {
 
   console.info('maintenance-complete', summary);
   return summary;
+}
+
+function runtimeCloud(): CloudSdk {
+  if (initializedCloud !== null) return initializedCloud;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const sdk = require('wx-server-sdk') as CloudSdk;
+  sdk.init({ env: sdk.DYNAMIC_CURRENT_ENV });
+  initializedCloud = sdk;
+  return sdk;
 }
 
 export async function resumeDeletingAccounts(
@@ -706,6 +730,7 @@ async function removeAllMatching(
 
 async function retryDeletedUserFileCleanup(
   db: Database,
+  sdk: CloudSdk,
 ): Promise<{ failed: number; removed: number }> {
   const total = { failed: 0, removed: 0 };
   await visitDocumentsById<DeletedUserDocument>(db, 'users', {}, async (users) => {
@@ -713,7 +738,7 @@ async function retryDeletedUserFileCleanup(
       users,
       {
         deleteFiles: async (fileIds) => {
-          await deleteFilesCompletely(cloud, fileIds);
+          await deleteFilesCompletely(sdk, fileIds);
         },
         clearMarker: async (user, updatedAt) => {
           const updated = await db

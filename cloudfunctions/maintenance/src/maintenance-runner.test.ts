@@ -12,6 +12,7 @@ vi.mock('wx-server-sdk', () => ({
 import {
   expireAvatarReviews,
   expireStagedAvatars,
+  handleMaintenanceInvocation,
   maintainTrip,
   resumeDeletingAccounts,
   visitDocumentsById,
@@ -21,6 +22,32 @@ import {
 } from './index';
 
 type Document = Record<string, unknown> & { id?: string; _id?: string };
+
+describe('maintenance invocation diagnostics', () => {
+  it('rethrows only a generic error and a bounded diagnostic code', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const privateError = Object.assign(new Error('private https://database.test/credential'), {
+      code: 'MAINTENANCE_SDK_FAILED',
+      headers: { authorization: 'private-token' },
+    });
+    try {
+      const result = handleMaintenanceInvocation(() => {
+        throw privateError;
+      });
+      await expect(result).rejects.toMatchObject({
+        code: 'MAINTENANCE_SDK_FAILED',
+        message: 'maintenance task failed',
+      });
+      await expect(result).rejects.not.toHaveProperty('cause');
+      expect(log).toHaveBeenCalledWith('maintenance-failed', {
+        errorCode: 'MAINTENANCE_SDK_FAILED',
+      });
+      expect(JSON.stringify(log.mock.calls)).not.toContain('private');
+    } finally {
+      log.mockRestore();
+    }
+  });
+});
 
 class MemoryCollection<T> implements Collection<T> {
   private limitValue: number | undefined;

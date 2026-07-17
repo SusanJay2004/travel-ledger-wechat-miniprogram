@@ -1,5 +1,7 @@
 import { gzipSync } from 'node:zlib';
 
+import { redactedRuntimeError, safeDiagnosticCode } from '@travel-ledger/domain';
+
 import {
   BACKUP_COLLECTIONS,
   appendBackupProgress,
@@ -31,7 +33,7 @@ export interface Database {
   command: { gt(value: string): unknown; lt(value: string): unknown };
 }
 
-interface CloudSdk {
+export interface CloudSdk {
   DYNAMIC_CURRENT_ENV: symbol;
   database(): Database;
   deleteFile(options: { fileList: string[] }): Promise<{
@@ -55,13 +57,26 @@ interface BackupManifest {
   fileIds: readonly string[];
 }
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const cloud = require('wx-server-sdk') as CloudSdk;
-cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
+let initializedCloud: CloudSdk | null = null;
 
 export async function main(): Promise<BackupManifest> {
-  assertScheduledTrigger(cloud.getWXContext());
-  const db = cloud.database();
+  return handleBackupInvocation(runtimeCloud);
+}
+
+export async function handleBackupInvocation(
+  cloudFactory: () => CloudSdk,
+): Promise<BackupManifest> {
+  try {
+    return await runBackup(cloudFactory());
+  } catch (error: unknown) {
+    console.error('backup-invocation-failed', { errorCode: safeDiagnosticCode(error) });
+    throw redactedRuntimeError(error, 'backup task failed');
+  }
+}
+
+async function runBackup(sdk: CloudSdk): Promise<BackupManifest> {
+  assertScheduledTrigger(sdk.getWXContext());
+  const db = sdk.database();
   const now = new Date();
   const backupId = `bak_${now.getTime().toString(36)}`;
   const prefix = backupPrefix(now, backupId);
@@ -78,7 +93,7 @@ export async function main(): Promise<BackupManifest> {
     fileIds: [],
   };
   const manifests = db.collection<BackupManifest>('backup_manifests');
-  await purgeExpiredBackups(db, now.toISOString());
+  await purgeExpiredBackups(db, sdk, now.toISOString());
   await manifests.add({ data: manifest });
 
   let progress = { collections: {}, fileIds: [] } as {
@@ -87,17 +102,23 @@ export async function main(): Promise<BackupManifest> {
   };
   try {
     for (const collectionName of BACKUP_COLLECTIONS) {
-      await backupCollection(db, collectionName, prefix, async (fileId, summary) => {
-        progress = appendBackupProgress(
-          progress,
-          collectionName,
-          [fileId],
-          summary,
-        ) as typeof progress;
-        await manifests.doc(backupId).set({
-          data: { ...manifest, collections: progress.collections, fileIds: progress.fileIds },
-        });
-      });
+      await backupCollection(
+        db,
+        collectionName,
+        prefix,
+        async (fileId, summary) => {
+          progress = appendBackupProgress(
+            progress,
+            collectionName,
+            [fileId],
+            summary,
+          ) as typeof progress;
+          await manifests.doc(backupId).set({
+            data: { ...manifest, collections: progress.collections, fileIds: progress.fileIds },
+          });
+        },
+        sdk,
+      );
     }
     const completed: BackupManifest = {
       ...manifest,
@@ -106,7 +127,7 @@ export async function main(): Promise<BackupManifest> {
       fileIds: progress.fileIds,
       completedAt: new Date().toISOString(),
     };
-    const manifestFileId = await writeManifestFile(completed);
+    const manifestFileId = await writeManifestFile(sdk, completed);
     const persisted = { ...completed, fileIds: [...completed.fileIds, manifestFileId] };
     await manifests.doc(backupId).set({ data: persisted });
     console.info('backup-complete', {
@@ -122,13 +143,13 @@ export async function main(): Promise<BackupManifest> {
       collections: progress.collections,
       fileIds: progress.fileIds,
       completedAt: new Date().toISOString(),
-      errorCode: errorCode(error),
+      errorCode: safeDiagnosticCode(error),
     };
     await manifests
       .doc(backupId)
       .set({ data: failed })
       .catch(() => undefined);
-    const failedManifestFileId = await writeManifestFile(failed).catch(() => null);
+    const failedManifestFileId = await writeManifestFile(sdk, failed).catch(() => null);
     if (failedManifestFileId !== null) {
       await manifests
         .doc(backupId)
@@ -136,11 +157,20 @@ export async function main(): Promise<BackupManifest> {
         .catch(() => undefined);
     }
     console.error('backup-failed', { backupId, errorCode: failed.errorCode });
-    throw error;
+    throw redactedRuntimeError(error, 'backup operation failed');
   }
 }
 
-async function purgeExpiredBackups(db: Database, nowIso: string): Promise<void> {
+function runtimeCloud(): CloudSdk {
+  if (initializedCloud !== null) return initializedCloud;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const sdk = require('wx-server-sdk') as CloudSdk;
+  sdk.init({ env: sdk.DYNAMIC_CURRENT_ENV });
+  initializedCloud = sdk;
+  return sdk;
+}
+
+async function purgeExpiredBackups(db: Database, sdk: CloudSdk, nowIso: string): Promise<void> {
   while (true) {
     const expired = await db
       .collection<BackupManifest>('backup_manifests')
@@ -150,7 +180,7 @@ async function purgeExpiredBackups(db: Database, nowIso: string): Promise<void> 
     if (expired.data.length === 0) return;
     for (const manifest of expired.data) {
       if (manifest.fileIds.length > 0) {
-        await deleteFilesCompletely(cloud, manifest.fileIds);
+        await deleteFilesCompletely(sdk, manifest.fileIds);
       }
       await db.collection<BackupManifest>('backup_manifests').where({ _id: manifest.id }).remove();
     }
@@ -163,7 +193,7 @@ export async function backupCollection(
   collectionName: string,
   prefix: string,
   onPageUploaded: (fileId: string, summary: { documents: number; pages: number }) => Promise<void>,
-  storage: Pick<CloudSdk, 'uploadFile'> = cloud,
+  storage: Pick<CloudSdk, 'uploadFile'>,
 ): Promise<{
   summary: { documents: number; pages: number };
   fileIds: readonly string[];
@@ -198,18 +228,11 @@ export async function backupCollection(
   return { summary: { documents, pages: page }, fileIds };
 }
 
-async function writeManifestFile(manifest: BackupManifest): Promise<string> {
+async function writeManifestFile(sdk: Pick<CloudSdk, 'uploadFile'>, manifest: BackupManifest) {
   const payload = Buffer.from(JSON.stringify(manifest, null, 2), 'utf8');
-  const uploaded = await cloud.uploadFile({
+  const uploaded = await sdk.uploadFile({
     cloudPath: `${manifest.prefix}/manifest.json`,
     fileContent: payload,
   });
   return uploaded.fileID;
-}
-
-function errorCode(error: unknown): string {
-  if (typeof error !== 'object' || error === null) return 'unknown';
-  if ('errCode' in error) return String(error.errCode);
-  if ('code' in error) return String(error.code);
-  return 'unknown';
 }

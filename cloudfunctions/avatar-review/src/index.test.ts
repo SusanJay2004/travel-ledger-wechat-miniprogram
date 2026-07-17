@@ -5,7 +5,7 @@ vi.mock('wx-server-sdk', () => ({
   init: vi.fn(),
 }));
 
-import { applyAvatarReview } from './index';
+import { applyAvatarReview, handleAvatarReviewInvocation } from './index';
 
 type Document = Record<string, unknown>;
 
@@ -112,6 +112,32 @@ describe('avatar review application', () => {
       ),
     ).resolves.toBe('ignored');
     expect(memory.read()).toMatchObject({ version: 3 });
+  });
+});
+
+describe('avatar review invocation diagnostics', () => {
+  it('rethrows only a generic error and a bounded diagnostic code', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const privateError = Object.assign(new Error('private https://review.test/credential'), {
+      code: 'REVIEW_SDK_FAILED',
+      headers: { authorization: 'private-token' },
+    });
+    try {
+      const result = handleAvatarReviewInvocation({}, () => {
+        throw privateError;
+      });
+      await expect(result).rejects.toMatchObject({
+        code: 'REVIEW_SDK_FAILED',
+        message: 'avatar review task failed',
+      });
+      await expect(result).rejects.not.toHaveProperty('cause');
+      expect(log).toHaveBeenCalledWith('avatar-review-failed', {
+        errorCode: 'REVIEW_SDK_FAILED',
+      });
+      expect(JSON.stringify(log.mock.calls)).not.toContain('private');
+    } finally {
+      log.mockRestore();
+    }
   });
 });
 

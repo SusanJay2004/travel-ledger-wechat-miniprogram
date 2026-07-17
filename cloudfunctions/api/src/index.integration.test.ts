@@ -1,11 +1,41 @@
 import { createHash } from 'node:crypto';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { handleApiEvent } from './index';
+import { handleApiEvent, handleApiInvocation } from './index';
 import { createMemoryCloudSdk } from './testing/memory-cloud';
 
 describe('cloud API command integration', () => {
+  it('redacts SDK initialization failures from both logs and client responses', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const privateError = Object.assign(new Error('private https://storage.test/credential'), {
+      code: 'SDK_INIT_FAILED',
+      request: { authorization: 'private-token' },
+    });
+    try {
+      const response = await handleApiInvocation(
+        { action: 'session.bootstrap', payload: {}, requestId: 'request-entry-failure' },
+        () => {
+          throw privateError;
+        },
+      );
+
+      expect(response).toMatchObject({
+        ok: false,
+        requestId: 'request-entry-failure',
+        error: { code: 'INTERNAL_ERROR', retryable: true },
+      });
+      expect(log).toHaveBeenCalledWith('cloud-api-entry-failed', {
+        action: 'session.bootstrap',
+        errorCode: 'SDK_INIT_FAILED',
+        requestId: 'request-entry-failure',
+      });
+      expect(JSON.stringify(log.mock.calls)).not.toContain('private');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it('rejects unauthenticated calls and invalid request ids before creating data', async () => {
     const cloud = createMemoryCloudSdk();
     cloud.setOpenId(undefined);

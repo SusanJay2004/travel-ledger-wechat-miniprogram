@@ -1,3 +1,5 @@
+import { redactedRuntimeError, safeDiagnosticCode } from '@travel-ledger/domain';
+
 import { assertReviewPushSource, parseAvatarReviewEvent, type AvatarReviewEvent } from './review';
 
 interface QueryResult<T> {
@@ -31,26 +33,49 @@ interface ReviewUser {
   version: number;
 }
 
-interface CloudSdk {
+export interface CloudSdk {
   DYNAMIC_CURRENT_ENV: symbol;
   database(): Database;
   getWXContext(): { OPENID?: string; SOURCE?: string };
   init(options: { env: symbol }): void;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const cloud = require('wx-server-sdk') as CloudSdk;
-cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV });
+let initializedCloud: CloudSdk | null = null;
 
 export async function main(event: AvatarReviewEvent): Promise<'success'> {
-  assertReviewPushSource(cloud.getWXContext().SOURCE);
+  return handleAvatarReviewInvocation(event, runtimeCloud);
+}
+
+export async function handleAvatarReviewInvocation(
+  event: AvatarReviewEvent,
+  cloudFactory: () => CloudSdk,
+): Promise<'success'> {
+  try {
+    return await applyReviewEvent(event, cloudFactory());
+  } catch (error: unknown) {
+    console.error('avatar-review-failed', { errorCode: safeDiagnosticCode(error) });
+    throw redactedRuntimeError(error, 'avatar review task failed');
+  }
+}
+
+async function applyReviewEvent(event: AvatarReviewEvent, sdk: CloudSdk): Promise<'success'> {
+  assertReviewPushSource(sdk.getWXContext().SOURCE);
   const review = parseAvatarReviewEvent(event);
-  const db = cloud.database();
+  const db = sdk.database();
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const outcome = await applyAvatarReview(db, review, new Date());
     if (outcome !== 'conflict') return 'success';
   }
   throw new Error('avatar review update conflicted repeatedly');
+}
+
+function runtimeCloud(): CloudSdk {
+  if (initializedCloud !== null) return initializedCloud;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const sdk = require('wx-server-sdk') as CloudSdk;
+  sdk.init({ env: sdk.DYNAMIC_CURRENT_ENV });
+  initializedCloud = sdk;
+  return sdk;
 }
 
 export async function applyAvatarReview(

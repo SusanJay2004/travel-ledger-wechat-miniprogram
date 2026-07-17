@@ -1,4 +1,4 @@
-import { LIMITS } from '@travel-ledger/domain';
+import { LIMITS, safeDiagnosticCode } from '@travel-ledger/domain';
 
 import { CloudRepository, type CloudDatabase } from './cloud-repository';
 import { CloudSocialRepository } from './cloud-social-repository';
@@ -14,7 +14,7 @@ import {
 } from './idempotency';
 import { LedgerService } from './service';
 import { RateLimiter } from './rate-limit';
-import { successResponse } from './response';
+import { failureResponse, successResponse } from './response';
 import { SocialService } from './social-service';
 import { CloudTripInvitationAcceptance } from './trip-invitation-transaction';
 import { CloudFriendRequestTransition } from './friend-request-transaction';
@@ -75,7 +75,24 @@ export interface CloudSdk {
 }
 
 export async function main(event: ApiEvent): Promise<unknown> {
-  return handleApiEvent(event, runtimeCloud());
+  return handleApiInvocation(event, runtimeCloud);
+}
+
+export async function handleApiInvocation(
+  event: ApiEvent,
+  cloudFactory: () => CloudSdk,
+): Promise<unknown> {
+  try {
+    return await handleApiEvent(event, cloudFactory());
+  } catch (error: unknown) {
+    const requestId = safeRequestId(event.requestId);
+    console.error('cloud-api-entry-failed', {
+      action: safeAction(event.action),
+      errorCode: safeDiagnosticCode(error),
+      requestId,
+    });
+    return failure(requestId, 'INTERNAL_ERROR', '服务暂时不可用，请稍后重试。', true);
+  }
 }
 
 let initializedCloud: CloudSdk | null = null;
@@ -559,9 +576,25 @@ export async function handleApiEvent(
     if (error instanceof BusinessError) {
       return failure(requestId, error.code, error.message, error.retryable, error.details);
     }
-    console.error('cloud-api-unhandled', { action, requestId, error });
+    console.error('cloud-api-unhandled', {
+      action,
+      errorCode: safeDiagnosticCode(error),
+      requestId,
+    });
     return failure(requestId, 'INTERNAL_ERROR', '服务暂时不可用，请稍后重试。', true);
   }
+}
+
+function safeRequestId(value: unknown): string {
+  return typeof value === 'string' && /^[A-Za-z0-9-]{8,80}$/.test(value)
+    ? value
+    : 'missing-request-id';
+}
+
+function safeAction(value: unknown): string {
+  return typeof value === 'string' && /^[A-Za-z][A-Za-z0-9.]{0,63}$/.test(value)
+    ? value
+    : 'invalid';
 }
 
 async function cleanPendingUserFiles(sdk: CloudSdk, repository: CloudRepository, userId: string) {
@@ -611,7 +644,7 @@ function failure(
   retryable = false,
   details?: Readonly<Record<string, unknown>>,
 ) {
-  return { ok: false as const, requestId, error: { code, message, retryable, details } };
+  return failureResponse(requestId, code, message, retryable, details);
 }
 
 function publicProfile(

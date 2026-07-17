@@ -7,10 +7,36 @@ vi.mock('wx-server-sdk', () => ({
   init: vi.fn(),
 }));
 
-import { backupCollection, type Collection, type Database } from './index';
+import { backupCollection, handleBackupInvocation, type Collection, type Database } from './index';
 
 type Document = Record<string, unknown> & { _id: string };
 type Command = { kind: 'gt' | 'lt'; value: string };
+
+describe('backup invocation diagnostics', () => {
+  it('rethrows only a generic error and a bounded diagnostic code', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const privateError = Object.assign(new Error('private https://storage.test/credential'), {
+      code: 'BACKUP_SDK_FAILED',
+      headers: { authorization: 'private-token' },
+    });
+    try {
+      const result = handleBackupInvocation(() => {
+        throw privateError;
+      });
+      await expect(result).rejects.toMatchObject({
+        code: 'BACKUP_SDK_FAILED',
+        message: 'backup task failed',
+      });
+      await expect(result).rejects.not.toHaveProperty('cause');
+      expect(log).toHaveBeenCalledWith('backup-invocation-failed', {
+        errorCode: 'BACKUP_SDK_FAILED',
+      });
+      expect(JSON.stringify(log.mock.calls)).not.toContain('private');
+    } finally {
+      log.mockRestore();
+    }
+  });
+});
 
 class MemoryCollection<T> implements Collection<T> {
   private maximum = Number.POSITIVE_INFINITY;

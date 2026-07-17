@@ -69,6 +69,34 @@ describe('cloud API command integration', () => {
     expect(forbidden).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } });
   });
 
+  it('persists, deletes and clears a replaced avatar before returning the profile', async () => {
+    const cloud = createMemoryCloudSdk('openid-avatar');
+    const bootstrap = await command(cloud.sdk, 'session.bootstrap', {}, 'avatar-bootstrap');
+    const profile = successData(bootstrap) as { userId: string; displayName: string };
+    const firstAvatar = `cloud://memory/avatars/${profile.userId}/first.jpg`;
+    const secondAvatar = `cloud://memory/avatars/${profile.userId}/second.jpg`;
+
+    await command(
+      cloud.sdk,
+      'session.updateProfile',
+      { displayName: profile.displayName, signature: '第一张头像', avatarUrl: firstAvatar },
+      'avatar-first',
+    );
+    const replaced = await command(
+      cloud.sdk,
+      'session.updateProfile',
+      { displayName: profile.displayName, signature: '第二张头像', avatarUrl: secondAvatar },
+      'avatar-second',
+    );
+
+    expect(successData(replaced)).toMatchObject({ avatarUrl: secondAvatar });
+    expect(cloud.deletedFileIds).toEqual([firstAvatar]);
+    expect(cloud.database.documents('users')[0]).toMatchObject({
+      avatarUrl: secondAvatar,
+      pendingFileDeletionIds: [],
+    });
+  });
+
   it('generates and resolves an opaque QR scene without embedding a public id', async () => {
     const previousMode = process.env['PRODUCT_MODE'];
     process.env['PRODUCT_MODE'] = 'collaboration';

@@ -422,36 +422,31 @@ async function retryDeletedUserFileCleanup(
   db: Database,
 ): Promise<{ failed: number; removed: number }> {
   const total = { failed: 0, removed: 0 };
-  await visitDocumentsById<DeletedUserDocument>(
-    db,
-    'users',
-    { status: 'deleted' },
-    async (users) => {
-      const page = await cleanDeletedUserFiles(
-        users,
-        {
-          deleteFiles: async (fileIds) => {
-            await deleteFilesCompletely(cloud, fileIds);
-          },
-          clearMarker: async (user, updatedAt) => {
-            const updated = await db
-              .collection<DeletedUserDocument>('users')
-              .where({ _id: user.id, version: user.version })
-              .update({
-                data: {
-                  pendingFileDeletionIds: [],
-                  updatedAt,
-                  version: user.version + 1,
-                },
-              });
-            return updated.stats?.updated === 1;
-          },
+  await visitDocumentsById<DeletedUserDocument>(db, 'users', {}, async (users) => {
+    const page = await cleanDeletedUserFiles(
+      users,
+      {
+        deleteFiles: async (fileIds) => {
+          await deleteFilesCompletely(cloud, fileIds);
         },
-        new Date(),
-      );
-      total.failed += page.failed;
-      total.removed += page.removed;
-    },
-  );
+        clearMarker: async (user, updatedAt) => {
+          const updated = await db
+            .collection<DeletedUserDocument>('users')
+            .where({ _id: user.id, version: user.version })
+            .update({
+              data: {
+                pendingFileDeletionIds: [],
+                updatedAt,
+                version: user.version + 1,
+              },
+            });
+          return updated.stats?.updated === 1;
+        },
+      },
+      new Date(),
+    );
+    total.failed += page.failed;
+    total.removed += page.removed;
+  });
   return total;
 }

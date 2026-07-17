@@ -28,6 +28,10 @@ interface ClearArchivedResponse {
   removedCount: number;
 }
 
+const CLEAR_BATCH_SIZE = 20;
+const MAX_ARCHIVED_TRIPS = 100;
+const MAX_CLEAR_BATCHES = Math.ceil(MAX_ARCHIVED_TRIPS / CLEAR_BATCH_SIZE);
+
 Page<ArchivedData, ArchivedMethods>({
   data: {
     errorMessage: '',
@@ -121,7 +125,7 @@ Page<ArchivedData, ArchivedMethods>({
     try {
       let removedCount = 0;
       let remainingCount = this.data.trips.length;
-      for (let batch = 0; batch < 60 && remainingCount > 0; batch += 1) {
+      for (let batch = 0; batch < MAX_CLEAR_BATCHES && remainingCount > 0; batch += 1) {
         const response = await callApi<ClearArchivedResponse>('trip.clearArchived');
         removedCount += response.removedCount;
         remainingCount = response.remainingCount;

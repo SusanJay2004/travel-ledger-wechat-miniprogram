@@ -526,6 +526,15 @@ describe('LedgerService solo flow', () => {
       avatarUrl: `cloud://development/avatars/${user.id}/avatar.png`,
     });
     expect(updated.avatarUrl).toBe(`cloud://development/avatars/${user.id}/avatar.png`);
+
+    const replacement = await service.updateProfile(updated, {
+      displayName: user.displayName,
+      signature: user.signature,
+      avatarUrl: `cloud://development/avatars/${user.id}/replacement.png`,
+    });
+    expect(replacement.pendingFileDeletionIds).toEqual([
+      `cloud://development/avatars/${user.id}/avatar.png`,
+    ]);
   });
 
   it('anonymizes ledger history and permits a fresh account after deletion', async () => {
@@ -555,6 +564,7 @@ describe('LedgerService solo flow', () => {
     const withFiles = {
       ...withAvatar,
       qrCodeFileId: `cloud://development/profile-codes/${user.id}/code.png`,
+      pendingFileDeletionIds: [`cloud://development/avatars/${user.id}/older.png`],
       version: withAvatar.version + 1,
     };
     await repository.updateUser(withFiles, withAvatar.version);
@@ -563,6 +573,7 @@ describe('LedgerService solo flow', () => {
     expect(await repository.getUser(user.id)).toMatchObject({
       qrSceneToken: null,
       pendingFileDeletionIds: [
+        `cloud://development/avatars/${user.id}/older.png`,
         `cloud://development/avatars/${user.id}/avatar.png`,
         `cloud://development/profile-codes/${user.id}/code.png`,
       ],

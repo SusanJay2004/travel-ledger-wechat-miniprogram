@@ -82,7 +82,7 @@ export function createMemoryCloudSdk(openId = 'test-openid'): {
         getUnlimited: async () => ({ buffer: Buffer.from('png') }),
       },
     },
-    downloadFile: async () => ({ fileContent: Buffer.alloc(0) }),
+    downloadFile: async () => ({ fileContent: Buffer.from([0xff, 0xd8, 0xff, 0x00]) }),
     uploadFile: async ({ cloudPath }) => ({ fileID: `cloud://memory/${cloudPath}` }),
   };
   return { database, deletedFileIds, sdk, setOpenId: (value) => (currentOpenId = value) };

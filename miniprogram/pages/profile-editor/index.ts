@@ -95,13 +95,6 @@ Page<ProfileEditorData, ProfileEditorMethods>({
         throw error;
       }
       updateCachedSessionProfile(updated);
-      if (
-        uploadedAvatar !== null &&
-        this.data.originalAvatarUrl.startsWith('cloud://') &&
-        this.data.originalAvatarUrl !== uploadedAvatar
-      ) {
-        await deleteCloudFile(this.data.originalAvatarUrl);
-      }
       void wx.navigateBack();
     } catch (error: unknown) {
       this.setData({ errorMessage: toMessage(error), saving: false });

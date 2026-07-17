@@ -206,12 +206,13 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
             avatarUrl: optionalNullableString(event.payload, 'avatarUrl'),
           }),
         );
+        await cleanPendingUserFiles(sdk, repository, updated.id);
         return success(requestId, publicProfile(updated, productMode));
       }
       case 'session.deleteAccount':
         await write(async () => {
           await service.deleteAccount(user, socialRepository);
-          await cleanDeletedUserFiles(sdk, repository, user.id);
+          await cleanPendingUserFiles(sdk, repository, user.id);
         });
         return success(requestId, null);
       case 'social.search':
@@ -467,7 +468,7 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
   }
 }
 
-async function cleanDeletedUserFiles(sdk: CloudSdk, repository: CloudRepository, userId: string) {
+async function cleanPendingUserFiles(sdk: CloudSdk, repository: CloudRepository, userId: string) {
   const user = await repository.getUser(userId);
   const fileList = user?.pendingFileDeletionIds ?? [];
   if (fileList.length === 0) return;

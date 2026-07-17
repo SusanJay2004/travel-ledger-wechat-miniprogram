@@ -209,6 +209,9 @@ export class LedgerService {
       displayName,
       signature,
       avatarUrl: input.avatarUrl,
+      ...(input.avatarUrl !== user.avatarUrl && user.avatarUrl?.startsWith('cloud://') === true
+        ? { pendingFileDeletionIds: uniqueFileIds(user.pendingFileDeletionIds, [user.avatarUrl]) }
+        : {}),
       version: user.version + 1,
       updatedAt: this.clock.now().toISOString(),
     };
@@ -1073,7 +1076,14 @@ function avatarBelongsToUser(fileId: string, userId: string): boolean {
 }
 
 function accountFileIds(user: UserDocument): readonly string[] {
-  return [...new Set([user.avatarUrl, user.qrCodeFileId])].filter(
+  return uniqueFileIds(user.pendingFileDeletionIds, [user.avatarUrl, user.qrCodeFileId]);
+}
+
+function uniqueFileIds(
+  existing: readonly string[] | undefined,
+  candidates: readonly (string | null | undefined)[],
+): readonly string[] {
+  return [...new Set([...(existing ?? []), ...candidates])].filter(
     (value): value is string => typeof value === 'string' && value.startsWith('cloud://'),
   );
 }

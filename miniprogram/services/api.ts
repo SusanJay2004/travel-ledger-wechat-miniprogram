@@ -154,13 +154,89 @@ export interface CallApiOptions {
   transportRetries?: number;
 }
 
-export async function callApi<T>(
+interface PendingWriteRequest {
+  action: string;
+  createdAt: number;
+  payload: string;
+  requestId: string;
+}
+
+const PENDING_WRITES_KEY = 'pending-api-writes-v1';
+const PENDING_WRITE_RETRY_WINDOW_MS = 23 * 60 * 60 * 1000;
+const READ_ACTIONS = new Set([
+  'session.bootstrap',
+  'social.search',
+  'social.resolveQrScene',
+  'social.listFriends',
+  'social.listBlocked',
+  'social.listNotifications',
+  'trip.list',
+  'trip.listArchived',
+  'trip.get',
+  'trip.activity',
+  'trip.calculate',
+]);
+
+let pendingWrites: PendingWriteRequest[] | null = null;
+const inFlightWrites = new Map<string, Promise<unknown>>();
+
+export function callApi<T>(
   action: string,
   payload: unknown = {},
   options: CallApiOptions = {},
 ): Promise<T> {
+  const writeAction = !READ_ACTIONS.has(action);
+  const canonicalPayload = canonicalJson(payload);
+  if (!writeAction) return performApiCall(action, payload, options, false, canonicalPayload);
+
+  const intentKey = `${action}\n${canonicalPayload}`;
+  const active = inFlightWrites.get(intentKey);
+  if (active !== undefined) return active as Promise<T>;
+  const request = performApiCall<T>(action, payload, options, true, canonicalPayload).finally(
+    () => {
+      if (inFlightWrites.get(intentKey) === request) inFlightWrites.delete(intentKey);
+    },
+  );
+  inFlightWrites.set(intentKey, request);
+  return request;
+}
+
+async function performApiCall<T>(
+  action: string,
+  payload: unknown,
+  options: CallApiOptions,
+  writeAction: boolean,
+  canonicalPayload: string,
+): Promise<T> {
   if (wx.cloud === undefined) throw new Error('当前微信版本不支持云开发。');
-  const requestId = options.requestId ?? createRequestId();
+  const pending = writeAction ? findPendingWrite(action, canonicalPayload) : null;
+  if (pending !== null && Date.now() - pending.createdAt >= PENDING_WRITE_RETRY_WINDOW_MS) {
+    throw new ApiError(
+      'STALE_UNCERTAIN_WRITE',
+      '本机仍有超过 23 小时未确认的相同操作。请先刷新并核对云端数据；确认未执行后，可退出登录再重新登录操作。',
+      false,
+      { requestId: pending.requestId },
+    );
+  }
+  // An unresolved local intent always wins over a caller-supplied id: replacing it would
+  // bypass the server's idempotency record and could apply the same mutation twice.
+  const requestId = pending?.requestId ?? options.requestId ?? createRequestId();
+  if (writeAction) {
+    try {
+      rememberPendingWrite({
+        action,
+        createdAt: pending?.requestId === requestId ? pending.createdAt : Date.now(),
+        payload: canonicalPayload,
+        requestId,
+      });
+    } catch {
+      throw new ApiError(
+        'LOCAL_IDEMPOTENCY_STORAGE_FAILED',
+        '本地存储空间不足，暂时无法安全提交。请清理微信存储空间后重试。',
+        true,
+      );
+    }
+  }
   const retries = options.transportRetries ?? 1;
   let result: Awaited<ReturnType<NonNullable<typeof wx.cloud>['callFunction']>>;
   for (let attempt = 0; ; attempt += 1) {
@@ -171,14 +247,24 @@ export async function callApi<T>(
       });
       break;
     } catch (error: unknown) {
-      if (attempt >= retries) throw error;
+      if (attempt < retries) continue;
+      if (!writeAction) throw error;
+      throw transportResultUncertain(requestId);
     }
   }
-  const response = result.result as ApiResponse<T>;
-  if (response === undefined || response === null || typeof response !== 'object') {
+  const response = result.result;
+  if (!isApiResponse<T>(response) || response.requestId !== requestId) {
+    if (writeAction) throw transportResultUncertain(requestId);
     throw new Error('服务器返回了无法识别的数据。');
   }
   if (!response.ok) {
+    if (
+      writeAction &&
+      response.error.code !== 'REQUEST_IN_PROGRESS' &&
+      response.error.code !== 'REQUEST_RESULT_UNCERTAIN'
+    ) {
+      forgetPendingWrite(action, canonicalPayload);
+    }
     throw new ApiError(
       response.error.code,
       response.error.message,
@@ -186,6 +272,7 @@ export async function callApi<T>(
       response.error.details,
     );
   }
+  if (writeAction) forgetPendingWrite(action, canonicalPayload);
   return response.data;
 }
 
@@ -204,4 +291,118 @@ export class ApiError extends Error {
 export function createRequestId(): string {
   const random = Math.random().toString(36).slice(2, 10);
   return `${Date.now().toString(36)}-${random}`;
+}
+
+function findPendingWrite(action: string, payload: string): PendingWriteRequest | null {
+  const records = loadPendingWrites();
+  return records.find((record) => record.action === action && record.payload === payload) ?? null;
+}
+
+function rememberPendingWrite(record: PendingWriteRequest): void {
+  const records = loadPendingWrites().filter(
+    (item) => !(item.action === record.action && item.payload === record.payload),
+  );
+  pendingWrites = [...records, record];
+  persistPendingWrites(true);
+}
+
+function forgetPendingWrite(action: string, payload: string): void {
+  const records = loadPendingWrites();
+  const next = records.filter(
+    (record) => !(record.action === action && record.payload === payload),
+  );
+  if (next.length === records.length) return;
+  pendingWrites = next;
+  persistPendingWrites(false);
+}
+
+function transportResultUncertain(requestId: string): ApiError {
+  return new ApiError(
+    'TRANSPORT_RESULT_UNCERTAIN',
+    '网络中断，操作结果暂时无法确认。请保持内容不变并再次点击，系统会核对同一请求；也可以刷新页面确认。',
+    true,
+    { requestId },
+  );
+}
+
+function loadPendingWrites(): PendingWriteRequest[] {
+  if (pendingWrites !== null) return pendingWrites;
+  try {
+    const stored = wx.getStorageSync<unknown>(PENDING_WRITES_KEY);
+    pendingWrites = Array.isArray(stored)
+      ? (stored as unknown[]).filter(isPendingWriteRequest)
+      : [];
+  } catch {
+    pendingWrites = [];
+  }
+  return pendingWrites;
+}
+
+function isPendingWriteRequest(value: unknown): value is PendingWriteRequest {
+  if (typeof value !== 'object' || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record['action'] === 'string' &&
+    typeof record['createdAt'] === 'number' &&
+    typeof record['payload'] === 'string' &&
+    typeof record['requestId'] === 'string'
+  );
+}
+
+function isApiResponse<T>(value: unknown): value is ApiResponse<T> {
+  if (typeof value !== 'object' || value === null || !('ok' in value)) return false;
+  if (!('requestId' in value) || typeof value.requestId !== 'string') return false;
+  if (value.ok === true) return 'data' in value;
+  if (value.ok !== false || !('error' in value)) return false;
+  const error = value.error;
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    typeof error.code === 'string' &&
+    'message' in error &&
+    typeof error.message === 'string' &&
+    'retryable' in error &&
+    typeof error.retryable === 'boolean'
+  );
+}
+
+function persistPendingWrites(throwOnFailure: boolean): void {
+  try {
+    if ((pendingWrites?.length ?? 0) === 0) wx.removeStorageSync(PENDING_WRITES_KEY);
+    else wx.setStorageSync(PENDING_WRITES_KEY, pendingWrites);
+  } catch (error: unknown) {
+    if (throwOnFailure) throw error;
+    // The in-memory record still protects retries during this app session.
+  }
+}
+
+function canonicalJson(value: unknown): string {
+  return JSON.stringify(sortJsonValue(value));
+}
+
+function sortJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortJsonValue);
+  if (typeof value !== 'object' || value === null) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, item]) => item !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => [key, sortJsonValue(item)]),
+  );
+}
+
+export function resetPendingWritesForTest(): void {
+  pendingWrites = null;
+  inFlightWrites.clear();
+}
+
+export function clearPendingApiWrites(): void {
+  pendingWrites = [];
+  inFlightWrites.clear();
+  try {
+    wx.removeStorageSync(PENDING_WRITES_KEY);
+  } catch {
+    // Best-effort local privacy cleanup during sign-out.
+  }
 }

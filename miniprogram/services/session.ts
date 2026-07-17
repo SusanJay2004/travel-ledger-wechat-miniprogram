@@ -1,4 +1,4 @@
-import { callApi, type SessionProfile } from './api';
+import { callApi, clearPendingApiWrites, type SessionProfile } from './api';
 import { configureRuntimeMode } from '../config/runtime';
 import { clearLocalAccountData, readCachedProfile, writeCachedProfile } from './local-cache';
 
@@ -55,6 +55,7 @@ export function isLocalSessionSignedOut(): boolean {
 export function signOutLocalSession(): void {
   wx.setStorageSync(SIGNED_OUT_KEY, true);
   clearCachedSessionProfile();
+  clearPendingApiWrites();
   clearLocalAccountData();
 }
 

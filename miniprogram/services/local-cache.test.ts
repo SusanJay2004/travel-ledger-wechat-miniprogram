@@ -73,12 +73,21 @@ describe('local read-only cache', () => {
   it('clears account caches and drafts without removing privacy consent', () => {
     writeCachedProfile(profile);
     storage.set('bill-draft-v1:trp_1:2026-07-10', { title: '草稿' });
+    storage.set('pending-api-writes-v1', [
+      {
+        action: 'trip.addBill',
+        createdAt: Date.now(),
+        payload: '{"title":"早餐"}',
+        requestId: 'request-with-private-draft-content',
+      },
+    ]);
     storage.set('privacy-consent-v1', true);
 
     clearLocalAccountData();
 
     expect(readCachedProfile()).toBeNull();
     expect(storage.has('bill-draft-v1:trp_1:2026-07-10')).toBe(false);
+    expect(storage.has('pending-api-writes-v1')).toBe(false);
     expect(storage.get('privacy-consent-v1')).toBe(true);
   });
 });

@@ -12,6 +12,7 @@ vi.mock('wx-server-sdk', () => ({
 import {
   expireAvatarReviews,
   maintainTrip,
+  resumeDeletingAccounts,
   visitDocumentsById,
   type Collection,
   type Database,
@@ -104,6 +105,7 @@ class MemoryCollection<T> implements Collection<T> {
   }
 
   async update(options: { data: Partial<T> }): Promise<{ stats: { updated: number } }> {
+    if (this.database.consumeUpdateConflict(this.name)) return { stats: { updated: 0 } };
     const records = this.database.records(this.name);
     const matches = [...records.entries()].filter(([, document]) => this.matches(document));
     for (const [id, document] of matches) {
@@ -119,6 +121,7 @@ class MemoryCollection<T> implements Collection<T> {
         return value.kind === 'gt' ? String(actual) > value.value : String(actual) < value.value;
       }
       if (key === '_id') return actual === value;
+      if (Array.isArray(actual)) return actual.includes(value);
       return document[key] === value;
     });
   }
@@ -131,6 +134,7 @@ class MemoryDatabase implements Database {
   };
   private readonly collections = new Map<string, Map<string, Document>>();
   private readonly removeFailures = new Set<string>();
+  private readonly updateConflicts = new Set<string>();
 
   collection<T>(name: string): Collection<T> {
     return new MemoryCollection<T>(this, name);
@@ -152,6 +156,14 @@ class MemoryDatabase implements Database {
 
   failNextRemove(name: string): void {
     this.removeFailures.add(name);
+  }
+
+  conflictNextUpdate(name: string): void {
+    this.updateConflicts.add(name);
+  }
+
+  consumeUpdateConflict(name: string): boolean {
+    return this.updateConflicts.delete(name);
   }
 
   consumeRemoveFailure(name: string): void {
@@ -398,5 +410,178 @@ describe('expired avatar review maintenance', () => {
       pendingAvatarReviewId: 'trace-pending',
       version: 4,
     });
+  });
+});
+
+describe('interrupted account deletion maintenance', () => {
+  it('anonymizes remaining ledger references, purges social data, and releases WeChat identity', async () => {
+    const database = new MemoryDatabase();
+    database.seed('users', {
+      _id: 'alice',
+      id: 'alice',
+      openId: 'openid-alice',
+      publicId: 'ALICE12345',
+      status: 'deleting',
+      version: 5,
+      updatedAt: '2026-08-19T23:00:00.000Z',
+    });
+    const alreadyDone = trip({
+      id: 'trip-already-done',
+      memberIds: ['alice', 'bob'],
+      members: [
+        {
+          userId: 'alice',
+          displayNameSnapshot: '已注销用户',
+          viewState: 'detached',
+          archivedAt: null,
+          purgeAfter: null,
+        },
+        {
+          userId: 'bob',
+          displayNameSnapshot: '小博',
+          viewState: 'home',
+          archivedAt: null,
+          purgeAfter: null,
+        },
+      ],
+      bills: [],
+      version: 4,
+    });
+    const remaining = trip({
+      id: 'trip-remaining',
+      memberIds: ['alice', 'bob'],
+      members: [
+        {
+          userId: 'alice',
+          displayNameSnapshot: '小艾',
+          viewState: 'home',
+          archivedAt: null,
+          purgeAfter: null,
+        },
+        {
+          userId: 'bob',
+          displayNameSnapshot: '小博',
+          viewState: 'home',
+          archivedAt: null,
+          purgeAfter: null,
+        },
+      ],
+      bills: [
+        {
+          id: 'shared-bill',
+          deletedAt: null,
+          amountCents: 1200,
+          participants: [
+            { memberId: 'alice', displayName: '小艾', shares: 1 },
+            { memberId: 'bob', displayName: '小博', shares: 1 },
+          ],
+          payers: [{ memberId: 'alice', displayName: '小艾', paidCents: 1200 }],
+        },
+      ],
+      version: 7,
+    });
+    database.seed('trips', { _id: alreadyDone.id, ...alreadyDone });
+    database.seed('trips', { _id: remaining.id, ...remaining });
+    database.seed('friendships', {
+      _id: 'friendship-1',
+      id: 'friendship-1',
+      userIds: ['alice', 'bob'],
+    });
+    database.seed('notifications', {
+      _id: 'notice-1',
+      id: 'notice-1',
+      userId: 'bob',
+      actorUserId: 'alice',
+    });
+    database.seed('friendships', {
+      _id: 'friendship-unrelated',
+      id: 'friendship-unrelated',
+      userIds: ['bob', 'carol'],
+    });
+    database.seed('notifications', {
+      _id: 'notice-unrelated',
+      id: 'notice-unrelated',
+      userId: 'bob',
+      actorUserId: 'carol',
+    });
+
+    await expect(resumeDeletingAccounts(database, now)).resolves.toEqual({
+      completed: 1,
+      conflicts: 0,
+      tripsUpdated: 1,
+    });
+
+    expect(database.read<MaintenanceTripDocument>('trips', alreadyDone.id).version).toBe(4);
+    const anonymized = database.read<MaintenanceTripDocument>('trips', remaining.id);
+    expect(anonymized.members[0]).toMatchObject({
+      displayNameSnapshot: '已注销用户',
+      viewState: 'detached',
+    });
+    expect(anonymized.bills[0]).toMatchObject({
+      amountCents: 1200,
+      participants: [
+        expect.objectContaining({ memberId: 'alice', displayName: '已注销用户', shares: 1 }),
+        expect.objectContaining({ memberId: 'bob', displayName: '小博', shares: 1 }),
+      ],
+      payers: [
+        expect.objectContaining({ memberId: 'alice', displayName: '已注销用户', paidCents: 1200 }),
+      ],
+    });
+    expect([...database.records('friendships').keys()]).toEqual(['friendship-unrelated']);
+    expect([...database.records('notifications').keys()]).toEqual(['notice-unrelated']);
+    expect(database.read<Document>('users', 'alice')).toMatchObject({
+      openId: 'deleted:alice',
+      publicId: 'deleted:alice',
+      status: 'deleted',
+      version: 6,
+    });
+  });
+
+  it('keeps the account deleting when a trip version conflicts and succeeds on the next run', async () => {
+    const database = new MemoryDatabase();
+    database.seed('users', {
+      _id: 'alice',
+      id: 'alice',
+      openId: 'openid-alice',
+      publicId: 'ALICE12345',
+      status: 'deleting',
+      version: 5,
+      updatedAt: '2026-08-19T23:00:00.000Z',
+    });
+    const remaining = trip({
+      memberIds: ['alice', 'bob'],
+      members: [
+        {
+          userId: 'alice',
+          displayNameSnapshot: '小艾',
+          viewState: 'home',
+          archivedAt: null,
+          purgeAfter: null,
+        },
+        {
+          userId: 'bob',
+          displayNameSnapshot: '小博',
+          viewState: 'home',
+          archivedAt: null,
+          purgeAfter: null,
+        },
+      ],
+    });
+    database.seed('trips', { _id: remaining.id, ...remaining });
+    database.conflictNextUpdate('trips');
+
+    await expect(resumeDeletingAccounts(database, now)).resolves.toEqual({
+      completed: 0,
+      conflicts: 1,
+      tripsUpdated: 0,
+    });
+    expect(database.read<Document>('users', 'alice').status).toBe('deleting');
+
+    await expect(resumeDeletingAccounts(database, now)).resolves.toEqual({
+      completed: 1,
+      conflicts: 0,
+      tripsUpdated: 1,
+    });
+    expect(database.read<Document>('users', 'alice').status).toBe('deleted');
   });
 });

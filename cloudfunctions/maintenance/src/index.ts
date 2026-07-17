@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { cleanTrip, type MaintenanceBill, type MaintenanceMember } from './maintenance';
 import {
   buildProjectionDocuments,
@@ -46,8 +48,19 @@ export interface MaintenanceTripDocument extends RepairTrip {
   id: string;
   name: string;
   memberIds: readonly string[];
-  members: readonly (MaintenanceMember & { userId: string })[];
-  bills: readonly (MaintenanceBill & { id: string })[];
+  members: readonly (MaintenanceMember & { userId: string; displayNameSnapshot?: string })[];
+  bills: readonly (Record<string, unknown> &
+    MaintenanceBill & {
+      id: string;
+      participants?: readonly (Record<string, unknown> & {
+        memberId: string;
+        displayName: string;
+      })[];
+      payers?: readonly (Record<string, unknown> & {
+        memberId: string;
+        displayName: string;
+      })[];
+    })[];
   ledgerRevision: number;
   settlementCache?: unknown;
   version: number;
@@ -61,12 +74,21 @@ interface ExpiringSocialDocument {
 }
 
 interface DeletedUserDocument extends DeletedUserFileRecord {
+  homeTripCount?: number;
+  openId?: string;
   pendingAvatarExpiresAt?: string | null;
   pendingAvatarFileId?: string | null;
   pendingAvatarReviewId?: string | null;
   pendingFileDeletionIds?: readonly string[];
+  publicId?: string;
   status: string;
   updatedAt: string;
+}
+
+export interface AccountDeletionMaintenanceResult {
+  completed: number;
+  conflicts: number;
+  tripsUpdated: number;
 }
 
 interface CloudSdk {
@@ -106,6 +128,9 @@ export async function main(): Promise<Record<string, number>> {
     conflictsSkipped: 0,
     deletedUserFileCleanupFailures: 0,
     deletedUserFilesRemoved: 0,
+    accountDeletionsCompleted: 0,
+    accountDeletionConflicts: 0,
+    accountDeletionTripsUpdated: 0,
     expiredAvatarReviewsRemoved: 0,
     projectionsRepaired: 0,
     projectionFailures: 0,
@@ -134,6 +159,10 @@ export async function main(): Promise<Record<string, number>> {
   const fileCleanup = await retryDeletedUserFileCleanup(db);
   summary.deletedUserFilesRemoved += fileCleanup.removed;
   summary.deletedUserFileCleanupFailures += fileCleanup.failed;
+  const accountDeletion = await resumeDeletingAccounts(db, now);
+  summary.accountDeletionsCompleted += accountDeletion.completed;
+  summary.accountDeletionConflicts += accountDeletion.conflicts;
+  summary.accountDeletionTripsUpdated += accountDeletion.tripsUpdated;
 
   await visitDocumentsById<MaintenanceTripDocument>(db, 'trips', {}, async (trips) => {
     for (const trip of trips) {
@@ -148,6 +177,140 @@ export async function main(): Promise<Record<string, number>> {
 
   console.info('maintenance-complete', summary);
   return summary;
+}
+
+export async function resumeDeletingAccounts(
+  db: Database,
+  now: Date,
+): Promise<AccountDeletionMaintenanceResult> {
+  const total: AccountDeletionMaintenanceResult = { completed: 0, conflicts: 0, tripsUpdated: 0 };
+  await visitDocumentsById<DeletedUserDocument>(
+    db,
+    'users',
+    { status: 'deleting' },
+    async (users) => {
+      for (const user of users) {
+        const result = await resumeDeletingAccount(db, user, now);
+        total.completed += result.completed;
+        total.conflicts += result.conflicts;
+        total.tripsUpdated += result.tripsUpdated;
+      }
+    },
+  );
+  return total;
+}
+
+async function resumeDeletingAccount(
+  db: Database,
+  user: DeletedUserDocument,
+  now: Date,
+): Promise<AccountDeletionMaintenanceResult> {
+  const result: AccountDeletionMaintenanceResult = { completed: 0, conflicts: 0, tripsUpdated: 0 };
+  const nowIso = now.toISOString();
+  await visitDocumentsById<MaintenanceTripDocument>(
+    db,
+    'trips',
+    { memberIds: user.id },
+    async (trips) => {
+      for (const trip of trips) {
+        const member = trip.members.find((item) => item.userId === user.id);
+        if (member?.viewState === 'detached' && member.displayNameSnapshot === '已注销用户') {
+          continue;
+        }
+        if (member === undefined || (trip.projectionOutbox?.length ?? 0) >= 1000) {
+          result.conflicts += 1;
+          continue;
+        }
+        const nextVersion = trip.version + 1;
+        const nextLedgerRevision = trip.ledgerRevision + 1;
+        const members = trip.members.map((item) =>
+          item.userId === user.id
+            ? {
+                ...item,
+                displayNameSnapshot: '已注销用户',
+                viewState: 'detached' as const,
+                archivedAt: null,
+                purgeAfter: null,
+              }
+            : item,
+        );
+        const bills = trip.bills.map((bill) => ({
+          ...bill,
+          ...(bill.participants === undefined
+            ? {}
+            : {
+                participants: bill.participants.map((participant) =>
+                  participant.memberId === user.id
+                    ? { ...participant, displayName: '已注销用户' }
+                    : participant,
+                ),
+              }),
+          ...(bill.payers === undefined
+            ? {}
+            : {
+                payers: bill.payers.map((payer) =>
+                  payer.memberId === user.id ? { ...payer, displayName: '已注销用户' } : payer,
+                ),
+              }),
+        }));
+        const projection: RepairProjection = {
+          id: deterministicMaintenanceId(
+            'out',
+            trip.id,
+            String(nextVersion),
+            'member.account_deleted',
+          ),
+          action: 'member.account_deleted',
+          actorUserId: user.id,
+          entityType: 'member',
+          entityId: user.id,
+          beforeVersion: trip.version,
+          afterVersion: nextVersion,
+          ledgerRevision: nextLedgerRevision,
+          targetUserIds: members
+            .filter((item) => item.viewState !== 'detached')
+            .map((item) => item.userId),
+          createdAt: nowIso,
+        };
+        const updated = await db
+          .collection<MaintenanceTripDocument>('trips')
+          .where({ _id: trip.id, version: trip.version })
+          .update({
+            data: {
+              members,
+              bills,
+              ledgerRevision: nextLedgerRevision,
+              projectionOutbox: [...(trip.projectionOutbox ?? []), projection],
+              settlementCache: null,
+              version: nextVersion,
+              updatedAt: nowIso,
+              updatedBy: user.id,
+            },
+          });
+        if (updated.stats?.updated === 1) result.tripsUpdated += 1;
+        else result.conflicts += 1;
+      }
+    },
+  );
+  if (result.conflicts > 0) return result;
+
+  await purgeUserSocialData(db, user.id);
+  const finalized = await db
+    .collection<DeletedUserDocument>('users')
+    .where({ _id: user.id, version: user.version, status: 'deleting' })
+    .update({
+      data: {
+        openId: `deleted:${user.id}`,
+        publicId: `deleted:${user.id}`,
+        homeTripCount: 0,
+        status: 'deleted',
+        updatedAt: nowIso,
+        version: user.version + 1,
+      },
+    });
+  if (finalized.stats?.updated === 1) result.completed += 1;
+  else result.conflicts += 1;
+  return result;
 }
 
 export async function expireAvatarReviews(db: Database, nowIso: string): Promise<number> {
@@ -454,6 +617,24 @@ async function purgeTripRelations(db: Database, tripId: string): Promise<void> {
   ]);
 }
 
+async function purgeUserSocialData(db: Database, userId: string): Promise<void> {
+  const scopes: readonly [string, Record<string, unknown>][] = [
+    ['friend_requests', { fromUserId: userId }],
+    ['friend_requests', { toUserId: userId }],
+    ['friendships', { userIds: userId }],
+    ['blocks', { blockerUserId: userId }],
+    ['blocks', { blockedUserId: userId }],
+    ['notifications', { userId }],
+    ['notifications', { actorUserId: userId }],
+    ['trip_invitations', { inviterUserId: userId }],
+    ['trip_invitations', { inviteeUserId: userId }],
+    ['sync_events', { userId }],
+  ];
+  for (const [collectionName, query] of scopes) {
+    await removeAllMatching(db, collectionName, query);
+  }
+}
+
 async function removeAllMatching(
   db: Database,
   collectionName: string,
@@ -499,4 +680,9 @@ async function retryDeletedUserFileCleanup(
     total.removed += page.removed;
   });
   return total;
+}
+
+function deterministicMaintenanceId(prefix: string, ...parts: string[]): string {
+  const digest = createHash('sha256').update(parts.join(':')).digest('hex').slice(0, 24);
+  return `${prefix}_${digest}`;
 }

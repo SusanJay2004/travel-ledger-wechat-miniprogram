@@ -147,6 +147,15 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
       );
       return success(requestId, null);
     }
+    if (action === 'session.bootstrap' && existingUser?.status === 'deleting') {
+      // A cloud-function timeout can happen after the irreversible deletion marker commits.
+      // Resuming here keeps the recovery path reachable even when the original idempotency
+      // record is still processing and the user can no longer open the settings page.
+      await service.deleteAccount(existingUser, socialRepository);
+      await cleanPendingUserFiles(sdk, repository, existingUser.id);
+      const replacement = await service.bootstrapSession(openId);
+      return success(requestId, publicProfile(replacement, productMode));
+    }
     const user =
       action === 'session.deleteAccount' && existingUser?.status === 'deleting'
         ? existingUser

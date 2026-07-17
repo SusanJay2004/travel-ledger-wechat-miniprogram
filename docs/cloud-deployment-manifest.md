@@ -35,7 +35,9 @@
 | `users`               | 普通 | `pendingAvatarExpiresAt ASC, _id ASC`       |
 | `users`               | 普通 | `_id ASC, version ASC`                      |
 | `users`               | 普通 | `status ASC`                                |
+| `users`               | 普通 | `status ASC, _id ASC`                       |
 | `trips`               | 普通 | `memberIds ASC`                             |
+| `trips`               | 普通 | `memberIds ASC, _id ASC`                    |
 | `trips`               | 普通 | `_id ASC, version ASC`                      |
 | `friend_requests`     | 普通 | `fromUserId ASC, toUserId ASC, status ASC`  |
 | `friend_requests`     | 唯一 | `pendingKey ASC`                            |
@@ -100,4 +102,5 @@
 - 创建行程、日期增删、账单跨日期移动、有效/无效账单、分账复制、完结、归档、恢复、退出登录和离线只读缓存。
 - 协作版再测搜索、申请、拉黑、邀请、三账号实时同步与二维码。
 - 临时阻断一次 `audit_logs` 或 `sync_events` 写入，确认行程 outbox 保留；恢复权限后触发 `maintenance`，确认投影被补齐、outbox 清空且无重复记录。
+- 用专用测试账号把状态置于注销中断后的 `deleting`，手动触发 `maintenance`，确认共享账务金额不变、姓名快照匿名化、社交入口清除、旧 `OpenID` 解绑且再次触发幂等。
 - 手动触发维护和备份，核对结构化摘要、manifest 和权限拒绝。

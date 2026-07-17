@@ -11,7 +11,7 @@
 
 - `_id` / `id`：内部稳定 ID。
 - `openId`：微信环境内用户身份，只允许云端读取。
-- `publicId`：10 位公开搜索 ID。
+- `publicId`：有效账号使用 10 位公开搜索 ID；已注销账号改为基于内部用户 ID 的唯一墓碑值，不再对外展示。
 - `displayName`、`signature`、`avatarUrl`：用户资料。
 - `homeTripCount`：首页行程的原子容量计数；创建、邀请加入、恢复、重开、归档和退出均与行程文档在同一云数据库事务中增减。
 - `avatarUrl` 必须位于 `avatars/<当前内部用户ID>/`，并由云存储“创建者本人写入/删除”规则与云端路径校验共同保护，不能引用其他账号文件。
@@ -20,7 +20,7 @@
 - `pendingFileDeletionIds`：换头像或注销时与资料版本原子记录的待删除云文件；API 立即尝试清理，失败由每日维护重试，不能只依赖客户端删除旧文件。
 - `pendingAvatarFileId`、`pendingAvatarReviewId`、`pendingAvatarExpiresAt`：2.0 异步头像审核候选、未公开的微信 `trace_id` 与 35 分钟兜底期限。旧头像在回调明确 `pass` 前继续生效；风险/超时候选进入持久化删除清单。`pendingAvatarReviewId` 与 `pendingAvatarExpiresAt` 使用普通索引；微信把 `trace_id` 定义为单次请求唯一标识，回调函数仍只在查询恰好命中一条记录时更新。
 
-唯一索引：`openId`、`publicId`；普通索引：`qrSceneToken`、`pendingAvatarReviewId`、`pendingAvatarExpiresAt`、`_id + version`、`status`。微信云数据库唯一索引会把字段缺失和 `null` 都视为同一个空值，因此可选字段不得建立唯一索引。
+唯一索引：`openId`、`publicId`；普通索引：`qrSceneToken`、`pendingAvatarReviewId`、`pendingAvatarExpiresAt`、`_id + version`、`status`、`status + _id`。微信云数据库唯一索引会把字段缺失和 `null` 都视为同一个空值，因此可选字段不得建立唯一索引。
 
 首页 100 条上限不能通过“先查询数量、再写行程”实现，因为并发请求会同时通过。服务端以 `users.homeTripCount` 为事务内计数器：事务读取用户和行程版本，校验增量后同时写入；账号资料更新也递增同一用户版本，避免覆盖计数。部署到已有数据的环境前必须先按 `members.viewState == home` 回填并核对计数；当前首次开发环境无历史生产数据，可从 0 初始化。
 
@@ -37,7 +37,7 @@
 - `ledgerRevision`：影响分账结果的账本版本。
 - 操作者、创建/修改/完结时间字段。
 
-普通索引：`memberIds`、`version`。
+普通索引：`memberIds`、`memberIds + _id`、`version`。
 
 ## 协作集合
 
@@ -90,6 +90,7 @@
 账号注销先把用户标记为 `deleting` 并持久化 `pendingFileDeletionIds`，匿名化全部历史账务快照并脱离行程，再清理好友、拉黑、邀请、通知、
 同步事件，最后解绑 `OpenID` 并标记 `deleted`。API 立即尝试删除云存储个人文件；失败时每日维护继续按清单重试，成功后才清空标记。
 历史金额和内部成员 ID 保留以维持共享账务守恒；再次进入会创建全新账号，不能恢复旧行程。中途失败可重试，已经匿名化的行程不会重复改写。
+如果云函数在写入 `deleting` 后超时或进程中断，用户下次执行会话初始化时会先恢复注销流程，再为同一微信身份创建新账号；该恢复入口不依赖可能仍停在 `processing` 的原注销请求幂等记录。即使用户不再打开小程序，每日维护也会逐行程续跑匿名化和社交数据清理；行程或用户版本冲突时保留 `deleting` 状态供下次任务重试，全部收敛后才解绑 `OpenID`。
 关联社交数据按每批 20 条逐文档循环清理到空，避免依赖云数据库条件删除的单次后端上限；不同关系方向分别处理，且不删除其他用户之间的数据。
 
 ## 生产前迁移方向

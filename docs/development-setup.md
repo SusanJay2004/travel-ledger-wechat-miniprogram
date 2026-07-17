@@ -23,8 +23,8 @@
    - `users.pendingAvatarReviewId`：普通索引，用于匹配微信 2.0 异步头像审核回调；回调只在恰好命中一条待审记录时生效。
    - `users.pendingAvatarExpiresAt`：普通索引，用于清理超过 35 分钟未回调的候选头像。
    - `users._id + version`：普通组合索引，用于资料和注销的乐观并发更新。
-   - `users.status`：普通索引，用于维护任务重试已注销账号的云文件清理。
-   - `trips.memberIds`：普通索引。
+   - `users.status` 与 `users.status + _id`：普通索引，用于维护任务按游标恢复中断的注销账号。
+   - `trips.memberIds` 与 `trips.memberIds + _id`：普通索引，用于普通成员查询和注销恢复的游标分页。
    - `trips.version`：普通索引，用于乐观并发更新。
 8. 执行 `npm install`、`npm run check` 和 `npm run build`。
 9. 在开发者工具中依次上传并部署 `cloudfunctions/api`、`cloudfunctions/avatar-review`、`cloudfunctions/maintenance` 和 `cloudfunctions/backup`，均选择“云端安装依赖”。

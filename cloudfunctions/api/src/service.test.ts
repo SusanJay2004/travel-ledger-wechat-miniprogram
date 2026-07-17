@@ -734,6 +734,8 @@ describe('LedgerService solo flow', () => {
     await service.deleteAccount(withFiles, new MemorySocialRepository());
 
     expect(await repository.getUser(user.id)).toMatchObject({
+      openId: `deleted:${user.id}`,
+      publicId: `deleted:${user.id}`,
       qrSceneToken: null,
       pendingFileDeletionIds: [
         `cloud://development/avatars/${user.id}/older.png`,
@@ -755,6 +757,43 @@ describe('LedgerService solo flow', () => {
     const fresh = await service.bootstrapSession('openid-alice');
     expect(fresh.id).not.toBe(user.id);
     expect(fresh.status).toBe('active');
+  });
+
+  it('resumes account deletion after a later trip conflicts without rewriting completed trips', async () => {
+    const firstTrip = await service.createTrip(user, { name: '先完成匿名化' });
+    const secondTrip = await service.createTrip(user, { name: '中途发生冲突' });
+    const currentUser = (await repository.getUser(user.id))!;
+    const social = new MemorySocialRepository();
+    const originalReplaceTrip = repository.replaceTrip.bind(repository);
+    let replacementCount = 0;
+    const replaceSpy = vi.spyOn(repository, 'replaceTrip').mockImplementation((trip, version) => {
+      replacementCount += 1;
+      if (replacementCount === 2) return Promise.resolve(false);
+      return originalReplaceTrip(trip, version);
+    });
+
+    await expect(service.deleteAccount(currentUser, social)).rejects.toMatchObject({
+      code: 'VERSION_CONFLICT',
+    });
+
+    const partiallyDeleted = (await repository.getUser(user.id))!;
+    const completedTrip = (await repository.getTrip(firstTrip.id))!;
+    expect(partiallyDeleted.status).toBe('deleting');
+    expect(completedTrip.members[0]).toMatchObject({
+      displayNameSnapshot: '已注销用户',
+      viewState: 'detached',
+    });
+    expect((await repository.getTrip(secondTrip.id))?.members[0]?.viewState).toBe('home');
+
+    replaceSpy.mockRestore();
+    await service.deleteAccount(partiallyDeleted, social);
+
+    expect((await repository.getTrip(firstTrip.id))?.version).toBe(completedTrip.version);
+    expect((await repository.getTrip(secondTrip.id))?.members[0]).toMatchObject({
+      displayNameSnapshot: '已注销用户',
+      viewState: 'detached',
+    });
+    expect((await repository.getUser(user.id))?.status).toBe('deleted');
   });
 
   it('updates, soft deletes and restores a bill without losing cents', async () => {

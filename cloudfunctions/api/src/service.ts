@@ -344,7 +344,7 @@ export class LedgerService {
       {
         ...deleting,
         openId: `deleted:${user.id}`,
-        publicId: `DEL${user.id.slice(-7).toUpperCase()}`,
+        publicId: `deleted:${user.id}`,
         homeTripCount: 0,
         status: 'deleted',
         version: deleting.version + 1,

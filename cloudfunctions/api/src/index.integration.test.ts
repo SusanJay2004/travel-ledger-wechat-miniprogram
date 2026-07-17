@@ -289,6 +289,39 @@ describe('cloud API command integration', () => {
     }
   });
 
+  it('finishes an interrupted deletion when the same WeChat identity starts again', async () => {
+    const cloud = createMemoryCloudSdk('openid-resume-deletion');
+    const first = successData(
+      await command(cloud.sdk, 'session.bootstrap', {}, 'resume-delete-first'),
+    ) as { userId: string };
+    const users = cloud.database.collection<Record<string, unknown>>('users');
+    const stored = cloud.database.documents('users')[0]!;
+    await users.doc(first.userId).set({
+      data: {
+        ...stored,
+        displayName: '已注销用户',
+        status: 'deleting',
+        version: Number(stored['version']) + 1,
+      },
+    });
+
+    const resumed = successData(
+      await command(cloud.sdk, 'session.bootstrap', {}, 'resume-delete-second'),
+    ) as { userId: string };
+
+    expect(resumed.userId).not.toBe(first.userId);
+    const accounts = cloud.database.documents('users');
+    expect(accounts.find((account) => account['id'] === first.userId)).toMatchObject({
+      status: 'deleted',
+      openId: `deleted:${first.userId}`,
+      publicId: `deleted:${first.userId}`,
+    });
+    expect(accounts.find((account) => account['id'] === resumed.userId)).toMatchObject({
+      status: 'active',
+      openId: 'openid-resume-deletion',
+    });
+  });
+
   it('atomically admits only one of two concurrent trips at the 100-trip boundary', async () => {
     const cloud = createMemoryCloudSdk('openid-capacity-race');
     const bootstrap = await command(cloud.sdk, 'session.bootstrap', {}, 'capacity-race-bootstrap');

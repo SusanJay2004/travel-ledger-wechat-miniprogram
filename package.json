@@ -31,7 +31,7 @@
     "@types/node": "^24.0.0",
     "esbuild": "^0.28.0",
     "eslint": "^9.30.0",
-    "miniprogram-api-typings": "^4.0.0",
+    "miniprogram-api-typings": "^5.2.1",
     "prettier": "^3.6.0",
     "typescript": "^5.8.0",
     "typescript-eslint": "^8.35.0",

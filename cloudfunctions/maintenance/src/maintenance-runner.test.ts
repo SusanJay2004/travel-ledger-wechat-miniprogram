@@ -11,6 +11,7 @@ vi.mock('wx-server-sdk', () => ({
 
 import {
   maintainTrip,
+  visitDocumentsById,
   type Collection,
   type Database,
   type MaintenanceTripDocument,
@@ -21,6 +22,7 @@ type Document = Record<string, unknown> & { id?: string; _id?: string };
 class MemoryCollection<T> implements Collection<T> {
   private limitValue: number | undefined;
   private offset = 0;
+  private order: 'asc' | 'desc' | undefined;
   private query: Record<string, unknown> | undefined;
 
   constructor(
@@ -59,15 +61,24 @@ class MemoryCollection<T> implements Collection<T> {
   }
 
   async get(): Promise<{ data: T[] }> {
-    const documents = [...this.database.records(this.name).values()].filter((document) =>
-      this.matches(document),
-    );
+    const documents = [...this.database.records(this.name).values()]
+      .filter((document) => this.matches(document))
+      .sort((left, right) => {
+        if (this.order === undefined) return 0;
+        const comparison = String(left._id ?? left.id).localeCompare(String(right._id ?? right.id));
+        return this.order === 'asc' ? comparison : -comparison;
+      });
     const end = this.limitValue === undefined ? undefined : this.offset + this.limitValue;
     return { data: structuredClone(documents.slice(this.offset, end)) as T[] };
   }
 
   limit(value: number): Collection<T> {
     this.limitValue = value;
+    return this;
+  }
+
+  orderBy(_field: string, direction: 'asc' | 'desc'): Collection<T> {
+    this.order = direction;
     return this;
   }
 
@@ -102,14 +113,21 @@ class MemoryCollection<T> implements Collection<T> {
 
   private matches(document: Document): boolean {
     return Object.entries(this.query ?? {}).every(([key, value]) => {
-      if (key === '_id') return (document._id ?? document.id) === value;
+      const actual = key === '_id' ? (document._id ?? document.id) : document[key];
+      if (isCommand(value)) {
+        return value.kind === 'gt' ? String(actual) > value.value : String(actual) < value.value;
+      }
+      if (key === '_id') return actual === value;
       return document[key] === value;
     });
   }
 }
 
 class MemoryDatabase implements Database {
-  readonly command = { lt: (value: string) => value };
+  readonly command = {
+    gt: (value: string) => ({ kind: 'gt' as const, value }),
+    lt: (value: string) => ({ kind: 'lt' as const, value }),
+  };
   private readonly collections = new Map<string, Map<string, Document>>();
   private readonly removeFailures = new Set<string>();
 
@@ -143,6 +161,17 @@ class MemoryDatabase implements Database {
   read<T>(name: string, id: string): T {
     return structuredClone(this.records(name).get(id)) as T;
   }
+}
+
+function isCommand(value: unknown): value is { kind: 'gt' | 'lt'; value: string } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'kind' in value &&
+    (value.kind === 'gt' || value.kind === 'lt') &&
+    'value' in value &&
+    typeof value.value === 'string'
+  );
 }
 
 const now = new Date('2026-08-20T00:00:00.000Z');
@@ -297,5 +326,24 @@ describe('maintainTrip', () => {
     expect(database.records('trips').has(orphan.id)).toBe(false);
     expect(database.records('audit_logs')).toHaveLength(0);
     expect(database.records('notifications')).toHaveLength(0);
+  });
+});
+
+describe('maintenance cursor pagination', () => {
+  it('does not skip later documents when a record behind the cursor disappears', async () => {
+    const database = new MemoryDatabase();
+    for (let index = 0; index < 101; index += 1) {
+      const id = `trip-${String(index).padStart(3, '0')}`;
+      database.seed('trips', { _id: id, id });
+    }
+    const visited: string[] = [];
+
+    await visitDocumentsById<{ id: string }>(database, 'trips', {}, async (documents) => {
+      visited.push(...documents.map((document) => document.id));
+      if (visited.length === 100) database.records('trips').delete('trip-050');
+    });
+
+    expect(visited).toHaveLength(101);
+    expect(visited.at(-1)).toBe('trip-100');
   });
 });

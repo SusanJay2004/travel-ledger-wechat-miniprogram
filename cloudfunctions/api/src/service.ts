@@ -200,7 +200,7 @@ export class LedgerService {
       'AVATAR_OWNERSHIP_INVALID',
       '只能使用当前账号上传的头像。',
     );
-    await this.contentSecurity.checkText(user.openId, 2, displayName, signature);
+    await this.contentSecurity.checkText(user.openId, 1, displayName, signature);
     if (input.avatarUrl !== null && input.avatarUrl !== user.avatarUrl) {
       await this.contentSecurity.checkImage(user.openId, input.avatarUrl);
     }

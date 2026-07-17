@@ -4,6 +4,7 @@ import type { Clock, IdGenerator, UserDocument } from './models';
 import { MemoryRepository } from './repository';
 import { LedgerService } from './service';
 import { MemorySocialRepository } from './social-repository';
+import type { ContentSecurity } from './content-security';
 
 class TestClock implements Clock {
   constructor(private current = new Date('2026-07-10T08:00:00.000Z')) {}
@@ -468,6 +469,29 @@ describe('LedgerService solo flow', () => {
     expect(updated.publicId).toBe(user.publicId);
     expect(updated.displayName).toBe('苏同学');
     expect(updated.version).toBe(user.version + 1);
+  });
+
+  it('submits profile text with the platform profile-security scene', async () => {
+    const checkText = vi.fn(async () => undefined);
+    const contentSecurity: ContentSecurity = {
+      checkText,
+      checkImage: vi.fn(async () => undefined),
+    };
+    const securedService = new LedgerService(
+      repository,
+      clock,
+      new TestIds(),
+      undefined,
+      contentSecurity,
+    );
+
+    await securedService.updateProfile(user, {
+      displayName: '苏同学',
+      signature: '出发去看海',
+      avatarUrl: null,
+    });
+
+    expect(checkText).toHaveBeenCalledWith(user.openId, 1, '苏同学', '出发去看海');
   });
 
   it('rejects a stale profile update instead of overwriting newer user state', async () => {

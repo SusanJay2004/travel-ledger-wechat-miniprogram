@@ -10,6 +10,7 @@ import { assertScheduledTrigger, type TriggerContext } from './trigger-auth';
 import { deleteFilesCompletely, type DeleteFileResultItem } from './file-deletion';
 
 interface DbCommand {
+  gt(value: string): unknown;
   lt(value: string): unknown;
 }
 
@@ -29,6 +30,7 @@ export interface Collection<T> {
   };
   get(): Promise<QueryResult<T>>;
   limit(value: number): Collection<T>;
+  orderBy(field: string, direction: 'asc' | 'desc'): Collection<T>;
   skip(value: number): Collection<T>;
   where(query: Record<string, unknown>): Collection<T>;
   remove(): Promise<UpdateResult>;
@@ -127,15 +129,16 @@ export async function main(): Promise<Record<string, number>> {
   summary.deletedUserFilesRemoved += fileCleanup.removed;
   summary.deletedUserFileCleanupFailures += fileCleanup.failed;
 
-  const trips = await listAll(db.collection<MaintenanceTripDocument>('trips'));
-  for (const trip of trips) {
-    const tripResult = await maintainTrip(db, trip, now);
-    summary.orphanTripsRemoved += tripResult.orphanTripsRemoved;
-    summary.tripsUpdated += tripResult.tripsUpdated;
-    summary.conflictsSkipped += tripResult.conflictsSkipped;
-    summary.projectionsRepaired += tripResult.projectionsRepaired;
-    summary.projectionFailures += tripResult.projectionFailures;
-  }
+  await visitDocumentsById<MaintenanceTripDocument>(db, 'trips', {}, async (trips) => {
+    for (const trip of trips) {
+      const tripResult = await maintainTrip(db, trip, now);
+      summary.orphanTripsRemoved += tripResult.orphanTripsRemoved;
+      summary.tripsUpdated += tripResult.tripsUpdated;
+      summary.conflictsSkipped += tripResult.conflictsSkipped;
+      summary.projectionsRepaired += tripResult.projectionsRepaired;
+      summary.projectionFailures += tripResult.projectionFailures;
+    }
+  });
 
   console.info('maintenance-complete', summary);
   return summary;
@@ -365,14 +368,30 @@ async function purgeExpiredSocial(
   }
 }
 
-async function listAll<T>(collection: Collection<T>): Promise<T[]> {
-  const result: T[] = [];
-  let offset = 0;
+export async function visitDocumentsById<T extends { id: string }>(
+  db: Database,
+  collectionName: string,
+  filter: Record<string, unknown>,
+  visit: (documents: readonly T[]) => Promise<void>,
+): Promise<void> {
+  let cursor: string | null = null;
   while (true) {
-    const page = await collection.skip(offset).limit(100).get();
-    result.push(...page.data);
-    if (page.data.length < 100) return result;
-    offset += page.data.length;
+    const query: Record<string, unknown> =
+      cursor === null ? filter : { ...filter, _id: db.command.gt(cursor) };
+    const page: QueryResult<T> = await db
+      .collection<T>(collectionName)
+      .where(query)
+      .orderBy('_id', 'asc')
+      .limit(100)
+      .get();
+    if (page.data.length === 0) return;
+    const lastId: string | undefined = page.data.at(-1)?.id;
+    if (typeof lastId !== 'string' || lastId.length === 0) {
+      throw new Error('maintenance document is missing a stable id cursor');
+    }
+    await visit(page.data);
+    cursor = lastId;
+    if (page.data.length < 100) return;
   }
 }
 
@@ -402,29 +421,37 @@ async function removeAllMatching(
 async function retryDeletedUserFileCleanup(
   db: Database,
 ): Promise<{ failed: number; removed: number }> {
-  const users = await listAll(
-    db.collection<DeletedUserDocument>('users').where({ status: 'deleted' }),
-  );
-  return cleanDeletedUserFiles(
-    users,
-    {
-      deleteFiles: async (fileIds) => {
-        await deleteFilesCompletely(cloud, fileIds);
-      },
-      clearMarker: async (user, updatedAt) => {
-        const updated = await db
-          .collection<DeletedUserDocument>('users')
-          .where({ _id: user.id, version: user.version })
-          .update({
-            data: {
-              pendingFileDeletionIds: [],
-              updatedAt,
-              version: user.version + 1,
-            },
-          });
-        return updated.stats?.updated === 1;
-      },
+  const total = { failed: 0, removed: 0 };
+  await visitDocumentsById<DeletedUserDocument>(
+    db,
+    'users',
+    { status: 'deleted' },
+    async (users) => {
+      const page = await cleanDeletedUserFiles(
+        users,
+        {
+          deleteFiles: async (fileIds) => {
+            await deleteFilesCompletely(cloud, fileIds);
+          },
+          clearMarker: async (user, updatedAt) => {
+            const updated = await db
+              .collection<DeletedUserDocument>('users')
+              .where({ _id: user.id, version: user.version })
+              .update({
+                data: {
+                  pendingFileDeletionIds: [],
+                  updatedAt,
+                  version: user.version + 1,
+                },
+              });
+            return updated.stats?.updated === 1;
+          },
+        },
+        new Date(),
+      );
+      total.failed += page.failed;
+      total.removed += page.removed;
     },
-    new Date(),
   );
+  return total;
 }

@@ -71,7 +71,6 @@ export function buildProjectionDocuments(
           userId,
         ),
         userId,
-        ownerOpenId: user.openId,
         tripId: trip.id,
         ledgerRevision: projection.ledgerRevision,
         action: projection.action,

@@ -234,7 +234,6 @@ describe('maintainTrip', () => {
     expect(syncEvents).toEqual([
       expect.objectContaining({
         userId: 'alice',
-        ownerOpenId: 'openid-alice',
         tripId: listed.id,
         ledgerRevision: 5,
         action: 'trip.maintained',

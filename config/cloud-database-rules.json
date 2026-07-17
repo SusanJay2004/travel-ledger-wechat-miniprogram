@@ -1,0 +1,17 @@
+{
+  "audit_logs": { "read": false, "write": false },
+  "backup_manifests": { "read": false, "write": false },
+  "blocks": { "read": false, "write": false },
+  "friend_requests": { "read": false, "write": false },
+  "friendships": { "read": false, "write": false },
+  "idempotency_records": { "read": false, "write": false },
+  "notifications": { "read": false, "write": false },
+  "rate_limit_records": { "read": false, "write": false },
+  "sync_events": {
+    "read": "auth.openid == get(`database.users.${doc.userId}`).openId",
+    "write": false
+  },
+  "trip_invitations": { "read": false, "write": false },
+  "trips": { "read": false, "write": false },
+  "users": { "read": false, "write": false }
+}

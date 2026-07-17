@@ -48,7 +48,7 @@
 - `blocks`：单向拉黑关系。
 - `notifications`：用户自己的应用内通知。
 - `trip_invitations`：行程邀请及 7 天有效期。
-- `sync_events`：每个成员自己的实时同步信号，携带由云端写入的 `ownerOpenId`。
+- `sync_events`：每个成员自己的实时同步信号，只保存内部 `userId`，不复制 `OpenID`。
 - `audit_logs`：行程变更操作审计，仅云端可读写。
 - `idempotency_records`：写命令的请求去重、完成或失败结果，保留 24 小时。
 - `rate_limit_records`：按哈希身份、操作范围和时间窗记录的限流令牌，不保存明文 `OpenID`。
@@ -61,12 +61,12 @@
 
 ```json
 {
-  "read": "auth.openid == doc.ownerOpenId",
+  "read": "auth.openid == get(`database.users.${doc.userId}`).openId",
   "write": false
 }
 ```
 
-客户端监听时必须带 `userId + tripId` 精确条件；其他协作集合继续保持客户端不可读写。
+客户端监听时必须带 `{ userId, tripId }` 精确条件；规则通过私有 `users/<userId>` 文档核对 `auth.openid`，满足查询子集要求，同时不向前端暴露微信身份标识。对应索引顺序为 `userId + tripId`；其他协作集合继续保持客户端不可读写。
 
 所有写命令都必须携带 8–80 位 `requestId`。云端以 `SHA-256(OpenID + requestId)`
 作为幂等记录主键；同一请求的网络重试复用原标识并返回首次结果。若业务可能已提交但结果记录写入失败，

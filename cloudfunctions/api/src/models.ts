@@ -89,7 +89,6 @@ export interface TripInvitationDocument {
 export interface SyncEventDocument {
   id: string;
   userId: string;
-  ownerOpenId: string;
   tripId: string;
   ledgerRevision: number;
   action: string;

@@ -124,6 +124,29 @@ describe('cloud API command integration', () => {
         'qr-resolve-bob',
       );
       expect(successData(resolved)).toMatchObject({ publicId: alice.publicId });
+
+      const bobProfile = successData(
+        await command(cloud.sdk, 'session.bootstrap', {}, 'qr-refresh-bob'),
+      ) as { userId: string };
+      const users = cloud.database.collection<Record<string, unknown>>('users');
+      const bobStored = cloud.database
+        .documents('users')
+        .find((document) => document['id'] === bobProfile.userId)!;
+      await users.doc(bobProfile.userId).set({
+        data: {
+          ...bobStored,
+          qrSceneToken: stored['qrSceneToken'],
+          version: Number(bobStored['version']) + 1,
+        },
+      });
+      const ambiguous = await command(
+        cloud.sdk,
+        'social.resolveQrScene',
+        { token: stored['qrSceneToken'] },
+        'qr-resolve-ambiguous',
+      );
+      expect(successData(ambiguous)).toBeNull();
+
       const malformed = await command(
         cloud.sdk,
         'social.resolveQrScene',

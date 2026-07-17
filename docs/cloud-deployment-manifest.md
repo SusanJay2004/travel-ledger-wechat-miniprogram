@@ -4,6 +4,8 @@
 
 ## 集合与客户端权限
 
+规则模板位于 `config/cloud-database-rules.json` 和 `config/cloud-storage-rules.json`。微信控制台按集合分别保存数据库规则，因此部署时逐项复制模板并执行本清单的允许/拒绝烟测；模板存在不等于云端已生效。
+
 除 `sync_events` 外，下列集合全部设置为客户端不可读、不可写：
 
 `users`、`trips`、`friend_requests`、`friendships`、`blocks`、`notifications`、`trip_invitations`、`audit_logs`、`idempotency_records`、`rate_limit_records`、`backup_manifests`。
@@ -12,10 +14,12 @@
 
 ```json
 {
-  "read": "auth.openid == doc.ownerOpenId",
+  "read": "auth.openid == get(`database.users.${doc.userId}`).openId",
   "write": false
 }
 ```
+
+客户端监听必须显式查询 `{ userId, tripId }`。规则通过私有 `users` 文档校验当前微信身份，不在客户端可读的同步记录里保存 `OpenID`；微信安全规则要求查询条件包含 `get()` 路径使用的 `userId`。
 
 ## 索引
 
@@ -28,25 +32,40 @@
 | `users`               | 普通 | `qrSceneToken ASC`                          |
 | `users`               | 普通 | `pendingAvatarReviewId ASC`                 |
 | `users`               | 普通 | `pendingAvatarExpiresAt ASC`                |
+| `users`               | 普通 | `pendingAvatarExpiresAt ASC, _id ASC`       |
 | `users`               | 普通 | `_id ASC, version ASC`                      |
 | `users`               | 普通 | `status ASC`                                |
 | `trips`               | 普通 | `memberIds ASC`                             |
 | `trips`               | 普通 | `_id ASC, version ASC`                      |
 | `friend_requests`     | 普通 | `fromUserId ASC, toUserId ASC, status ASC`  |
 | `friend_requests`     | 唯一 | `pendingKey ASC`                            |
-| `friend_requests`     | 普通 | `toUserId ASC, createdAt DESC`              |
+| `friend_requests`     | 普通 | `fromUserId ASC`                            |
+| `friend_requests`     | 普通 | `toUserId ASC`                              |
+| `friend_requests`     | 普通 | `expiresAt ASC`                             |
 | `friendships`         | 普通 | `userIds ASC`                               |
 | `blocks`              | 普通 | `blockerUserId ASC, blockedUserId ASC`      |
-| `notifications`       | 普通 | `userId ASC, createdAt DESC`                |
+| `blocks`              | 普通 | `blockedUserId ASC`                         |
+| `notifications`       | 普通 | `userId ASC`                                |
+| `notifications`       | 普通 | `actorUserId ASC`                           |
 | `notifications`       | 普通 | `tripId ASC`                                |
+| `notifications`       | 普通 | `requestId ASC`                             |
+| `notifications`       | 普通 | `invitationId ASC`                          |
 | `trip_invitations`    | 普通 | `tripId ASC, inviteeUserId ASC, status ASC` |
 | `trip_invitations`    | 唯一 | `pendingKey ASC`                            |
-| `sync_events`         | 普通 | `userId ASC, tripId ASC, createdAt DESC`    |
-| `audit_logs`          | 普通 | `tripId ASC, createdAt DESC`                |
+| `trip_invitations`    | 普通 | `inviterUserId ASC`                         |
+| `trip_invitations`    | 普通 | `inviteeUserId ASC`                         |
+| `trip_invitations`    | 普通 | `expiresAt ASC`                             |
+| `sync_events`         | 普通 | `userId ASC, tripId ASC`                    |
+| `sync_events`         | 普通 | `userId ASC`                                |
+| `sync_events`         | 普通 | `tripId ASC`                                |
+| `sync_events`         | 普通 | `createdAt ASC`                             |
+| `audit_logs`          | 普通 | `tripId ASC`                                |
+| `audit_logs`          | 普通 | `createdAt ASC`                             |
 | `idempotency_records` | 普通 | `expiresAt ASC`                             |
 | `rate_limit_records`  | 普通 | `ownerHash ASC, scope ASC, bucket ASC`      |
 | `rate_limit_records`  | 普通 | `expiresAt ASC`                             |
 | `backup_manifests`    | 普通 | `createdAt DESC`                            |
+| `backup_manifests`    | 普通 | `expiresAt ASC`                             |
 
 ## 云函数
 
@@ -60,9 +79,20 @@
 
 ## 云存储
 
-- `avatars/<内部用户ID>/`：用户头像；云存储规则只允许文件创建者本人写入/删除，读取仅限业务所需。云函数保存资料时还会校验文件路径与当前内部用户 ID 一致；注销时删除。
+- 使用下列自定义规则。登录用户可读取需要展示的头像与个人码；客户端只能写入/删除由自己创建的 `avatars/` 文件。云函数管理端不受客户端规则限制，因此仍可生成个人码、备份并执行清理。
+
+```json
+{
+  "read": "auth != null && (/^avatars\\//.test(resource.path) || /^profile-codes\\//.test(resource.path))",
+  "write": "/^avatars\\//.test(resource.path) && resource.openid == auth.openid"
+}
+```
+
+- `avatars/<内部用户ID>/`：用户头像；云函数保存资料时还会校验文件路径与当前内部用户 ID 一致，内容审核明确通过前不启用，注销时删除。
 - `profile-codes/<内部用户ID>/<随机场景令牌>.png`：云函数生成的小程序码；每次生成使用独立路径，冲突请求只清理自己的文件，注销时删除。
 - `private-backups/`：只允许备份/恢复云函数与管理员访问，客户端完全不可访问。
+
+部署后分别用客户端和云函数测试允许/拒绝矩阵，不能只凭规则保存成功判断生效。
 
 ## 部署后烟测
 

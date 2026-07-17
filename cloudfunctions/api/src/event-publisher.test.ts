@@ -56,7 +56,7 @@ describe('EventPublisher', () => {
     ]);
     const events = social.listSyncEventsForTest();
     expect(events).toHaveLength(2);
-    expect(events.map((event) => event.ownerOpenId).sort()).toEqual(['openid-alice', 'openid-bob']);
+    expect(events.map((event) => event.userId).sort()).toEqual(['alice', 'bob']);
   });
 
   it('uses deterministic projection ids when the same change is published again', async () => {

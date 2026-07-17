@@ -39,7 +39,8 @@ export class MemoryRepository implements Repository {
   }
 
   async findUserByQrSceneToken(token: string): Promise<UserDocument | null> {
-    return [...this.users.values()].find((user) => user.qrSceneToken === token) ?? null;
+    const matches = [...this.users.values()].filter((user) => user.qrSceneToken === token);
+    return matches.length === 1 ? structuredClone(matches[0]!) : null;
   }
 
   async getUser(userId: string): Promise<UserDocument | null> {

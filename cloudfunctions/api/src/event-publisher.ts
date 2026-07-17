@@ -70,7 +70,6 @@ export class EventPublisher {
           .createSyncEvent({
             id: deterministicId('syn', after.id, String(after.version), 'trip.created', userId),
             userId,
-            ownerOpenId: user.openId,
             tripId: after.id,
             ledgerRevision: after.ledgerRevision,
             action: 'trip.created',
@@ -123,7 +122,6 @@ export class EventPublisher {
         const event: SyncEventDocument = {
           id: deterministicId('syn', after.id, String(after.version), action, userId),
           userId,
-          ownerOpenId: user.openId,
           tripId: after.id,
           ledgerRevision: after.ledgerRevision,
           action,

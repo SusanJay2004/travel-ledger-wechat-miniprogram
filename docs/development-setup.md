@@ -16,7 +16,7 @@
 4. 在项目设置中填写真实 AppID。仓库中的 `project.config.json` 使用游客 AppID，防止公开真实配置。
 5. 开通云开发，创建一个开发环境。生产发布时另建生产环境。
 6. 按 [cloud-database.md](./cloud-database.md) 创建完整集合、索引和安全规则。除 `sync_events` 的用户自有读取规则外，客户端均不可直接读写权威集合。
-7. 为集合建立索引：
+7. 严格按 [云开发部署清单](./cloud-deployment-manifest.md) 的完整表建立索引；下列只是首次登录与头像审核最关键的子集，不能替代完整表：
    - `users.openId`：唯一索引。
    - `users.publicId`：唯一索引。
    - `users.qrSceneToken`：普通索引；令牌本身使用 120 位安全随机数，解析时只接受单一命中。

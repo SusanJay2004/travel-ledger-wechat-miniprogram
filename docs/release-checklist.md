@@ -14,9 +14,9 @@
 
 ## 依赖与代码（阻断）
 
-- [x] `npm ci && npm run check && npm run build` 通过（2026-07-17，commit `f1c581e`：36 个测试文件、203 项测试、四个云函数构建成功）。
+- [x] `npm ci && npm run check && npm run build` 通过（2026-07-17，commit `3f7a29b`：37 个测试文件、209 项测试、四个云函数构建成功）。
 - [ ] `npm audit --audit-level=high` 通过，或取得 [依赖安全记录](./dependency-security.md) 所要求的微信/CloudBase 官方处置结论。
-- [x] `git status` 干净，`npm run security:secrets` 通过，且人工确认无 AppSecret、上传私钥、真实 AppID/环境 ID 和用户数据（2026-07-17，扫描 207 个待发布文件；项目配置仍为游客 AppID）。
+- [x] `git status` 干净，`npm run security:secrets` 通过，且人工确认无 AppSecret、上传私钥、真实 AppID/环境 ID 和用户数据（2026-07-17，扫描 209 个待发布文件；项目配置仍为游客 AppID）。
 - [ ] 发布 commit 已打语义化版本标签，并保留上一稳定构建。
 
 ## 云环境（阻断）
@@ -35,6 +35,7 @@
 - [x] 弱网不确定写入会在发送前持久化请求 ID，支持同意图重启复用、并发合并和 23 小时安全截止；退出登录清除可能含账单内容的本地记录（2026-07-17，commit `f5ce120`）。
 - [x] 服务端幂等记录绑定 action 与规范化 payload 摘要；所有读写请求在业务前限制 JSON 深度、节点和字符串总量并拒绝非 JSON 值（2026-07-17，commits `5567432`、`f1c581e`）。
 - [x] 归档满 30 天即时失去读取/恢复权限；重开只恢复期限内成员，异常期限 fail-closed（2026-07-17，commits `195d041`、`0c16afe`）。
+- [x] 软删除账单满 30 天即时从读取结果和恢复入口消失，异常或未来删除时间 fail-closed；维护任务只负责最终物理清理（2026-07-17，commit `3f7a29b`）。
 - [ ] 核心列表正常网络 2 秒内可交互；在线同步 3 秒内可见。
 
 ## 真机与多人验收（阻断）

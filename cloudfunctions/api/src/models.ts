@@ -27,7 +27,7 @@ export type FriendRequestStatus = 'pending' | 'accepted' | 'rejected' | 'expired
 
 export interface FriendRequestDocument {
   id: string;
-  pendingKey?: string;
+  pendingKey: string;
   fromUserId: string;
   toUserId: string;
   status: FriendRequestStatus;
@@ -76,7 +76,7 @@ export type InvitationStatus = 'pending' | 'accepted' | 'rejected' | 'expired';
 
 export interface TripInvitationDocument {
   id: string;
-  pendingKey?: string;
+  pendingKey: string;
   tripId: string;
   inviterUserId: string;
   inviteeUserId: string;

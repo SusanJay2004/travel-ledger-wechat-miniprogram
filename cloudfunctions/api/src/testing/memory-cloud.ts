@@ -238,15 +238,14 @@ function assertUnique(
 ): void {
   const fields =
     collectionName === 'users'
-      ? ['openId', 'publicId', 'qrSceneToken']
+      ? ['openId', 'publicId']
       : collectionName === 'friend_requests' || collectionName === 'trip_invitations'
         ? ['pendingKey']
         : [];
   for (const field of fields) {
     const value = candidate[field];
-    if (value === undefined || value === null) continue;
     const duplicate = [...documents.entries()].some(
-      ([id, document]) => id !== excludedId && document[field] === value,
+      ([id, document]) => id !== excludedId && (document[field] ?? null) === (value ?? null),
     );
     if (duplicate) throw new Error(`duplicate ${collectionName}.${field}`);
   }

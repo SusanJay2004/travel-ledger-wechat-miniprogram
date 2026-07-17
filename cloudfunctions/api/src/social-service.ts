@@ -179,9 +179,9 @@ export class SocialService {
       '暂时无法处理该申请。',
     );
     const now = this.clock.now();
-    const { pendingKey: _pendingKey, ...resolvedRequest } = request;
     const updated: FriendRequestDocument = {
-      ...resolvedRequest,
+      ...request,
+      pendingKey: resolvedPendingKey(request.id),
       status: accept ? 'accepted' : 'rejected',
       respondedAt: now.toISOString(),
     };
@@ -621,9 +621,9 @@ export class SocialService {
         'member',
         currentUser.id,
       );
-      const { pendingKey: _pendingKey, ...resolvedInvitation } = invitation;
       const updated: TripInvitationDocument = {
-        ...resolvedInvitation,
+        ...invitation,
+        pendingKey: resolvedPendingKey(invitation.id),
         status: 'accepted',
         respondedAt: now.toISOString(),
       };
@@ -672,9 +672,9 @@ export class SocialService {
       );
       return updated;
     }
-    const { pendingKey: _pendingKey, ...resolvedInvitation } = invitation;
     const updated: TripInvitationDocument = {
-      ...resolvedInvitation,
+      ...invitation,
+      pendingKey: resolvedPendingKey(invitation.id),
       status: 'rejected',
       respondedAt: now.toISOString(),
     };
@@ -740,6 +740,10 @@ function isExpired(expiresAt: string, now: Date): boolean {
 function pendingRelationKey(kind: 'friend' | 'trip', first: string, second: string): string {
   const parts = kind === 'friend' ? [first, second].sort() : [first, second];
   return `${kind}_${createHash('sha256').update(parts.join(':')).digest('hex').slice(0, 32)}`;
+}
+
+function resolvedPendingKey(recordId: string): string {
+  return `resolved_${recordId}`;
 }
 
 function notification(

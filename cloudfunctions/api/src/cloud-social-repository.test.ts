@@ -10,6 +10,30 @@ import type {
 import { MemoryCloudDatabase } from './testing/memory-cloud';
 
 describe('CloudSocialRepository pagination', () => {
+  it('mirrors WeChat unique indexes treating missing values as the same null', async () => {
+    const database = new MemoryCloudDatabase();
+    const collection = database.collection<Record<string, unknown>>('friend_requests');
+    await collection.add({ data: { _id: 'first', id: 'first' } });
+
+    await expect(collection.add({ data: { _id: 'second', id: 'second' } })).rejects.toThrow(
+      'duplicate friend_requests.pendingKey',
+    );
+  });
+
+  it('keeps distinct resolved keys so processed records can coexist under WeChat unique indexes', async () => {
+    const database = new MemoryCloudDatabase();
+    const repository = new CloudSocialRepository(database);
+    const first = friendRequest(1);
+    const second = friendRequest(2);
+
+    await expect(repository.createFriendRequest(first)).resolves.toEqual(first);
+    await expect(repository.createFriendRequest(second)).resolves.toEqual(second);
+    expect(database.documents('friend_requests').map((item) => item['pendingKey'])).toEqual([
+      'resolved_friend-request-001',
+      'resolved_friend-request-002',
+    ]);
+  });
+
   it('finds and lists friendships beyond the first 100 documents', async () => {
     const database = new MemoryCloudDatabase();
     const repository = new CloudSocialRepository(database);
@@ -50,6 +74,7 @@ describe('CloudSocialRepository pagination', () => {
         data: {
           _id: `invitation-${index}`,
           id: `invitation-${index}`,
+          pendingKey: `resolved_invitation-${index}`,
           tripId: 'trip-1',
           inviterUserId: index % 2 === 0 ? 'alice' : `friend-${index}`,
           inviteeUserId: index % 2 === 0 ? `friend-${index}` : 'alice',
@@ -120,6 +145,7 @@ function friendRequest(index: number): FriendRequestDocument {
   const suffix = String(index).padStart(3, '0');
   return {
     id: `friend-request-${suffix}`,
+    pendingKey: `resolved_friend-request-${suffix}`,
     fromUserId: 'alice',
     toUserId: `friend-${suffix}`,
     status: 'accepted',

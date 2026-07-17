@@ -77,12 +77,10 @@ export class MemorySocialRepository implements SocialRepository {
   }
 
   async createFriendRequest(request: FriendRequestDocument) {
-    if (request.pendingKey !== undefined) {
-      const existing = [...this.friendRequests.values()].find(
-        (item) => item.pendingKey === request.pendingKey,
-      );
-      if (existing !== undefined) return structuredClone(existing);
-    }
+    const existing = [...this.friendRequests.values()].find(
+      (item) => item.pendingKey === request.pendingKey,
+    );
+    if (existing !== undefined) return structuredClone(existing);
     this.friendRequests.set(request.id, structuredClone(request));
     return structuredClone(request);
   }
@@ -203,12 +201,10 @@ export class MemorySocialRepository implements SocialRepository {
   }
 
   async createInvitation(invitation: TripInvitationDocument) {
-    if (invitation.pendingKey !== undefined) {
-      const existing = [...this.invitations.values()].find(
-        (item) => item.pendingKey === invitation.pendingKey,
-      );
-      if (existing !== undefined) return structuredClone(existing);
-    }
+    const existing = [...this.invitations.values()].find(
+      (item) => item.pendingKey === invitation.pendingKey,
+    );
+    if (existing !== undefined) return structuredClone(existing);
     this.invitations.set(invitation.id, structuredClone(invitation));
     return structuredClone(invitation);
   }

@@ -44,7 +44,7 @@ export class CloudSocialRepository implements SocialRepository {
       await this.friendRequests().add({ data: withDocumentId(request) });
       return request;
     } catch (error: unknown) {
-      if (!isDuplicateError(error) || request.pendingKey === undefined) throw error;
+      if (!isDuplicateError(error)) throw error;
       const existing = await this.friendRequests()
         .where({ pendingKey: request.pendingKey })
         .limit(1)
@@ -169,7 +169,7 @@ export class CloudSocialRepository implements SocialRepository {
       await this.invitations().add({ data: withDocumentId(invitation) });
       return invitation;
     } catch (error: unknown) {
-      if (!isDuplicateError(error) || invitation.pendingKey === undefined) throw error;
+      if (!isDuplicateError(error)) throw error;
       const existing = await this.invitations()
         .where({ pendingKey: invitation.pendingKey })
         .limit(1)

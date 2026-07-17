@@ -19,8 +19,8 @@
 7. 为集合建立索引：
    - `users.openId`：唯一索引。
    - `users.publicId`：唯一索引。
-   - `users.qrSceneToken`：唯一稀疏索引。
-   - `users.pendingAvatarReviewId`：唯一稀疏索引，用于匹配微信 2.0 异步头像审核回调。
+   - `users.qrSceneToken`：普通索引；令牌本身使用 120 位安全随机数，解析时只接受单一命中。
+   - `users.pendingAvatarReviewId`：普通索引，用于匹配微信 2.0 异步头像审核回调；回调只在恰好命中一条待审记录时生效。
    - `users.pendingAvatarExpiresAt`：普通索引，用于清理超过 35 分钟未回调的候选头像。
    - `users._id + version`：普通组合索引，用于资料和注销的乐观并发更新。
    - `users.status`：普通索引，用于维护任务重试已注销账号的云文件清理。

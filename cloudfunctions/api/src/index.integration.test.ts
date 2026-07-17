@@ -674,7 +674,9 @@ describe('cloud API command integration', () => {
       expect(setup.cloud.database.documents('friend_requests')[0]).toMatchObject({
         status: 'rejected',
       });
-      expect(setup.cloud.database.documents('friend_requests')[0]).not.toHaveProperty('pendingKey');
+      expect(setup.cloud.database.documents('friend_requests')[0]?.['pendingKey']).toMatch(
+        /^resolved_/,
+      );
     } finally {
       if (previousMode === undefined) delete process.env['PRODUCT_MODE'];
       else process.env['PRODUCT_MODE'] = previousMode;

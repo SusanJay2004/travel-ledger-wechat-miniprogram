@@ -57,6 +57,14 @@ describe('LedgerService solo flow', () => {
     expect(user.displayName).toBe(`旅人${user.publicId.slice(-6)}`);
   });
 
+  it('bootstraps multiple accounts with nullable ordinary-index fields', async () => {
+    const bob = await service.bootstrapSession('openid-bob');
+
+    expect(bob.id).not.toBe(user.id);
+    expect(bob.qrSceneToken).toBeNull();
+    expect(bob.pendingAvatarReviewId).toBeUndefined();
+  });
+
   it('creates, dates and lists a trip in chronological order', async () => {
     const later = await service.createTrip(user, { name: '青岛 2026' });
     await service.addDate(user.id, {

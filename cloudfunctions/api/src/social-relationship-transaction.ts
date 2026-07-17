@@ -61,13 +61,13 @@ export class CloudSocialRelationshipTransition implements SocialRelationshipTran
       }
       const pending = pendingRequests.data[0];
       if (pending !== undefined && pending.status === 'pending') {
-        const { pendingKey: _pendingKey, ...resolved } = pending;
         await transaction
           .collection<FriendRequestDocument>('friend_requests')
           .doc(pending.id)
           .set({
             data: withoutDocumentId({
-              ...resolved,
+              ...pending,
+              pendingKey: resolvedPendingKey(pending.id),
               status: 'rejected',
               respondedAt: createdAt,
             }),
@@ -118,9 +118,9 @@ export class MemorySocialRelationshipTransition implements SocialRelationshipTra
     if (friendship !== null) await this.social.deleteFriendship(friendship.id);
     const pending = await this.social.findPendingFriendRequest(blockerUserId, blockedUserId);
     if (pending !== null) {
-      const { pendingKey: _pendingKey, ...resolved } = pending;
       await this.social.updateFriendRequest({
-        ...resolved,
+        ...pending,
+        pendingKey: resolvedPendingKey(pending.id),
         status: 'rejected',
         respondedAt: createdAt,
       });
@@ -164,6 +164,10 @@ function blockId(blockerUserId: string, blockedUserId: string): string {
     .digest('hex')
     .slice(0, 24);
   return `blk_${digest}`;
+}
+
+function resolvedPendingKey(recordId: string): string {
+  return `resolved_${recordId}`;
 }
 
 function withoutDocumentId<T extends { id: string }>(value: T): T {

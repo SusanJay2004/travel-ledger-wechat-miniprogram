@@ -18,9 +18,9 @@
 - `qrCodeFileId`、`qrSceneToken`：协作版个人小程序码文件和 20 位随机不透明场景令牌；二维码不包含公开 ID、内部 ID 或 `OpenID`，云端解析后只返回可申请好友的公开资料。
 - `status`、`version`、`createdAt`、`updatedAt`：生命周期与乐观并发字段。资料、二维码和注销均按 `version` 条件更新，避免并发请求覆盖注销状态。
 - `pendingFileDeletionIds`：换头像或注销时与资料版本原子记录的待删除云文件；API 立即尝试清理，失败由每日维护重试，不能只依赖客户端删除旧文件。
-- `pendingAvatarFileId`、`pendingAvatarReviewId`、`pendingAvatarExpiresAt`：2.0 异步头像审核候选、未公开的微信 `trace_id` 与 35 分钟兜底期限。旧头像在回调明确 `pass` 前继续生效；风险/超时候选进入持久化删除清单。`pendingAvatarReviewId` 使用唯一稀疏索引，`pendingAvatarExpiresAt` 使用普通索引。
+- `pendingAvatarFileId`、`pendingAvatarReviewId`、`pendingAvatarExpiresAt`：2.0 异步头像审核候选、未公开的微信 `trace_id` 与 35 分钟兜底期限。旧头像在回调明确 `pass` 前继续生效；风险/超时候选进入持久化删除清单。`pendingAvatarReviewId` 与 `pendingAvatarExpiresAt` 使用普通索引；微信把 `trace_id` 定义为单次请求唯一标识，回调函数仍只在查询恰好命中一条记录时更新。
 
-唯一索引：`openId`、`publicId`、稀疏 `qrSceneToken`；普通索引：`_id + version`、`status`。
+唯一索引：`openId`、`publicId`；普通索引：`qrSceneToken`、`pendingAvatarReviewId`、`pendingAvatarExpiresAt`、`_id + version`、`status`。微信云数据库唯一索引会把字段缺失和 `null` 都视为同一个空值，因此可选字段不得建立唯一索引。
 
 首页 100 条上限不能通过“先查询数量、再写行程”实现，因为并发请求会同时通过。服务端以 `users.homeTripCount` 为事务内计数器：事务读取用户和行程版本，校验增量后同时写入；账号资料更新也递增同一用户版本，避免覆盖计数。部署到已有数据的环境前必须先按 `members.viewState == home` 回填并核对计数；当前首次开发环境无历史生产数据，可从 0 初始化。
 
@@ -55,7 +55,7 @@
 
 需要为各集合的用户 ID、状态和到期时间组合建立查询索引。生产云函数默认 `solo`；只有平台发布门禁通过后才设置环境变量 `PRODUCT_MODE=collaboration`。
 
-`friend_requests.pendingKey` 与 `trip_invitations.pendingKey` 使用唯一稀疏索引，并只把活动哈希键用于待处理记录。它们分别按双方账号、以及行程与被邀请人生成不可逆哈希键；接受或拒绝时移除，到期重发时先以状态条件把旧键替换为该记录专属的已解决标记。这样不同设备使用不同 `requestId` 并发提交时也只会保留一个待处理入口，同时不会让刚过期、尚未来得及由维护任务清理的记录阻止重发。
+`friend_requests.pendingKey` 与 `trip_invitations.pendingKey` 使用普通唯一索引。待处理记录分别使用双方账号、以及行程与被邀请人生成的不可逆活动哈希键；接受、拒绝、拉黑或到期时必须把它替换为该记录专属的 `resolved_<记录ID>`，不能删除或写成 `null`。这是因为微信云数据库唯一索引不允许多条空值记录。这样不同设备使用不同 `requestId` 并发提交时只会保留一个待处理入口，同时已处理历史可长期共存且不会阻止重发。
 
 `sync_events` 是唯一需要客户端读取的协作集合，安全规则必须同时满足：
 

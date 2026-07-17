@@ -168,6 +168,7 @@ describe('SocialService collaboration gates', () => {
   it('persists a deterministic recovered notification exactly once', async () => {
     await socialRepository.createFriendRequest({
       id: 'frq_recovery',
+      pendingKey: 'friend_recovery',
       fromUserId: alice.id,
       toUserId: bob.id,
       status: 'pending',

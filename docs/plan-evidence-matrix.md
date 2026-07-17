@@ -58,7 +58,7 @@ npm run build
 npm audit --audit-level=critical
 ```
 
-2026-07-17 在提交 `a4c1a22` 上执行全量门禁：33 个测试文件、179 项测试通过，`api`、`avatar-review`、`maintenance`、`backup` 四个云函数构建成功，密钥扫描检查 201 个文件，无 critical 依赖公告。微信官方 `wx-server-sdk 4.0.2` 仍带 5 high + 1 moderate 上游公告，处置规则见 `dependency-security.md`，因此依赖发布门禁仍未通过。
+2026-07-17 在提交 `10d3655` 上执行全量门禁：33 个测试文件、182 项测试通过，`api`、`avatar-review`、`maintenance`、`backup` 四个云函数构建成功，密钥扫描检查 202 个文件，无 critical 依赖公告。微信官方 `wx-server-sdk 4.0.2` 仍带 5 high + 1 moderate 上游公告，处置规则见 `dependency-security.md`，因此依赖发布门禁仍未通过。
 
 ## 真实环境与发布阻断
 

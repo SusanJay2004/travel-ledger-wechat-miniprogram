@@ -14,7 +14,7 @@
 
 ## 依赖与代码（阻断）
 
-- [x] `npm ci && npm run check && npm run build` 通过（2026-07-17，commit `224022a`：33 个测试文件、179 项测试、四个云函数构建成功）。
+- [x] `npm ci && npm run check && npm run build` 通过（2026-07-17，commit `10d3655`：33 个测试文件、182 项测试、四个云函数构建成功）。
 - [ ] `npm audit --audit-level=high` 通过，或取得 [依赖安全记录](./dependency-security.md) 所要求的微信/CloudBase 官方处置结论。
 - [x] `git status` 干净，`npm run security:secrets` 通过，且人工确认无 AppSecret、上传私钥、真实 AppID/环境 ID 和用户数据（2026-07-17，扫描 202 个待发布文件；项目配置仍为游客 AppID）。
 - [ ] 发布 commit 已打语义化版本标签，并保留上一稳定构建。

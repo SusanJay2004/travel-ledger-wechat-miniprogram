@@ -6,7 +6,7 @@ import { WechatContentSecurity } from './content-security';
 import { BusinessError } from './errors';
 import { EventPublisher } from './event-publisher';
 import { secureIdGenerator, systemClock } from './generators';
-import { IdempotencyService, isWriteAction } from './idempotency';
+import { IdempotencyService, isWriteAction, requestPayloadHash } from './idempotency';
 import { LedgerService } from './service';
 import { RateLimiter } from './rate-limit';
 import { successResponse } from './response';
@@ -125,10 +125,18 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
   );
 
   try {
+    // Validate a bounded JSON shape for reads and writes before any database or domain work.
+    const payloadHash = requestPayloadHash(event.payload);
     await rateLimiter.consume(openId, requestId, action);
     const existingUser = await repository.findUserByOpenId(openId);
     if (action === 'session.deleteAccount' && existingUser === null) {
-      await idempotency.execute(openId, requestId, action, event.payload, async () => null);
+      await idempotency.executeWithPayloadHash(
+        openId,
+        requestId,
+        action,
+        payloadHash,
+        async () => null,
+      );
       return success(requestId, null);
     }
     const user =
@@ -137,7 +145,7 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
         : await service.bootstrapSession(openId);
     const write = <T>(operation: () => Promise<T>) =>
       isWriteAction(action)
-        ? idempotency.execute(openId, requestId, action, event.payload, operation)
+        ? idempotency.executeWithPayloadHash(openId, requestId, action, payloadHash, operation)
         : operation();
     switch (action) {
       case 'session.bootstrap':

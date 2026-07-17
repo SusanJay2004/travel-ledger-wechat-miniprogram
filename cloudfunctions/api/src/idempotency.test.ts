@@ -191,6 +191,61 @@ describe('IdempotencyService', () => {
       ),
     ).rejects.toMatchObject({ code: 'REQUEST_ID_REUSED' });
   });
+
+  it('rejects payloads that exceed structural budgets before running the write', async () => {
+    const service = new IdempotencyService(new MemoryCloudDatabase(), new TestClock());
+    const operation = async () => 'must-not-run';
+    const deep: Record<string, unknown> = {};
+    let cursor = deep;
+    for (let index = 0; index < 9; index += 1) {
+      const next: Record<string, unknown> = {};
+      cursor['next'] = next;
+      cursor = next;
+    }
+
+    await expect(
+      service.execute('openid-alice', 'request-too-deep', 'trip.create', deep, operation),
+    ).rejects.toMatchObject({ code: 'REQUEST_INVALID' });
+    await expect(
+      service.execute(
+        'openid-alice',
+        'request-too-large',
+        'trip.create',
+        { value: 'x'.repeat(16_385) },
+        operation,
+      ),
+    ).rejects.toMatchObject({ code: 'REQUEST_INVALID' });
+    await expect(
+      service.execute(
+        'openid-alice',
+        'request-too-wide',
+        'trip.create',
+        Array.from({ length: 257 }, (_, index) => index),
+        operation,
+      ),
+    ).rejects.toMatchObject({ code: 'REQUEST_INVALID' });
+  });
+
+  it('rejects cyclic and non-JSON payloads before creating an idempotency record', async () => {
+    const database = new MemoryCloudDatabase();
+    const service = new IdempotencyService(database, new TestClock());
+    const cyclic: Record<string, unknown> = {};
+    cyclic['self'] = cyclic;
+
+    await expect(
+      service.execute('openid-alice', 'request-cycle', 'trip.create', cyclic, async () => null),
+    ).rejects.toMatchObject({ code: 'REQUEST_INVALID' });
+    await expect(
+      service.execute(
+        'openid-alice',
+        'request-number',
+        'trip.create',
+        { amount: Number.NaN },
+        async () => null,
+      ),
+    ).rejects.toMatchObject({ code: 'REQUEST_INVALID' });
+    expect(database.documents).toHaveLength(0);
+  });
 });
 
 function documentId(value: unknown): string {

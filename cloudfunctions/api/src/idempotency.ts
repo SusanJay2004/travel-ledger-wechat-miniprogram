@@ -9,6 +9,15 @@ interface AddError {
   message?: string;
 }
 
+interface PayloadBudget {
+  nodes: number;
+  stringCodeUnits: number;
+}
+
+const MAX_PAYLOAD_DEPTH = 8;
+const MAX_PAYLOAD_NODES = 256;
+const MAX_PAYLOAD_STRING_CODE_UNITS = 16_384;
+
 export class IdempotencyService {
   constructor(
     private readonly db: CloudDatabase,
@@ -22,8 +31,26 @@ export class IdempotencyService {
     payload: unknown,
     operation: () => Promise<T>,
   ): Promise<T> {
+    return this.executeWithPayloadHash(
+      ownerOpenId,
+      requestId,
+      action,
+      requestPayloadHash(payload),
+      operation,
+    );
+  }
+
+  async executeWithPayloadHash<T>(
+    ownerOpenId: string,
+    requestId: string,
+    action: string,
+    payloadHash: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
     validateRequestId(requestId);
-    const payloadHash = hashPayload(payload);
+    if (!/^[a-f0-9]{64}$/.test(payloadHash)) {
+      throw new BusinessError('REQUEST_INVALID', '请求内容摘要无效。');
+    }
     const id = recordId(ownerOpenId, requestId);
     const collection = this.db.collection<IdempotencyRecordDocument>('idempotency_records');
     const existing = await getRecord(collection, id);
@@ -151,20 +178,76 @@ function resolveExisting<T>(
   return record.response as T;
 }
 
-function hashPayload(payload: unknown): string {
-  const canonical = JSON.stringify(sortJsonValue(payload)) ?? 'null';
+export function requestPayloadHash(payload: unknown): string {
+  const canonical =
+    JSON.stringify(
+      sortJsonValue(payload, 0, { nodes: 0, stringCodeUnits: 0 }, new WeakSet<object>()),
+    ) ?? 'null';
   return createHash('sha256').update(canonical).digest('hex');
 }
 
-function sortJsonValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortJsonValue);
-  if (typeof value !== 'object' || value === null) return value;
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter(([, item]) => item !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => [key, sortJsonValue(item)]),
-  );
+function sortJsonValue(
+  value: unknown,
+  depth: number,
+  budget: PayloadBudget,
+  ancestors: WeakSet<object>,
+): unknown {
+  budget.nodes += 1;
+  if (depth > MAX_PAYLOAD_DEPTH || budget.nodes > MAX_PAYLOAD_NODES) {
+    throw new BusinessError('REQUEST_INVALID', '请求内容层级过深或字段过多。');
+  }
+  if (typeof value === 'string') {
+    consumePayloadString(value, budget);
+    return value;
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      throw new BusinessError('REQUEST_INVALID', '请求内容包含无效数字。');
+    }
+    return value;
+  }
+  if (typeof value === 'boolean' || value === null || value === undefined) return value;
+  if (typeof value !== 'object') {
+    throw new BusinessError('REQUEST_INVALID', '请求内容不是有效的 JSON 数据。');
+  }
+  if (ancestors.has(value)) {
+    throw new BusinessError('REQUEST_INVALID', '请求内容不能循环引用。');
+  }
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) {
+      if (value.length > MAX_PAYLOAD_NODES) {
+        throw new BusinessError('REQUEST_INVALID', '请求内容字段过多。');
+      }
+      return value.map((item) => sortJsonValue(item, depth + 1, budget, ancestors));
+    }
+    const prototype = Object.getPrototypeOf(value) as object | null;
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new BusinessError('REQUEST_INVALID', '请求内容不是普通 JSON 对象。');
+    }
+    const entries = Object.entries(value);
+    if (entries.length > MAX_PAYLOAD_NODES) {
+      throw new BusinessError('REQUEST_INVALID', '请求内容字段过多。');
+    }
+    return Object.fromEntries(
+      entries
+        .filter(([, item]) => item !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => {
+          consumePayloadString(key, budget);
+          return [key, sortJsonValue(item, depth + 1, budget, ancestors)];
+        }),
+    );
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
+function consumePayloadString(value: string, budget: PayloadBudget): void {
+  budget.stringCodeUnits += value.length;
+  if (budget.stringCodeUnits > MAX_PAYLOAD_STRING_CODE_UNITS) {
+    throw new BusinessError('REQUEST_INVALID', '请求内容过大。');
+  }
 }
 
 function serializeError(error: unknown): NonNullable<IdempotencyRecordDocument['error']> {

@@ -23,6 +23,20 @@ describe('cloud API command integration', () => {
     expect(cloud.database.documents('users')).toEqual([]);
   });
 
+  it('rejects oversized payload structure for read commands before bootstrapping an account', async () => {
+    const cloud = createMemoryCloudSdk('openid-alice');
+    const oversized = Array.from({ length: 257 }, (_, index) => index);
+
+    const response = await handleApiEvent(
+      { action: 'social.search', requestId: 'request-oversized', payload: { oversized } },
+      cloud.sdk,
+    );
+
+    expect(response).toMatchObject({ ok: false, error: { code: 'REQUEST_INVALID' } });
+    expect(cloud.database.documents('users')).toEqual([]);
+    expect(cloud.database.documents('rate_limit_records')).toEqual([]);
+  });
+
   it('runs an idempotent create/date/delete command chain and hides internal projections', async () => {
     const cloud = createMemoryCloudSdk('openid-alice');
     const bootstrap = await command(cloud.sdk, 'session.bootstrap', {}, 'request-boot');

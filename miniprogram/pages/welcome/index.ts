@@ -1,4 +1,4 @@
-import { getSessionProfile, isLocalSessionSignedOut } from '../../services/session';
+import { isLocalSessionSignedOut, resumeSessionFromWelcome } from '../../services/session';
 
 interface WelcomeData {
   accepted: boolean;
@@ -39,7 +39,7 @@ Page<WelcomeData, WelcomeMethods>({
     }
     this.setData({ errorMessage: '', loading: true });
     try {
-      await getSessionProfile();
+      await resumeSessionFromWelcome();
       wx.setStorageSync('privacy-consent-v1', true);
       const pending = readPendingLaunch();
       wx.removeStorageSync('pending-launch-v1');

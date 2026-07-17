@@ -4,15 +4,18 @@ interface PendingAvatarStage {
   avatarToken: string;
   confirmed: boolean;
   createdAt: number;
+  ownerUserId: string;
   requestId: string;
   sha256: string;
   size: number;
 }
 
-const PENDING_AVATAR_STAGE_KEY = 'pending-avatar-stage-v1';
+const PENDING_AVATAR_STAGE_KEY = 'pending-avatar-stage-v2';
+const LEGACY_PENDING_AVATAR_STAGE_KEY = 'pending-avatar-stage-v1';
 const MAX_AVATAR_BYTES = 1024 * 1024;
 const RETRY_WINDOW_MS = 23 * 60 * 60 * 1000;
 const CONFIRMED_REUSE_WINDOW_MS = 30 * 60 * 1000;
+let avatarUploadOwnerUserId: string | null = null;
 
 const DEFINITELY_REJECTED_CODES = new Set([
   'ACCOUNT_DELETION_PENDING',
@@ -39,6 +42,10 @@ export async function stageAvatar(localPath: string): Promise<string> {
     throw new Error('当前微信版本不支持安全头像上传，请升级微信后重试。');
   }
   const metadata = await fileMetadata(localPath);
+  const ownerUserId = avatarUploadOwnerUserId;
+  if (ownerUserId === null) {
+    throw new ApiError('LOCAL_SESSION_REQUIRED', '请先完成微信身份登录后再上传头像。', true);
+  }
   if (metadata.size < 1 || metadata.size > MAX_AVATAR_BYTES) {
     throw new ApiError('AVATAR_TOO_LARGE', '头像文件不能超过 1 MB。', false);
   }
@@ -46,6 +53,7 @@ export async function stageAvatar(localPath: string): Promise<string> {
   const storedAge = stored === null ? Number.POSITIVE_INFINITY : Date.now() - stored.createdAt;
   const reusable =
     stored !== null &&
+    stored.ownerUserId === ownerUserId &&
     stored.size === metadata.size &&
     stored.sha256 === metadata.sha256 &&
     (!stored.confirmed || storedAge < CONFIRMED_REUSE_WINDOW_MS);
@@ -55,6 +63,7 @@ export async function stageAvatar(localPath: string): Promise<string> {
         avatarToken: createRequestId(),
         confirmed: false,
         createdAt: Date.now(),
+        ownerUserId,
         requestId: createRequestId(),
         sha256: metadata.sha256,
         size: metadata.size,
@@ -94,6 +103,9 @@ export async function stageAvatar(localPath: string): Promise<string> {
   ) {
     throw uncertainAvatarStage(pending.requestId);
   }
+  if (avatarUploadOwnerUserId !== ownerUserId) {
+    throw new ApiError('LOCAL_SESSION_CHANGED', '登录状态已改变，请重新进入后核对头像。', true);
+  }
   if (!response.ok) {
     if (!['REQUEST_IN_PROGRESS', 'REQUEST_RESULT_UNCERTAIN'].includes(response.error.code)) {
       clearPendingAvatarStage();
@@ -122,14 +134,38 @@ export function avatarSaveErrorMessage(error: unknown): string {
 }
 
 export function clearPendingAvatarStage(): void {
+  for (const key of [PENDING_AVATAR_STAGE_KEY, LEGACY_PENDING_AVATAR_STAGE_KEY]) {
+    try {
+      wx.removeStorageSync(key);
+    } catch {
+      // Best-effort local privacy cleanup.
+    }
+  }
+}
+
+export function clearAvatarUploadAccount(): void {
+  avatarUploadOwnerUserId = null;
+  clearPendingAvatarStage();
+}
+
+export function configureAvatarUploadAccount(userId: string): void {
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(userId)) {
+    throw new ApiError('LOCAL_SESSION_INVALID', '本地账号标识无效，请重新进入小程序。', false);
+  }
+  if (avatarUploadOwnerUserId !== userId) {
+    avatarUploadOwnerUserId = userId;
+    const stored = loadPendingStage();
+    if (stored !== null && stored.ownerUserId !== userId) clearPendingAvatarStage();
+  }
   try {
-    wx.removeStorageSync(PENDING_AVATAR_STAGE_KEY);
+    wx.removeStorageSync(LEGACY_PENDING_AVATAR_STAGE_KEY);
   } catch {
-    // Best-effort local privacy cleanup.
+    // Legacy unscoped staging records are never reused.
   }
 }
 
 export function resetAvatarStageForTest(): void {
+  avatarUploadOwnerUserId = null;
   clearPendingAvatarStage();
 }
 
@@ -153,6 +189,7 @@ function loadPendingStage(): PendingAvatarStage | null {
       typeof record['avatarToken'] !== 'string' ||
       typeof record['confirmed'] !== 'boolean' ||
       typeof record['createdAt'] !== 'number' ||
+      typeof record['ownerUserId'] !== 'string' ||
       typeof record['requestId'] !== 'string' ||
       typeof record['sha256'] !== 'string' ||
       typeof record['size'] !== 'number'

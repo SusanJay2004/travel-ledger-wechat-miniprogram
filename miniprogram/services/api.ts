@@ -157,11 +157,14 @@ export interface CallApiOptions {
 interface PendingWriteRequest {
   action: string;
   createdAt: number;
+  ownerUserId: string;
   payload: string;
   requestId: string;
 }
 
-const PENDING_WRITES_KEY = 'pending-api-writes-v1';
+const PENDING_WRITES_KEY = 'pending-api-writes-v2';
+const LEGACY_PENDING_WRITES_KEY = 'pending-api-writes-v1';
+const SIGNED_OUT_KEY = 'local-session-signed-out-v1';
 const PENDING_WRITE_RETRY_WINDOW_MS = 23 * 60 * 60 * 1000;
 const READ_ACTIONS = new Set([
   'session.bootstrap',
@@ -178,6 +181,9 @@ const READ_ACTIONS = new Set([
 ]);
 
 let pendingWrites: PendingWriteRequest[] | null = null;
+let pendingWriteOwnerUserId: string | null = null;
+let localApiGeneration = 0;
+let localApiSignedOut = false;
 const inFlightWrites = new Map<string, Promise<unknown>>();
 
 export function callApi<T>(
@@ -187,16 +193,46 @@ export function callApi<T>(
 ): Promise<T> {
   const writeAction = !READ_ACTIONS.has(action);
   const canonicalPayload = canonicalJson(payload);
-  if (!writeAction) return performApiCall(action, payload, options, false, canonicalPayload);
+  const apiGeneration = localApiGeneration;
+  if (!writeAction) {
+    if (action !== 'session.bootstrap' && isApiLocallySignedOut()) {
+      return Promise.reject(
+        new ApiError('LOCAL_SESSION_REQUIRED', '请从欢迎页重新进入后再操作。', false),
+      );
+    }
+    const ownerUserId =
+      action === 'session.bootstrap' ? undefined : (pendingWriteOwnerUserId ?? undefined);
+    return performApiCall(
+      action,
+      payload,
+      options,
+      false,
+      canonicalPayload,
+      ownerUserId,
+      apiGeneration,
+    );
+  }
+  const ownerUserId = pendingWriteOwnerUserId;
+  if (ownerUserId === null) {
+    return Promise.reject(
+      new ApiError('LOCAL_SESSION_REQUIRED', '请先完成微信身份登录后再操作。', true),
+    );
+  }
 
-  const intentKey = `${action}\n${canonicalPayload}`;
+  const intentKey = `${ownerUserId}\n${action}\n${canonicalPayload}`;
   const active = inFlightWrites.get(intentKey);
   if (active !== undefined) return active as Promise<T>;
-  const request = performApiCall<T>(action, payload, options, true, canonicalPayload).finally(
-    () => {
-      if (inFlightWrites.get(intentKey) === request) inFlightWrites.delete(intentKey);
-    },
-  );
+  const request = performApiCall<T>(
+    action,
+    payload,
+    options,
+    true,
+    canonicalPayload,
+    ownerUserId,
+    apiGeneration,
+  ).finally(() => {
+    if (inFlightWrites.get(intentKey) === request) inFlightWrites.delete(intentKey);
+  });
   inFlightWrites.set(intentKey, request);
   return request;
 }
@@ -207,9 +243,14 @@ async function performApiCall<T>(
   options: CallApiOptions,
   writeAction: boolean,
   canonicalPayload: string,
+  ownerUserId?: string,
+  apiGeneration?: number,
 ): Promise<T> {
   if (wx.cloud === undefined) throw new Error('当前微信版本不支持云开发。');
-  const pending = writeAction ? findPendingWrite(action, canonicalPayload) : null;
+  const pending =
+    writeAction && ownerUserId !== undefined
+      ? findPendingWrite(ownerUserId, action, canonicalPayload)
+      : null;
   if (pending !== null && Date.now() - pending.createdAt >= PENDING_WRITE_RETRY_WINDOW_MS) {
     throw new ApiError(
       'STALE_UNCERTAIN_WRITE',
@@ -226,6 +267,7 @@ async function performApiCall<T>(
       rememberPendingWrite({
         action,
         createdAt: pending?.requestId === requestId ? pending.createdAt : Date.now(),
+        ownerUserId: ownerUserId!,
         payload: canonicalPayload,
         requestId,
       });
@@ -257,13 +299,20 @@ async function performApiCall<T>(
     if (writeAction) throw transportResultUncertain(requestId);
     throw new Error('服务器返回了无法识别的数据。');
   }
+  if (
+    apiGeneration !== undefined &&
+    (localApiGeneration !== apiGeneration ||
+      (ownerUserId !== undefined && pendingWriteOwnerUserId !== ownerUserId))
+  ) {
+    throw new ApiError('LOCAL_SESSION_CHANGED', '登录状态已改变，请重新进入后核对结果。', true);
+  }
   if (!response.ok) {
     if (
       writeAction &&
       response.error.code !== 'REQUEST_IN_PROGRESS' &&
       response.error.code !== 'REQUEST_RESULT_UNCERTAIN'
     ) {
-      forgetPendingWrite(action, canonicalPayload);
+      forgetPendingWrite(ownerUserId!, action, canonicalPayload);
     }
     throw new ApiError(
       response.error.code,
@@ -272,7 +321,7 @@ async function performApiCall<T>(
       response.error.details,
     );
   }
-  if (writeAction) forgetPendingWrite(action, canonicalPayload);
+  if (writeAction) forgetPendingWrite(ownerUserId!, action, canonicalPayload);
   return response.data;
 }
 
@@ -293,9 +342,20 @@ export function createRequestId(): string {
   return `${Date.now().toString(36)}-${random}`;
 }
 
-function findPendingWrite(action: string, payload: string): PendingWriteRequest | null {
+function findPendingWrite(
+  ownerUserId: string,
+  action: string,
+  payload: string,
+): PendingWriteRequest | null {
   const records = loadPendingWrites();
-  return records.find((record) => record.action === action && record.payload === payload) ?? null;
+  return (
+    records.find(
+      (record) =>
+        record.ownerUserId === ownerUserId &&
+        record.action === action &&
+        record.payload === payload,
+    ) ?? null
+  );
 }
 
 function rememberPendingWrite(record: PendingWriteRequest): void {
@@ -306,10 +366,15 @@ function rememberPendingWrite(record: PendingWriteRequest): void {
   persistPendingWrites(true);
 }
 
-function forgetPendingWrite(action: string, payload: string): void {
+function forgetPendingWrite(ownerUserId: string, action: string, payload: string): void {
   const records = loadPendingWrites();
   const next = records.filter(
-    (record) => !(record.action === action && record.payload === payload),
+    (record) =>
+      !(
+        record.ownerUserId === ownerUserId &&
+        record.action === action &&
+        record.payload === payload
+      ),
   );
   if (next.length === records.length) return;
   pendingWrites = next;
@@ -344,6 +409,7 @@ function isPendingWriteRequest(value: unknown): value is PendingWriteRequest {
   return (
     typeof record['action'] === 'string' &&
     typeof record['createdAt'] === 'number' &&
+    typeof record['ownerUserId'] === 'string' &&
     typeof record['payload'] === 'string' &&
     typeof record['requestId'] === 'string'
   );
@@ -394,15 +460,54 @@ function sortJsonValue(value: unknown): unknown {
 
 export function resetPendingWritesForTest(): void {
   pendingWrites = null;
+  pendingWriteOwnerUserId = null;
+  localApiGeneration = 0;
+  localApiSignedOut = false;
   inFlightWrites.clear();
 }
 
 export function clearPendingApiWrites(): void {
   pendingWrites = [];
+  pendingWriteOwnerUserId = null;
+  localApiGeneration += 1;
+  localApiSignedOut = true;
   inFlightWrites.clear();
+  for (const key of [PENDING_WRITES_KEY, LEGACY_PENDING_WRITES_KEY]) {
+    try {
+      wx.removeStorageSync(key);
+    } catch {
+      // Best-effort local privacy cleanup during sign-out.
+    }
+  }
+}
+
+export function configureApiAccount(userId: string): void {
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(userId)) {
+    throw new ApiError('LOCAL_SESSION_INVALID', '本地账号标识无效，请重新进入小程序。', false);
+  }
+  if (pendingWriteOwnerUserId === userId) {
+    localApiSignedOut = false;
+    return;
+  }
+  if (pendingWriteOwnerUserId !== null) localApiGeneration += 1;
+  pendingWriteOwnerUserId = userId;
+  localApiSignedOut = false;
+  inFlightWrites.clear();
+  pendingWrites = null;
+  pendingWrites = loadPendingWrites().filter((record) => record.ownerUserId === userId);
+  persistPendingWrites(false);
   try {
-    wx.removeStorageSync(PENDING_WRITES_KEY);
+    wx.removeStorageSync(LEGACY_PENDING_WRITES_KEY);
   } catch {
-    // Best-effort local privacy cleanup during sign-out.
+    // Legacy unscoped intents are never reused.
+  }
+}
+
+function isApiLocallySignedOut(): boolean {
+  if (localApiSignedOut) return true;
+  try {
+    return wx.getStorageSync<boolean>(SIGNED_OUT_KEY) === true;
+  } catch {
+    return true;
   }
 }

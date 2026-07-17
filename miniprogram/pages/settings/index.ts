@@ -1,5 +1,5 @@
 import { callApi } from '../../services/api';
-import { clearCachedSessionProfile, signOutLocalSession } from '../../services/session';
+import { signOutLocalSession } from '../../services/session';
 
 interface SettingsData {
   deleting: boolean;
@@ -30,12 +30,13 @@ Page<SettingsData, SettingsMethods>({
     });
     if (!result.confirm) return;
     this.setData({ signingOut: true });
-    try {
-      signOutLocalSession();
-    } catch {
-      this.setData({ signingOut: false });
-      void wx.showToast({ icon: 'none', title: '本机存储不可用，暂时无法退出' });
-      return;
+    const localDataCleared = signOutLocalSession();
+    if (!localDataCleared) {
+      await wx.showModal({
+        title: '已停止登录',
+        content: '部分本机缓存无法确认清除。请在微信设置中清理本小程序存储后再交给他人使用。',
+        showCancel: false,
+      });
     }
     void wx.removeTabBarBadge({ index: 1 }).catch(() => undefined);
     void wx.reLaunch({ url: '/pages/welcome/index' });
@@ -61,13 +62,23 @@ Page<SettingsData, SettingsMethods>({
     this.setData({ deleting: true });
     try {
       await callApi('session.deleteAccount');
-      clearCachedSessionProfile();
-      wx.clearStorageSync();
-      void wx.reLaunch({ url: '/pages/welcome/index' });
     } catch (error: unknown) {
       this.setData({ deleting: false });
       void wx.showModal({ title: '注销未完成', content: toMessage(error), showCancel: false });
+      return;
     }
+
+    const localDataCleared = signOutLocalSession();
+    if (!localDataCleared) {
+      await wx.showModal({
+        title: '账号已注销',
+        content:
+          '云端账号已永久注销，但部分本机缓存无法确认清除。请在微信设置中清理本小程序存储后再交给他人使用。',
+        showCancel: false,
+      });
+    }
+    void wx.removeTabBarBadge({ index: 1 }).catch(() => undefined);
+    void wx.reLaunch({ url: '/pages/welcome/index' });
   },
 });
 

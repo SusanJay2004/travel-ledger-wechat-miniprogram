@@ -23,10 +23,8 @@ Page<CodeData, CodeMethods>({
   async loadCode() {
     this.setData({ errorMessage: '', loading: true });
     try {
-      const [profile, code] = await Promise.all([
-        getSessionProfile(true),
-        callApi<{ url: string }>('session.qrCode'),
-      ]);
+      const profile = await getSessionProfile(true);
+      const code = await callApi<{ url: string }>('session.qrCode');
       this.setData({ loading: false, profile, url: code.url });
     } catch (error: unknown) {
       this.setData({ errorMessage: toMessage(error), loading: false });

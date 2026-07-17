@@ -4,6 +4,8 @@ import {
   reconcileBillConflict,
   type ConflictMemberRow,
 } from '../../services/conflict';
+import { readBillDraft, removeBillDraft, writeBillDraft } from '../../services/bill-draft';
+import { getSessionProfile } from '../../services/session';
 
 type MemberRow = ConflictMemberRow;
 
@@ -19,6 +21,7 @@ interface BillEditorData {
   allocationWarning: string;
   loading: boolean;
   memberRows: readonly MemberRow[];
+  ownerUserId: string;
   saving: boolean;
   draftRestored: boolean;
   title: string;
@@ -56,6 +59,7 @@ Page<BillEditorData, BillEditorMethods>({
     allocationWarning: '',
     loading: true,
     memberRows: [],
+    ownerUserId: '',
     saving: false,
     draftRestored: false,
     title: '',
@@ -89,9 +93,15 @@ Page<BillEditorData, BillEditorMethods>({
       return;
     }
     try {
-      const trip = await callApi<TripDetail>('trip.get', { tripId: this.data.tripId });
+      const [trip, profile] = await Promise.all([
+        callApi<TripDetail>('trip.get', { tripId: this.data.tripId }),
+        getSessionProfile(),
+      ]);
       const existing = trip.bills.find((bill) => bill.id === this.data.billId);
-      const draft = existing === undefined ? readDraft(this.data.tripId, this.data.date) : null;
+      const draft =
+        existing === undefined
+          ? readBillDraft(profile.userId, this.data.tripId, this.data.date)
+          : null;
       const amountYuan =
         draft?.amountYuan ??
         (existing === undefined ? '' : (existing.amountCents / 100).toFixed(2));
@@ -130,6 +140,7 @@ Page<BillEditorData, BillEditorMethods>({
         draftRestored: draft !== null,
         loading: false,
         memberRows,
+        ownerUserId: profile.userId,
         title: draft?.title ?? existing?.title ?? '',
         trip,
         writeBlockedReason,
@@ -258,7 +269,7 @@ Page<BillEditorData, BillEditorMethods>({
         expectedVersion: trip.version,
         bill: { title, amountCents, participants, payers },
       });
-      removeDraft(this.data.tripId, this.data.date);
+      removeBillDraft(this.data.ownerUserId, this.data.tripId, this.data.date);
       void wx.navigateBack();
     } catch (error: unknown) {
       if (isVersionConflict(error)) {
@@ -371,7 +382,7 @@ Page<BillEditorData, BillEditorMethods>({
 
   persistDraft() {
     if (this.data.billId.length > 0 || this.data.saving || !hasDraftContent(this.data)) return;
-    writeDraft(this.data.tripId, this.data.date, {
+    writeBillDraft(this.data.ownerUserId, this.data.tripId, this.data.date, {
       amountYuan: this.data.amountYuan,
       memberRows: this.data.memberRows.map((member) => ({
         userId: member.userId,
@@ -385,42 +396,12 @@ Page<BillEditorData, BillEditorMethods>({
   },
 });
 
-interface BillDraft {
-  amountYuan: string;
-  memberRows: readonly Pick<
-    MemberRow,
-    'userId' | 'paidYuan' | 'participantSelected' | 'payerSelected' | 'shares'
-  >[];
-  title: string;
-}
-
-const DRAFT_PREFIX = 'bill-draft-v1';
-
-function draftKey(tripId: string, date: string): string {
-  return `${DRAFT_PREFIX}:${tripId}:${date}`;
-}
-
-function readDraft(tripId: string, date: string): BillDraft | null {
-  try {
-    const value = wx.getStorageSync<unknown>(draftKey(tripId, date));
-    if (typeof value !== 'object' || value === null || !('memberRows' in value)) return null;
-    return value as BillDraft;
-  } catch {
-    return null;
-  }
-}
-
-function writeDraft(tripId: string, date: string, draft: BillDraft): void {
-  if (tripId.length > 0 && date.length > 0) wx.setStorageSync(draftKey(tripId, date), draft);
-}
-
-function removeDraft(tripId: string, date: string): void {
-  wx.removeStorageSync(draftKey(tripId, date));
-}
-
 function applyDraftRows(
   rows: readonly MemberRow[],
-  draftRows: BillDraft['memberRows'],
+  draftRows: readonly Pick<
+    MemberRow,
+    'userId' | 'paidYuan' | 'participantSelected' | 'payerSelected' | 'shares'
+  >[],
 ): MemberRow[] {
   const draftById = new Map(draftRows.map((row) => [row.userId, row]));
   return rows.map((row) => ({ ...row, ...draftById.get(row.userId) }));

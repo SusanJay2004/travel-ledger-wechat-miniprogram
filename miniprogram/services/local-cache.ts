@@ -13,7 +13,15 @@ const CACHE_PREFIX = 'travel-ledger-cache-v1:';
 const PROFILE_KEY = `${CACHE_PREFIX}profile`;
 const HOME_PREFIX = `${CACHE_PREFIX}home:`;
 const TRIP_PREFIX = `${CACHE_PREFIX}trip:`;
-const DRAFT_PREFIX = 'bill-draft-v1:';
+const ACCOUNT_STORAGE_PREFIXES = [CACHE_PREFIX, 'bill-draft-v1:', 'bill-draft-v2:'] as const;
+const ACCOUNT_STORAGE_KEYS = [
+  'pending-launch-v1',
+  'pending-api-writes-v1',
+  'pending-api-writes-v2',
+  'pending-avatar-stage-v1',
+  'pending-avatar-stage-v2',
+] as const;
+const PRIVACY_CONSENT_KEY = 'privacy-consent-v1';
 const MAX_TRIP_CACHE_ENTRIES = 12;
 
 export function writeCachedProfile(profile: SessionProfile): void {
@@ -44,23 +52,45 @@ export function readTripDetailCache(
   return readEnvelope(`${TRIP_PREFIX}${userId}:${tripId}`, isTripDetail);
 }
 
-export function clearLocalAccountData(): void {
-  for (const key of cacheKeys()) {
-    if (key.startsWith(CACHE_PREFIX) || key.startsWith(DRAFT_PREFIX)) {
-      try {
-        wx.removeStorageSync(key);
-      } catch {
-        // A failed best-effort cleanup must not trap the user in the signed-in state.
-      }
+export function clearLocalAccountData(): boolean {
+  const privacyConsented = readPrivacyConsent();
+  const keys = cacheKeys();
+  if (keys === null) return clearAllLocalData(privacyConsented);
+  const accountKeys = new Set<string>(ACCOUNT_STORAGE_KEYS);
+  for (const key of keys) {
+    if (ACCOUNT_STORAGE_PREFIXES.some((prefix) => key.startsWith(prefix))) accountKeys.add(key);
+  }
+  let complete = true;
+  for (const key of accountKeys) {
+    try {
+      wx.removeStorageSync(key);
+    } catch {
+      complete = false;
     }
   }
+  if (!complete) return clearAllLocalData(privacyConsented);
+  return true;
+}
+
+export function clearAllLocalStorage(): boolean {
   try {
-    wx.removeStorageSync('pending-launch-v1');
-    wx.removeStorageSync('pending-api-writes-v1');
-    wx.removeStorageSync('pending-avatar-stage-v1');
+    wx.clearStorageSync();
+    return true;
   } catch {
-    // Ignore unavailable local storage during sign-out.
+    return false;
   }
+}
+
+function clearAllLocalData(privacyConsented: boolean): boolean {
+  if (!clearAllLocalStorage()) return false;
+  if (privacyConsented) {
+    try {
+      wx.setStorageSync(PRIVACY_CONSENT_KEY, true);
+    } catch {
+      // Losing a non-sensitive preference is safer than retaining account data.
+    }
+  }
+  return true;
 }
 
 export function formatCacheTime(savedAt: string): string {
@@ -100,7 +130,7 @@ function readEnvelope<T>(
 }
 
 function pruneTripCaches(): void {
-  const entries = cacheKeys()
+  const entries = (cacheKeys() ?? [])
     .filter((key) => key.startsWith(TRIP_PREFIX))
     .map((key) => ({ key, savedAt: readSavedAt(key) }))
     .sort((left, right) => right.savedAt.localeCompare(left.savedAt));
@@ -122,11 +152,19 @@ function readSavedAt(key: string): string {
   }
 }
 
-function cacheKeys(): readonly string[] {
+function cacheKeys(): readonly string[] | null {
   try {
     return wx.getStorageInfoSync().keys;
   } catch {
-    return [];
+    return null;
+  }
+}
+
+function readPrivacyConsent(): boolean {
+  try {
+    return wx.getStorageSync<boolean>(PRIVACY_CONSENT_KEY) === true;
+  } catch {
+    return false;
   }
 }
 

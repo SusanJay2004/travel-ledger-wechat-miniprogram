@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { ApiError, callApi, resetPendingWritesForTest } from './api';
+import { ApiError, callApi, configureApiAccount, resetPendingWritesForTest } from './api';
+
+const TEST_USER_ID = 'usr_test';
+const SECOND_TEST_USER_ID = 'usr_second';
+const PENDING_WRITES_KEY = 'pending-api-writes-v2';
 
 describe('cloud API transport idempotency', () => {
   afterEach(() => {
@@ -19,6 +23,7 @@ describe('cloud API transport idempotency', () => {
       return { result: { ok: true, requestId, data: { tripId: 'trip-1' } } };
     });
     vi.stubGlobal('wx', wxStub(storage, callFunction));
+    configureApiAccount(TEST_USER_ID);
 
     await expect(callApi('trip.create', { name: '青岛之旅' })).rejects.toMatchObject({
       code: 'TRANSPORT_RESULT_UNCERTAIN',
@@ -27,11 +32,12 @@ describe('cloud API transport idempotency', () => {
     expect(new Set(firstRequestIds)).toHaveLength(1);
 
     resetPendingWritesForTest();
+    configureApiAccount(TEST_USER_ID);
     await expect(callApi<{ tripId: string }>('trip.create', { name: '青岛之旅' })).resolves.toEqual(
       { tripId: 'trip-1' },
     );
     expect((calls[2]!.data as { requestId: string }).requestId).toBe(firstRequestIds[0]);
-    expect(storage.has('pending-api-writes-v1')).toBe(false);
+    expect(storage.has(PENDING_WRITES_KEY)).toBe(false);
 
     await callApi('trip.create', { name: '青岛之旅' });
     expect((calls[3]!.data as { requestId: string }).requestId).not.toBe(firstRequestIds[0]);
@@ -41,17 +47,18 @@ describe('cloud API transport idempotency', () => {
     const storage = new Map<string, unknown>();
     const callFunction = vi.fn(async (options: { data?: unknown }) => {
       const requestId = (options.data as { requestId: string }).requestId;
-      expect(storage.get('pending-api-writes-v1')).toEqual([
-        expect.objectContaining({ action: 'trip.create', requestId }),
+      expect(storage.get(PENDING_WRITES_KEY)).toEqual([
+        expect.objectContaining({ action: 'trip.create', ownerUserId: TEST_USER_ID, requestId }),
       ]);
       return { result: { ok: true, requestId, data: { tripId: 'trip-1' } } };
     });
     vi.stubGlobal('wx', wxStub(storage, callFunction));
+    configureApiAccount(TEST_USER_ID);
 
     await expect(callApi('trip.create', { name: '杭州之旅' })).resolves.toEqual({
       tripId: 'trip-1',
     });
-    expect(storage.has('pending-api-writes-v1')).toBe(false);
+    expect(storage.has(PENDING_WRITES_KEY)).toBe(false);
   });
 
   it('does not send a write when its identity cannot be stored durably', async () => {
@@ -64,6 +71,7 @@ describe('cloud API transport idempotency', () => {
         throw new Error('storage quota exceeded');
       },
     });
+    configureApiAccount(TEST_USER_ID);
 
     await expect(callApi('trip.create', { name: '安全测试' })).rejects.toMatchObject({
       code: 'LOCAL_IDEMPOTENCY_STORAGE_FAILED',
@@ -83,6 +91,7 @@ describe('cloud API transport idempotency', () => {
       return { result: { ok: true, requestId, data: { tripId: 'trip-1' } } };
     });
     vi.stubGlobal('wx', wxStub(storage, callFunction));
+    configureApiAccount(TEST_USER_ID);
 
     const first = callApi('trip.create', { name: '并发测试' });
     const second = callApi('trip.create', { name: '并发测试' });
@@ -93,18 +102,19 @@ describe('cloud API transport idempotency', () => {
       { tripId: 'trip-1' },
     ]);
     expect(callFunction).toHaveBeenCalledTimes(1);
-    expect(storage.has('pending-api-writes-v1')).toBe(false);
+    expect(storage.has(PENDING_WRITES_KEY)).toBe(false);
   });
 
   it('treats a malformed write response as uncertain but keeps malformed reads ordinary', async () => {
     const storage = new Map<string, unknown>();
     const callFunction = vi.fn(async () => ({ result: null }));
     vi.stubGlobal('wx', wxStub(storage, callFunction));
+    configureApiAccount(TEST_USER_ID);
 
     await expect(
       callApi('trip.create', { name: '测试' }, { transportRetries: 0 }),
     ).rejects.toMatchObject({ code: 'TRANSPORT_RESULT_UNCERTAIN' });
-    expect(storage.has('pending-api-writes-v1')).toBe(true);
+    expect(storage.has(PENDING_WRITES_KEY)).toBe(true);
 
     await expect(callApi('trip.list', {}, { transportRetries: 0 })).rejects.toThrow(
       '服务器返回了无法识别的数据',
@@ -115,11 +125,12 @@ describe('cloud API transport idempotency', () => {
     const now = Date.now();
     const storage = new Map<string, unknown>([
       [
-        'pending-api-writes-v1',
+        PENDING_WRITES_KEY,
         [
           {
             action: 'trip.create',
             createdAt: now - 23 * 60 * 60 * 1000,
+            ownerUserId: TEST_USER_ID,
             payload: '{"name":"测试"}',
             requestId: 'old-request-id',
           },
@@ -131,6 +142,7 @@ describe('cloud API transport idempotency', () => {
       return { result: { ok: true, requestId: `${requestId}-wrong`, data: null } };
     });
     vi.stubGlobal('wx', wxStub(storage, callFunction));
+    configureApiAccount(TEST_USER_ID);
 
     await expect(callApi('trip.create', { name: '测试' })).rejects.toMatchObject({
       code: 'STALE_UNCERTAIN_WRITE',
@@ -150,6 +162,7 @@ describe('cloud API transport idempotency', () => {
       throw new Error('offline');
     });
     vi.stubGlobal('wx', wxStub(storage, callFunction));
+    configureApiAccount(TEST_USER_ID);
 
     await expect(
       callApi('trip.addBill', { title: '早餐' }, { transportRetries: 0 }),
@@ -172,6 +185,7 @@ describe('cloud API transport idempotency', () => {
       throw new Error('timeout');
     });
     vi.stubGlobal('wx', wxStub(storage, callFunction));
+    configureApiAccount(TEST_USER_ID);
 
     await expect(
       callApi(
@@ -183,6 +197,7 @@ describe('cloud API transport idempotency', () => {
       ),
     ).rejects.toMatchObject({ code: 'TRANSPORT_RESULT_UNCERTAIN' });
     resetPendingWritesForTest();
+    configureApiAccount(TEST_USER_ID);
     await expect(
       callApi(
         'trip.updateBill',
@@ -202,6 +217,7 @@ describe('cloud API transport idempotency', () => {
       throw new Error('timeout');
     });
     vi.stubGlobal('wx', wxStub(storage, callFunction));
+    configureApiAccount(TEST_USER_ID);
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-17T00:00:00.000Z'));
 
@@ -226,11 +242,12 @@ describe('cloud API transport idempotency', () => {
   it('does not let a caller replace the id of an unresolved matching write', async () => {
     const storage = new Map<string, unknown>([
       [
-        'pending-api-writes-v1',
+        PENDING_WRITES_KEY,
         [
           {
             action: 'trip.create',
             createdAt: Date.now(),
+            ownerUserId: TEST_USER_ID,
             payload: '{"name":"测试"}',
             requestId: 'original-request-id',
           },
@@ -244,6 +261,7 @@ describe('cloud API transport idempotency', () => {
       throw new Error('timeout');
     });
     vi.stubGlobal('wx', wxStub(storage, callFunction));
+    configureApiAccount(TEST_USER_ID);
 
     await expect(
       callApi(
@@ -278,6 +296,7 @@ describe('cloud API transport idempotency', () => {
       };
     });
     vi.stubGlobal('wx', wxStub(storage, callFunction));
+    configureApiAccount(TEST_USER_ID);
 
     await expect(
       callApi('trip.create', { name: '测试' }, { transportRetries: 0 }),
@@ -293,7 +312,91 @@ describe('cloud API transport idempotency', () => {
       callApi('trip.create', { name: '测试' }, { transportRetries: 0 }),
     ).rejects.toMatchObject({ code: 'REQUEST_INVALID' });
     expect(requestIds[2]).toBe(requestIds[0]);
-    expect(storage.has('pending-api-writes-v1')).toBe(false);
+    expect(storage.has(PENDING_WRITES_KEY)).toBe(false);
+  });
+
+  it('rejects write commands until a local account has been established', async () => {
+    const storage = new Map<string, unknown>();
+    const callFunction = vi.fn(async () => ({ result: null }));
+    vi.stubGlobal('wx', wxStub(storage, callFunction));
+
+    await expect(callApi('trip.create', { name: '未登录写入' })).rejects.toMatchObject({
+      code: 'LOCAL_SESSION_REQUIRED',
+    });
+    expect(callFunction).not.toHaveBeenCalled();
+    expect(storage.has(PENDING_WRITES_KEY)).toBe(false);
+  });
+
+  it('rejects non-bootstrap reads when a durable signed-out marker survives an app restart', async () => {
+    const storage = new Map<string, unknown>([['local-session-signed-out-v1', true]]);
+    const callFunction = vi.fn(async () => ({ result: null }));
+    vi.stubGlobal('wx', wxStub(storage, callFunction));
+
+    await expect(callApi('trip.list')).rejects.toMatchObject({ code: 'LOCAL_SESSION_REQUIRED' });
+    expect(callFunction).not.toHaveBeenCalled();
+  });
+
+  it('never reuses another account pending write after an account switch', async () => {
+    const storage = new Map<string, unknown>();
+    const requestIds: string[] = [];
+    const callFunction = vi.fn(async (options: { data?: unknown }) => {
+      requestIds.push((options.data as { requestId: string }).requestId);
+      throw new Error('timeout');
+    });
+    vi.stubGlobal('wx', wxStub(storage, callFunction));
+    configureApiAccount(TEST_USER_ID);
+
+    await expect(
+      callApi('trip.create', { name: '同名行程' }, { transportRetries: 0 }),
+    ).rejects.toMatchObject({ code: 'TRANSPORT_RESULT_UNCERTAIN' });
+    configureApiAccount(SECOND_TEST_USER_ID);
+    await expect(
+      callApi('trip.create', { name: '同名行程' }, { transportRetries: 0 }),
+    ).rejects.toMatchObject({ code: 'TRANSPORT_RESULT_UNCERTAIN' });
+
+    expect(requestIds[1]).not.toBe(requestIds[0]);
+    expect(storage.get(PENDING_WRITES_KEY)).toEqual([
+      expect.objectContaining({ ownerUserId: SECOND_TEST_USER_ID, requestId: requestIds[1] }),
+    ]);
+  });
+
+  it('does not let a late response from the previous account settle the new account state', async () => {
+    const storage = new Map<string, unknown>();
+    let resolveCall!: (value: unknown) => void;
+    const response = new Promise<unknown>((resolve) => {
+      resolveCall = resolve;
+    });
+    const callFunction = vi.fn(async (_options: { data?: unknown }) => response);
+    vi.stubGlobal('wx', wxStub(storage, callFunction));
+    configureApiAccount(TEST_USER_ID);
+
+    const pending = callApi('trip.create', { name: '迟到响应' }, { transportRetries: 0 });
+    await vi.waitFor(() => expect(callFunction).toHaveBeenCalledTimes(1));
+    const requestId = (callFunction.mock.calls[0]![0].data as { requestId: string }).requestId;
+    configureApiAccount(SECOND_TEST_USER_ID);
+    resolveCall({ result: { ok: true, requestId, data: { tripId: 'trip-old' } } });
+
+    await expect(pending).rejects.toMatchObject({ code: 'LOCAL_SESSION_CHANGED' });
+    expect(storage.has(PENDING_WRITES_KEY)).toBe(false);
+  });
+
+  it('rejects a late read response after the local account changes', async () => {
+    const storage = new Map<string, unknown>();
+    let resolveCall!: (value: unknown) => void;
+    const response = new Promise<unknown>((resolve) => {
+      resolveCall = resolve;
+    });
+    const callFunction = vi.fn(async (_options: { data?: unknown }) => response);
+    vi.stubGlobal('wx', wxStub(storage, callFunction));
+    configureApiAccount(TEST_USER_ID);
+
+    const pending = callApi('trip.list');
+    await vi.waitFor(() => expect(callFunction).toHaveBeenCalledTimes(1));
+    const requestId = (callFunction.mock.calls[0]![0].data as { requestId: string }).requestId;
+    configureApiAccount(SECOND_TEST_USER_ID);
+    resolveCall({ result: { ok: true, requestId, data: [] } });
+
+    await expect(pending).rejects.toMatchObject({ code: 'LOCAL_SESSION_CHANGED' });
   });
 });
 
@@ -310,6 +413,6 @@ function wxStub(
 }
 
 function pendingCreatedAt(storage: Map<string, unknown>): number {
-  const stored = storage.get('pending-api-writes-v1') as Array<{ createdAt: number }>;
+  const stored = storage.get(PENDING_WRITES_KEY) as Array<{ createdAt: number }>;
   return stored[0]!.createdAt;
 }

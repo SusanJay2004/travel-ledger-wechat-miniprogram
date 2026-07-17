@@ -414,6 +414,37 @@ describe('LedgerService solo flow', () => {
     await expect(service.getTrip(user.id, trip.id)).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 
+  it('fails closed when an archived member has a missing or malformed expiry', async () => {
+    const trip = await service.createTrip(user, { name: '损坏归档期限' });
+    const completed = await service.completeTrip(user.id, {
+      tripId: trip.id,
+      expectedVersion: trip.version,
+      ignoreInvalidBills: false,
+    });
+    const archived = await service.archiveTrip(user.id, {
+      tripId: trip.id,
+      expectedVersion: completed.version,
+    });
+
+    for (const purgeAfter of [null, 'not-a-date']) {
+      const current = (await repository.getTrip(trip.id))!;
+      await repository.replaceTrip(
+        {
+          ...current,
+          members: current.members.map((member) => ({ ...member, purgeAfter })),
+          version: current.version + 1,
+        },
+        current.version,
+      );
+      await expect(service.getTrip(user.id, trip.id)).rejects.toMatchObject({
+        code: 'TRIP_RESTORE_EXPIRED',
+      });
+    }
+
+    expect(await service.listArchivedTrips(user.id)).toEqual([]);
+    expect((await repository.getTrip(trip.id))?.version).toBe(archived.version + 2);
+  });
+
   it('rejects stale writes without overwriting current data', async () => {
     const trip = await service.createTrip(user, { name: '并发之旅' });
     await service.addDate(user.id, {

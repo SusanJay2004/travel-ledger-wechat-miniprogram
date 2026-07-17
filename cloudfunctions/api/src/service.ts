@@ -992,9 +992,10 @@ function memberFor(trip: TripDocument, userId: string): TripMemberDocument {
 }
 
 function isExpiredArchive(member: TripMemberDocument, now: Date): boolean {
-  if (member.viewState !== 'archived' || member.purgeAfter === null) return false;
+  if (member.viewState !== 'archived') return false;
+  if (member.purgeAfter === null) return true;
   const purgeAfter = new Date(member.purgeAfter).getTime();
-  return Number.isFinite(purgeAfter) && purgeAfter <= now.getTime();
+  return !Number.isFinite(purgeAfter) || purgeAfter <= now.getTime();
 }
 
 function activeBills(trip: TripDocument) {

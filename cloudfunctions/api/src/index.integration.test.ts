@@ -28,8 +28,18 @@ describe('cloud API command integration', () => {
     const bootstrap = await command(cloud.sdk, 'session.bootstrap', {}, 'request-boot');
     expect(bootstrap.ok).toBe(true);
     const created = await command(cloud.sdk, 'trip.create', { name: '青岛之旅' }, 'request-create');
-    const replay = await command(cloud.sdk, 'trip.create', { name: '其他名字' }, 'request-create');
+    const replay = await command(cloud.sdk, 'trip.create', { name: '青岛之旅' }, 'request-create');
     expect(replay).toEqual(created);
+    const changedPayload = await command(
+      cloud.sdk,
+      'trip.create',
+      { name: '其他名字' },
+      'request-create',
+    );
+    expect(changedPayload).toMatchObject({
+      ok: false,
+      error: { code: 'REQUEST_ID_REUSED' },
+    });
     expect(cloud.database.documents('trips')).toHaveLength(1);
     const createdData = successData(created) as {
       tripId: string;

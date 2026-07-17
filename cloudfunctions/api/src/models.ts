@@ -132,6 +132,7 @@ export interface IdempotencyRecordDocument {
   ownerOpenId: string;
   requestId: string;
   action: string;
+  payloadHash: string;
   status: 'processing' | 'completed' | 'failed';
   response: unknown;
   error: {

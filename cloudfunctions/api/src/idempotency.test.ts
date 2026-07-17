@@ -91,8 +91,20 @@ describe('IdempotencyService', () => {
     let calls = 0;
     const operation = async () => ({ tripId: `trip-${++calls}` });
 
-    const first = await service.execute('openid-alice', 'request-123', 'trip.create', operation);
-    const replay = await service.execute('openid-alice', 'request-123', 'trip.create', operation);
+    const first = await service.execute(
+      'openid-alice',
+      'request-123',
+      'trip.create',
+      { name: '青岛', options: { year: 2026, note: undefined } },
+      operation,
+    );
+    const replay = await service.execute(
+      'openid-alice',
+      'request-123',
+      'trip.create',
+      { options: { year: 2026 }, name: '青岛' },
+      operation,
+    );
 
     expect(first).toEqual({ tripId: 'trip-1' });
     expect(replay).toEqual(first);
@@ -108,10 +120,10 @@ describe('IdempotencyService', () => {
     };
 
     await expect(
-      service.execute('openid-alice', 'request-456', 'trip.create', operation),
+      service.execute('openid-alice', 'request-456', 'trip.create', { name: '青岛' }, operation),
     ).rejects.toMatchObject({ code: 'TRIP_NAME_INVALID' });
     await expect(
-      service.execute('openid-alice', 'request-456', 'trip.create', operation),
+      service.execute('openid-alice', 'request-456', 'trip.create', { name: '青岛' }, operation),
     ).rejects.toMatchObject({ code: 'TRIP_NAME_INVALID' });
     expect(calls).toBe(1);
   });
@@ -124,12 +136,60 @@ describe('IdempotencyService', () => {
     const operation = async () => ++calls;
 
     await expect(
-      service.execute('openid-alice', 'request-789', 'trip.create', operation),
+      service.execute('openid-alice', 'request-789', 'trip.create', { name: '青岛' }, operation),
     ).rejects.toMatchObject({ code: 'REQUEST_RESULT_UNCERTAIN' });
     await expect(
-      service.execute('openid-alice', 'request-789', 'trip.create', operation),
+      service.execute('openid-alice', 'request-789', 'trip.create', { name: '青岛' }, operation),
     ).rejects.toMatchObject({ code: 'REQUEST_IN_PROGRESS' });
     expect(calls).toBe(1);
+  });
+
+  it('rejects reuse of an id for different content even when the action is unchanged', async () => {
+    const service = new IdempotencyService(new MemoryCloudDatabase(), new TestClock());
+    let calls = 0;
+    const operation = async () => ++calls;
+
+    await expect(
+      service.execute(
+        'openid-alice',
+        'request-content',
+        'trip.create',
+        { name: '青岛' },
+        operation,
+      ),
+    ).resolves.toBe(1);
+    await expect(
+      service.execute(
+        'openid-alice',
+        'request-content',
+        'trip.create',
+        { name: '北京' },
+        operation,
+      ),
+    ).rejects.toMatchObject({ code: 'REQUEST_ID_REUSED' });
+    expect(calls).toBe(1);
+  });
+
+  it('preserves array order when fingerprinting a write payload', async () => {
+    const service = new IdempotencyService(new MemoryCloudDatabase(), new TestClock());
+    const operation = async () => 'saved';
+
+    await service.execute(
+      'openid-alice',
+      'request-array-order',
+      'trip.updateBill',
+      { participantIds: ['alice', 'bob'] },
+      operation,
+    );
+    await expect(
+      service.execute(
+        'openid-alice',
+        'request-array-order',
+        'trip.updateBill',
+        { participantIds: ['bob', 'alice'] },
+        operation,
+      ),
+    ).rejects.toMatchObject({ code: 'REQUEST_ID_REUSED' });
   });
 });
 

@@ -128,7 +128,7 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
     await rateLimiter.consume(openId, requestId, action);
     const existingUser = await repository.findUserByOpenId(openId);
     if (action === 'session.deleteAccount' && existingUser === null) {
-      await idempotency.execute(openId, requestId, action, async () => null);
+      await idempotency.execute(openId, requestId, action, event.payload, async () => null);
       return success(requestId, null);
     }
     const user =
@@ -137,7 +137,7 @@ export async function handleApiEvent(event: ApiEvent, sdk: CloudSdk): Promise<un
         : await service.bootstrapSession(openId);
     const write = <T>(operation: () => Promise<T>) =>
       isWriteAction(action)
-        ? idempotency.execute(openId, requestId, action, operation)
+        ? idempotency.execute(openId, requestId, action, event.payload, operation)
         : operation();
     switch (action) {
       case 'session.bootstrap':

@@ -19,13 +19,15 @@ export class IdempotencyService {
     ownerOpenId: string,
     requestId: string,
     action: string,
+    payload: unknown,
     operation: () => Promise<T>,
   ): Promise<T> {
     validateRequestId(requestId);
+    const payloadHash = hashPayload(payload);
     const id = recordId(ownerOpenId, requestId);
     const collection = this.db.collection<IdempotencyRecordDocument>('idempotency_records');
     const existing = await getRecord(collection, id);
-    if (existing !== null) return resolveExisting<T>(existing, action);
+    if (existing !== null) return resolveExisting<T>(existing, action, payloadHash);
 
     const now = this.clock.now();
     const record: IdempotencyRecordDocument & { _id: string } = {
@@ -34,6 +36,7 @@ export class IdempotencyService {
       ownerOpenId,
       requestId,
       action,
+      payloadHash,
       status: 'processing',
       response: null,
       error: null,
@@ -45,7 +48,7 @@ export class IdempotencyService {
     } catch (error: unknown) {
       if (!isDuplicateError(error)) throw error;
       const raced = await getRecord(collection, id);
-      if (raced !== null) return resolveExisting<T>(raced, action);
+      if (raced !== null) return resolveExisting<T>(raced, action, payloadHash);
       throw error;
     }
 
@@ -131,9 +134,13 @@ async function getRecord(
   }
 }
 
-function resolveExisting<T>(record: IdempotencyRecordDocument, action: string): T {
-  if (record.action !== action) {
-    throw new BusinessError('REQUEST_ID_REUSED', '同一请求标识不能用于不同操作。');
+function resolveExisting<T>(
+  record: IdempotencyRecordDocument,
+  action: string,
+  payloadHash: string,
+): T {
+  if (record.action !== action || record.payloadHash !== payloadHash) {
+    throw new BusinessError('REQUEST_ID_REUSED', '同一请求标识不能用于不同操作或内容。');
   }
   if (record.status === 'failed' && record.error !== null) {
     throw toBusinessError(record.error);
@@ -142,6 +149,22 @@ function resolveExisting<T>(record: IdempotencyRecordDocument, action: string): 
     throw new BusinessError('REQUEST_IN_PROGRESS', '请求正在处理中，请稍后刷新。', true);
   }
   return record.response as T;
+}
+
+function hashPayload(payload: unknown): string {
+  const canonical = JSON.stringify(sortJsonValue(payload)) ?? 'null';
+  return createHash('sha256').update(canonical).digest('hex');
+}
+
+function sortJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortJsonValue);
+  if (typeof value !== 'object' || value === null) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, item]) => item !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => [key, sortJsonValue(item)]),
+  );
 }
 
 function serializeError(error: unknown): NonNullable<IdempotencyRecordDocument['error']> {

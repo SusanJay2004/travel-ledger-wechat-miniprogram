@@ -20,12 +20,16 @@
    - `users.openId`：唯一索引。
    - `users.publicId`：唯一索引。
    - `users.qrSceneToken`：唯一稀疏索引。
+   - `users.pendingAvatarReviewId`：唯一稀疏索引，用于匹配微信 2.0 异步头像审核回调。
+   - `users.pendingAvatarExpiresAt`：普通索引，用于清理超过 35 分钟未回调的候选头像。
    - `users._id + version`：普通组合索引，用于资料和注销的乐观并发更新。
    - `users.status`：普通索引，用于维护任务重试已注销账号的云文件清理。
    - `trips.memberIds`：普通索引。
    - `trips.version`：普通索引，用于乐观并发更新。
 8. 执行 `npm install`、`npm run check` 和 `npm run build`。
-9. 在开发者工具中上传并部署 `cloudfunctions/api`，选择“云端安装依赖”。
+9. 在开发者工具中依次上传并部署 `cloudfunctions/api`、`cloudfunctions/avatar-review`、`cloudfunctions/maintenance` 和 `cloudfunctions/backup`，均选择“云端安装依赖”。
+10. 在“云开发—设置—其他设置—消息推送”把 `wxa_media_check` 事件指向 `avatar-review`；用一张测试头像确认回调能凭未公开的 `trace_id` 命中待审用户，且实际 `SOURCE` 未被函数拒绝。
+11. 为 `maintenance` 配置每天北京时间 03:30 的定时触发器，为 `backup` 配置每天 04:30 的定时触发器；两者必须由官方 `wx_trigger` 来源调用。
 
 当前项目尚无生产数据，用户的 `homeTripCount` 在首次登录时从 0 初始化。若未来从旧版本升级，部署事务容量版本前必须暂停写入，按每个用户 `viewState=home` 的行程数回填并抽样核对，不能直接以 0 覆盖。
 
@@ -35,7 +39,7 @@
 - `MINIPROGRAM_ENV_VERSION=develop|trial|release`：控制个人小程序码落到开发版、体验版或正式版。
 - `CONTENT_SECURITY_MODE=disabled`：只允许本地、无真实用户数据的开发环境临时设置。体验与生产环境必须删除该变量，让文本和头像审核失败关闭。
 
-云函数需要在微信公众平台和云开发中具备内容安全接口、小程序码、云存储读写与删除所需权限。发布前必须用真实开发 AppID 验证这些接口；游客 AppID 无法完成该验证。
+`api` 需要在微信公众平台和云开发中具备 `security.msgSecCheck`、`security.mediaCheckAsync`、`wxacode.getUnlimited` 以及云存储读写与删除所需权限。发布前必须用真实开发 AppID 验证这些接口和 `wxa_media_check` 回调；游客 AppID 无法完成该验证。
 
 ## 常用命令
 

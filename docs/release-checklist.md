@@ -16,12 +16,12 @@
 
 - [x] `npm ci && npm run check && npm run build && npm run cloud:smoke-packages` 通过（2026-07-17，当前检查点：45 个测试文件、304 项测试、四个云函数构建与隔离部署包冷加载成功）。
 - [ ] `npm audit --audit-level=high` 通过，或取得 [依赖安全记录](./dependency-security.md) 所要求的微信/CloudBase 官方处置结论。
-- [x] 最近检查点 `git status` 干净，`npm run security:secrets` 通过，且人工确认无 AppSecret、上传私钥、真实 AppID/环境 ID 和用户数据（2026-07-17，当前待提交扫描 243 个文件；项目配置仍为游客 AppID）。
+- [x] 最近检查点 `git status` 干净，`npm run security:secrets` 通过，且人工确认无 AppSecret、上传私钥、真实 AppID/环境 ID 和用户数据（2026-07-17，提交 `58266e3` 扫描 243 个文件；项目配置仍为游客 AppID）。
 - [x] 四个云函数使用独立 lockfile 和精确生产依赖，隔离执行 `npm ci --omit=dev` 与 SDK 冷加载成功；`security:cloud-locks` 校验 manifest、独立锁与根锁一致（2026-07-17；官方 SDK 上游 high 门禁仍单独保留）。
 - [x] `cloudbaserc.json` 锁定 Nodejs20.19、根入口、内存/超时和触发器；34 个索引覆盖 12 个集合、与部署文档双向校验并锁定 56 个生产查询调用的审计指纹，备份租约严格长于 900 秒平台执行上限（2026-07-17，本地门禁；真云配置仍待核对）。
 - [x] 真实 AppID 与云环境 ID 只写入 Git 忽略的本机项目配置、小程序副本和云部署配置；公开小程序为空环境并失败关闭。受控部署会拒绝非法模式/阶段、体验或生产禁用内容安全、未经确认的协作/生产部署、脏工作区以及部署后四函数配置差异（本地生成器和自动化测试；真实导入/部署仍待完成）。
 - [x] 集合、索引、数据库规则与存储规则具备默认只读的全量漂移检查和受控应用：未知资源在写前阻断，缺失索引只逐个发送 `CreateIndexes` 且绝不发送删除，规则完整覆盖要求独立确认，写后必须回读收敛（本地规划/解析/授权测试；真实云应用与拒绝矩阵仍待完成）。
-- [x] 公开 MIT 仓库已由 `SusanJay2004` 独立拥有并推送；首轮 GitHub Actions `29571833182` 全部通过（2026-07-17）。Actions 使用完整提交 SHA 锁定，Dependabot 每周检查 npm 与工作流依赖。
+- [x] 公开 MIT 仓库已由 `SusanJay2004` 独立拥有并推送；提交 `58266e3` 的 GitHub Actions `29583031074` 全部通过（2026-07-17）。Actions 使用完整提交 SHA 锁定，Dependabot 每周检查 npm 与工作流依赖。
 - [ ] 发布 commit 已打语义化版本标签，并保留上一稳定构建。
 
 ## 云环境（阻断）

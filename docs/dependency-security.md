@@ -4,7 +4,7 @@
 
 ## 当前结论
 
-- 项目使用微信官方 `wx-server-sdk 4.0.2`，这是审计时 npm registry 的最新正式版。
+- 项目使用微信官方 `wx-server-sdk 4.0.2`；2026-07-17 21:14（北京时间）再次查询 npm registry，`latest` 仍为 4.0.2，`beta` 仍为 4.0.3-beta.1。
 - 2026-07-17 再次核对 registry：CloudBase 虽已发布 `@cloudbase/node-sdk 3.18.5` 和 4.0.3，但两者仍固定使用 `axios 0.27.2`；`wx-server-sdk 4.0.2` 又精确固定 3.17.2，因此不能用受支持的小版本更新消除公告。
 - 2026-07-17 15:26（北京时间）发布的 `wx-server-sdk 4.0.3-beta.1` 已改为固定 `@cloudbase/node-sdk 3.18.5`，但后者仍固定 `axios 0.27.2` 和 `@cloudbase/database 1.4.3`；数据库继续固定 `lodash.set 4.3.2`、`lodash.unset 4.5.2`。该 beta 既未解除公告，也不是 npm `latest`，因此不进入生产依赖。
 - 对微信与 CloudBase 两个官方 GitHub 仓库进行只读 issue 搜索，未发现与当前 Axios/Lodash 公告对应的公开处置结论或受支持的覆盖方案；后续仍以 npm 正式版和官方书面回复为准。

@@ -1,4 +1,5 @@
 import { callApi, type SessionProfile } from '../../services/api';
+import { avatarSaveErrorMessage, canDiscardUploadedAvatar } from '../../services/avatar-upload';
 import { getSessionProfile, updateCachedSessionProfile } from '../../services/session';
 
 interface ProfileEditorData {
@@ -91,13 +92,15 @@ Page<ProfileEditorData, ProfileEditorMethods>({
           avatarUrl: uploadedAvatar ?? (this.data.avatarUrl || null),
         });
       } catch (error: unknown) {
-        if (uploadedAvatar !== null) await deleteCloudFile(uploadedAvatar);
+        if (uploadedAvatar !== null && canDiscardUploadedAvatar(error)) {
+          await deleteCloudFile(uploadedAvatar);
+        }
         throw error;
       }
       updateCachedSessionProfile(updated);
       void wx.navigateBack();
     } catch (error: unknown) {
-      this.setData({ errorMessage: toMessage(error), saving: false });
+      this.setData({ errorMessage: avatarSaveErrorMessage(error), saving: false });
     }
   },
 

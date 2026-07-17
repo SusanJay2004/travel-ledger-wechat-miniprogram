@@ -1,4 +1,5 @@
 import { runtimeConfig } from './config/runtime';
+import { cloudEnvironmentId } from './config/cloud';
 import { isLocalSessionSignedOut } from './services/session';
 
 interface TravelLedgerAppOptions {
@@ -10,9 +11,11 @@ App<TravelLedgerAppOptions>({
   onLaunch(options) {
     if (wx.cloud === undefined) {
       console.error('当前微信基础库不支持云开发。');
-      return;
+    } else if (cloudEnvironmentId.length === 0) {
+      console.error('尚未生成本机私有小程序环境配置。');
+    } else {
+      wx.cloud.init({ env: cloudEnvironmentId, traceUser: true });
     }
-    wx.cloud.init({ traceUser: true });
     guardPrivacyConsent(options);
   },
 });

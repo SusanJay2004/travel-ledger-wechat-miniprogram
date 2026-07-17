@@ -16,6 +16,15 @@ describe('cloud client security rules', () => {
     readFileSync(resolve('config/cloud-storage-rules.json'), 'utf8'),
   ) as Rule;
 
+  it('keeps the public mini program fail-closed until an ignored environment copy is prepared', () => {
+    const cloudConfig = readFileSync(resolve('miniprogram/config/cloud.ts'), 'utf8');
+    const app = readFileSync(resolve('miniprogram/app.ts'), 'utf8');
+    expect(cloudConfig).toMatch(/cloudEnvironmentId\s*=\s*''/);
+    expect(cloudConfig).not.toMatch(/\bwx[a-z0-9]{16}\b/);
+    expect(app).toContain('wx.cloud.init({ env: cloudEnvironmentId, traceUser: true })');
+    expect(app).toContain('cloudEnvironmentId.length === 0');
+  });
+
   it('keeps every authoritative collection private except owner-checked sync signals', () => {
     expect(Object.keys(databaseRules).sort()).toEqual(
       [

@@ -71,7 +71,7 @@
 ## 云函数
 
 1. 在根目录执行 `npm ci && npm run check && npm run build && npm run cloud:smoke-packages`；最后一项会在四个隔离临时目录中按真实上传清单执行生产依赖安装和根入口冷加载，完成后校验边界并自动清理。
-2. `cloudbaserc.json` 是不含真实环境 ID 的公开部署模板：四个函数锁定 `Nodejs20.19`、根入口 `index.main`、云端安装依赖及内存/超时；其中 `maintenance`、`backup` 均为 512MB/900 秒。用本机环境变量 `CLOUDBASE_ENV_ID` 注入目标环境，不把值写进 Git；执行 `npm run security:cloud-config` 后用固定版本的 CloudBase CLI 部署。若改用微信开发者工具，必须在“更多设置”逐项配成相同值并在部署后核对函数信息。
+2. `cloudbaserc.json` 是不含真实环境 ID 和运行模式变量的公开部署模板：四个函数锁定 `Nodejs20.19`、根入口 `index.main`、云端安装依赖及内存/超时；其中 `maintenance`、`backup` 均为 512MB/900 秒。部署前用下一节的命令从本机环境变量生成被 Git 忽略的 `cloudbaserc.private.json`。该私有配置会声明 `api` 的完整环境变量集合；CloudBase CLI 部署时会**完整覆盖而非合并**函数环境变量，所以生成器会拒绝未知变量、危险的内容安全组合、未经确认的协作模式和未经二次确认的生产部署。若改用微信开发者工具，必须在“更多设置”逐项配成相同值并在部署后核对函数信息。
 3. 部署 `api`、`avatar-review`、`maintenance`、`backup`；每个函数必须上传根入口 `index.js`、`dist/index.js`、本目录 `package.json` 与独立 `package-lock.json`。不得删除 lockfile、上传 `src/` 替代构建产物或改用“更新到最新依赖”。
 4. `api` 配置 `security.msgSecCheck`、`security.mediaCheckAsync`、`wxacode.getUnlimited` 权限。
 5. 在“云开发—设置—其他设置—消息推送”新增事件类型 `wxa_media_check`，目标函数选择 `avatar-review`；部署后用真实头像验证回调日志与 `trace_id` 匹配。该函数拒绝小程序、开发者工具、HTTP 与云函数主动调用来源。
@@ -79,15 +79,44 @@
 7. 开发环境可设置 `CONTENT_SECURITY_MODE=disabled`；体验和生产必须删除该变量。
 8. 根据发布门禁设置 `PRODUCT_MODE=solo` 或 `collaboration`；`MINIPROGRAM_ENV_VERSION` 与当前开发/体验/正式版一致。
 
-PowerShell 部署命令（尖括号内容只在本机填写，禁止提交）：
+PowerShell 私有配置与部署命令（尖括号内容只在本机填写，禁止提交）：
 
 ```powershell
+$env:MINIPROGRAM_APP_ID='<private-real-appid>'
 $env:CLOUDBASE_ENV_ID='<private-environment-id>'
-npx --yes --package @cloudbase/cli@3.6.3 tcb fn deploy --all
-npx --yes --package @cloudbase/cli@3.6.3 tcb config diff fn --all -e $env:CLOUDBASE_ENV_ID
+$env:CLOUD_DEPLOYMENT_STAGE='development'
+$env:PRODUCT_MODE='solo'
+$env:MINIPROGRAM_ENV_VERSION='develop'
+# 只有无真实用户数据的开发环境确有需要时才设置下一行；通常保持未设置：
+# $env:CONTENT_SECURITY_MODE='disabled'
+npm run cloud:config:prepare
+npm run cloud:config:check
+
+# 打开 cloudbaserc.private.json 人工确认目标后，才执行真实云端写操作：
+$env:CONFIRM_CLOUD_DEPLOY='DEPLOY_REVIEWED_PRIVATE_CONFIG'
+npm run cloud:deploy
 ```
 
-部署结束后关闭当前终端，或执行 `Remove-Item Env:CLOUDBASE_ENV_ID`。官方能力依据：[CloudBase CLI 云函数配置](https://docs.cloudbase.net/cli-v1/functions/configs)、[云函数运行时](https://docs.cloudbase.net/cloud-function/runtime-support)和[基础配置](https://docs.cloudbase.net/cloud-function/function-configuration/config)。
+`cloud:config:prepare` 会同时生成三类 Git 忽略文件：声明真实 AppID 和私有源码根的 `project.private.config.json`、显式绑定目标环境的 `miniprogram-private/` 小程序副本，以及包含完整四函数规格和运行变量的 `cloudbaserc.private.json`。公开 `miniprogram/config/cloud.ts` 始终保留空环境 ID 并失败关闭，不能直接作为真实项目上传。
+
+`cloud:deploy` 会先要求工作区干净并重新执行依赖安装、完整检查、构建、四部署包演练、critical 审计和差异检查，然后才用固定 CloudBase CLI 3.6.3 部署。部署后它会解析 JSON 差异并要求四个函数全部为 `unchanged`；CloudBase CLI 仅退出 0 不算配置一致。首次部署时非 `api` 函数自然没有运行变量；若已有函数残留未知变量，CLI 的空对象不会主动清除它们，差异检查会失败，必须在云控制台人工清除并重新核验，不能静默保留。该结果仍不等同于真实烟测通过。部署结束后删除私有配置并关闭当前终端，或至少执行：
+
+```powershell
+Remove-Item -LiteralPath cloudbaserc.private.json
+Remove-Item -LiteralPath miniprogram-private -Recurse
+Remove-Item -LiteralPath project.private.config.json
+Remove-Item Env:MINIPROGRAM_APP_ID
+Remove-Item Env:CLOUDBASE_ENV_ID
+Remove-Item Env:CLOUD_DEPLOYMENT_STAGE
+Remove-Item Env:PRODUCT_MODE
+Remove-Item Env:MINIPROGRAM_ENV_VERSION
+Remove-Item Env:CONTENT_SECURITY_MODE -ErrorAction SilentlyContinue
+Remove-Item Env:CONFIRM_CLOUD_DEPLOY
+```
+
+若 `project.private.config.json` 中还有需要保留的开发者工具本地设置，不要在工作期间清理它；生成器会保留其他字段并只更新 `appid`、`miniprogramRoot` 和 `srcMiniprogramRoot`。上面的删除步骤适用于部署/验收批次结束且不再需要该本机项目配置时。
+
+协作模式还必须在生成和部署两个阶段设置 `ALLOW_COLLABORATION_DEPLOY=I_HAVE_PLATFORM_APPROVAL`；生产环境还必须设置 `ALLOW_PRODUCTION_DEPLOY=PRODUCTION_ENV_REVIEWED`。这些确认值不是平台许可的替代品，只用于防止误操作。官方能力依据：[CloudBase CLI 云函数配置](https://docs.cloudbase.net/cli-v1/functions/configs)、[云函数运行时](https://docs.cloudbase.net/cloud-function/runtime-support)和[基础配置](https://docs.cloudbase.net/cloud-function/function-configuration/config)。
 
 ## 云存储
 

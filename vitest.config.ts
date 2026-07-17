@@ -10,6 +10,7 @@ export default defineConfig({
       'packages/**/*.test.ts',
       'cloudfunctions/**/*.test.ts',
       'miniprogram/services/**/*.test.ts',
+      'scripts/**/*.test.mjs',
     ],
   },
 });

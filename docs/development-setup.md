@@ -12,8 +12,8 @@
 
 1. 在微信公众平台注册个人小程序，取得开发用 AppID。
 2. 打开微信开发者工具并扫码登录，导入本仓库根目录。
-3. 将开发者工具生成的 `project.private.config.json` 保留在本机；不要提交。
-4. 在项目设置中填写真实 AppID。仓库中的 `project.config.json` 使用游客 AppID，防止公开真实配置。
+3. 将开发者工具生成的 `project.private.config.json` 保留在本机；不要提交。部署准备命令会保留其中其他本地设置，并把 `appid`、`miniprogramRoot`、`srcMiniprogramRoot` 更新为本机真实项目和 Git 忽略的私有小程序副本。
+4. 真实 AppID 只通过本机 `MINIPROGRAM_APP_ID` 提供给 `npm run cloud:config:prepare`，不要写入公开配置、聊天记录或日志。仓库中的 `project.config.json` 使用游客 AppID，公开 `miniprogram/config/cloud.ts` 使用空环境 ID 并失败关闭；真实环境 ID 只写入 `miniprogram-private/`。
 5. 开通云开发，创建一个开发环境。生产发布时另建生产环境。
 6. 按 [cloud-database.md](./cloud-database.md) 创建完整集合、索引和安全规则。除 `sync_events` 的用户自有读取规则外，客户端均不可直接读写权威集合。
 7. 严格按 [云开发部署清单](./cloud-deployment-manifest.md) 的完整表建立索引；下列只是首次登录与头像审核最关键的子集，不能替代完整表：
@@ -27,7 +27,7 @@
    - `trips.memberIds + _id`：普通组合索引，用于普通成员查询和注销恢复的游标分页。
    - `_id` 是平台自动提供的唯一主键索引；精确 `_id + version` 条件不再创建冗余组合索引。
 8. 执行 `npm install`、`npm run check` 和 `npm run build`。
-9. 优先按 `cloudbaserc.json` 用固定版本 CloudBase CLI 依次部署 `api`、`avatar-review`、`maintenance` 和 `backup`；真实环境 ID 只通过本机 `CLOUDBASE_ENV_ID` 注入。若改用开发者工具，逐项照模板设置运行时、内存和超时。确认上传包同时含 `index.js`、`dist/index.js`、`package.json`、独立 `package-lock.json`，部署日志解析到 `wx-server-sdk 4.0.2`，且没有缺少 `ws` 的警告。
+9. 优先按 [云开发部署清单](./cloud-deployment-manifest.md) 用 `npm run cloud:config:prepare` 生成被 Git 忽略的 `cloudbaserc.private.json`，人工确认目标后再用 `npm run cloud:deploy` 依次部署 `api`、`avatar-review`、`maintenance` 和 `backup`。真实环境 ID 和运行模式只进入本机私有配置；禁止直接用公开模板部署。若改用开发者工具，逐项照模板设置运行时、内存、超时和 `api` 的完整环境变量集合。确认上传包同时含 `index.js`、`dist/index.js`、`package.json`、独立 `package-lock.json`，部署日志解析到 `wx-server-sdk 4.0.2`，且没有缺少 `ws` 的警告。
 10. 在“云开发—设置—其他设置—消息推送”把 `wxa_media_check` 事件指向 `avatar-review`；用一张测试头像确认回调能凭未公开的 `trace_id` 命中待审用户，且实际 `SOURCE` 未被函数拒绝。
 11. 为 `maintenance` 配置每天北京时间 03:30 的定时触发器，为 `backup` 配置每天 04:30 的定时触发器；两者必须由官方 `wx_trigger` 来源调用。
 12. 部署后读取四个函数信息并逐项比对 `cloudbaserc.json`；特别确认 `maintenance` 与 `backup` 为 `Nodejs20.19`、512MB、900 秒，实际入口为 `index.main`，且两个 Cron 只各存在一个。

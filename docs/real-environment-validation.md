@@ -31,8 +31,8 @@ Android 设备 / 系统 / 微信：
 
 1. 核对开发与生产是两个独立环境；截图只保留环境别名，公开摘要不得写环境 ID。
 2. 按 `cloud-deployment-manifest.md` 创建全部集合、唯一/组合索引、数据库规则和云存储规则。
-3. 按 `cloudbaserc.json` 部署 `api`、`avatar-review`、`maintenance`、`backup`，确认云端安装依赖成功；记录每个函数的部署时间、版本、运行时、入口、内存和超时。特别确认备份/维护为 `Nodejs20.19`、512MB、900 秒，上传包含根入口、构建产物和独立 lockfile。
-4. 配置 `PRODUCT_MODE`、`MINIPROGRAM_ENV_VERSION`；体验/生产不得存在 `CONTENT_SECURITY_MODE=disabled`。
+3. 按 `cloud-deployment-manifest.md` 生成并人工确认本机 `project.private.config.json`、`miniprogram-private/` 和 `cloudbaserc.private.json`。确认开发者工具实际加载私有源码根，`wx.cloud.init` 显式指向本批次环境，再通过受控部署命令部署 `api`、`avatar-review`、`maintenance`、`backup`。确认云端安装依赖成功；记录每个函数的部署时间、版本、运行时、入口、内存和超时。特别确认备份/维护为 `Nodejs20.19`、512MB、900 秒，上传包含根入口、构建产物和独立 lockfile。私有配置和 CLI 原始输出只留在私有证据目录，不进入 Git。
+4. 从真实云端重新读取并核对 `api` 的完整环境变量集合：`PRODUCT_MODE`、`MINIPROGRAM_ENV_VERSION`、`CLOUD_DEPLOYMENT_STAGE`；体验/生产不得存在 `CONTENT_SECURITY_MODE=disabled`，也不得存在未登记变量。CloudBase CLI 对环境变量采用完整覆盖语义，不能把“部署成功”当成变量正确的证据。
 5. 把 `wxa_media_check` 消息推送指向 `avatar-review`。先确认客户端云存储读写均被拒绝，再通过页面上传正常 JPG/PNG，确认 CDN 暂存、旧头像审核中继续展示、回调通过后才切换；记录真实回调 `SOURCE`，验证当前鉴权后再决定是否能改为严格白名单。
 6. 验证非 JPG/PNG、超过 1 MB、其他用户目录文件和客户端越权写权威集合均被拒绝；客户端不能直接读写或删除 `avatars/`、`profile-codes/`、`private-backups/` 中的任何文件，所有暂存与删除只能由授权云函数执行。
 7. 手动触发定时函数的官方测试方式，确认 `maintenance` 与 `backup` 只接受 `wx_trigger`；客户端、开发者工具、HTTP 和其他云函数主动调用均被拒绝。

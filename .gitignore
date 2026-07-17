@@ -8,6 +8,11 @@ test-evidence-private/
 
 # WeChat DevTools private/local configuration
 project.private.config.json
+miniprogram-private/
+.miniprogram-private-staging/
+.miniprogram-private-backup/
+project.private.config.staging.json
+project.private.config.backup.json
 upload.private.key
 private.*.key
 

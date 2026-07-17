@@ -21,6 +21,7 @@
       <view class="profile-name">{{profile.displayName}}</view>
       <view class="profile-id">ID {{profile.publicId}}</view>
       <view class="profile-signature">{{profile.signature}}</view>
+      <view wx:if="{{profile.avatarReviewPending}}" class="profile-review-hint">新头像审核中，当前仍显示原头像</view>
     </view>
     <button class="profile-edit" bindtap="handleEditProfile">编辑</button>
   </view>

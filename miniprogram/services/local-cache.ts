@@ -136,6 +136,7 @@ function isSessionProfile(value: unknown): value is SessionProfile {
     typeof value['displayName'] === 'string' &&
     typeof value['signature'] === 'string' &&
     (value['avatarUrl'] === null || typeof value['avatarUrl'] === 'string') &&
+    typeof value['avatarReviewPending'] === 'boolean' &&
     (value['productMode'] === 'solo' || value['productMode'] === 'collaboration')
   );
 }

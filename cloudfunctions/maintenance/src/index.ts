@@ -61,6 +61,10 @@ interface ExpiringSocialDocument {
 }
 
 interface DeletedUserDocument extends DeletedUserFileRecord {
+  pendingAvatarExpiresAt?: string | null;
+  pendingAvatarFileId?: string | null;
+  pendingAvatarReviewId?: string | null;
+  pendingFileDeletionIds?: readonly string[];
   status: string;
   updatedAt: string;
 }
@@ -102,6 +106,7 @@ export async function main(): Promise<Record<string, number>> {
     conflictsSkipped: 0,
     deletedUserFileCleanupFailures: 0,
     deletedUserFilesRemoved: 0,
+    expiredAvatarReviewsRemoved: 0,
     projectionsRepaired: 0,
     projectionFailures: 0,
   };
@@ -125,6 +130,7 @@ export async function main(): Promise<Record<string, number>> {
   summary.oldSyncEventsRemoved += await removeExpired(db, 'sync_events', 'createdAt', syncCutoff);
   const auditCutoff = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000).toISOString();
   summary.oldAuditLogsRemoved += await removeExpired(db, 'audit_logs', 'createdAt', auditCutoff);
+  summary.expiredAvatarReviewsRemoved += await expireAvatarReviews(db, nowIso);
   const fileCleanup = await retryDeletedUserFileCleanup(db);
   summary.deletedUserFilesRemoved += fileCleanup.removed;
   summary.deletedUserFileCleanupFailures += fileCleanup.failed;
@@ -142,6 +148,50 @@ export async function main(): Promise<Record<string, number>> {
 
   console.info('maintenance-complete', summary);
   return summary;
+}
+
+export async function expireAvatarReviews(db: Database, nowIso: string): Promise<number> {
+  let expired = 0;
+  await visitDocumentsById<DeletedUserDocument>(
+    db,
+    'users',
+    { pendingAvatarExpiresAt: db.command.lt(nowIso) },
+    async (users) => {
+      for (const user of users) {
+        const candidate = user.pendingAvatarFileId;
+        if (
+          typeof candidate !== 'string' ||
+          typeof user.pendingAvatarReviewId !== 'string' ||
+          typeof user.pendingAvatarExpiresAt !== 'string'
+        ) {
+          continue;
+        }
+        const pendingFileDeletionIds = [
+          ...new Set([...(user.pendingFileDeletionIds ?? []), candidate]),
+        ];
+        const updated = await db
+          .collection<DeletedUserDocument>('users')
+          .where({
+            _id: user.id,
+            version: user.version,
+            pendingAvatarReviewId: user.pendingAvatarReviewId,
+            pendingAvatarExpiresAt: user.pendingAvatarExpiresAt,
+          })
+          .update({
+            data: {
+              pendingAvatarFileId: null,
+              pendingAvatarReviewId: null,
+              pendingAvatarExpiresAt: null,
+              pendingFileDeletionIds,
+              updatedAt: nowIso,
+              version: user.version + 1,
+            },
+          });
+        if (updated.stats?.updated === 1) expired += 1;
+      }
+    },
+  );
+  return expired;
 }
 
 export async function maintainTrip(

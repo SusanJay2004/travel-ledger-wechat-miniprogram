@@ -475,7 +475,7 @@ describe('LedgerService solo flow', () => {
     const checkText = vi.fn(async () => undefined);
     const contentSecurity: ContentSecurity = {
       checkText,
-      checkImage: vi.fn(async () => undefined),
+      startImageReview: vi.fn(async () => ({ status: 'pass' as const })),
     };
     const securedService = new LedgerService(
       repository,
@@ -537,6 +537,31 @@ describe('LedgerService solo flow', () => {
     ]);
   });
 
+  it('keeps an asynchronous avatar review intact when only profile text changes', async () => {
+    const pendingAvatar = `cloud://development/avatars/${user.id}/pending.png`;
+    const reviewingUser: UserDocument = {
+      ...user,
+      pendingAvatarFileId: pendingAvatar,
+      pendingAvatarReviewId: 'trace-pending-avatar',
+      pendingAvatarExpiresAt: '2026-07-10T08:35:00.000Z',
+    };
+    await repository.updateUser(reviewingUser, user.version);
+
+    const updated = await service.updateProfile(reviewingUser, {
+      displayName: '只改名字',
+      signature: '继续等待头像审核',
+      avatarUrl: reviewingUser.avatarUrl,
+    });
+
+    expect(updated).toMatchObject({
+      avatarUrl: null,
+      pendingAvatarFileId: pendingAvatar,
+      pendingAvatarReviewId: 'trace-pending-avatar',
+      pendingAvatarExpiresAt: '2026-07-10T08:35:00.000Z',
+      pendingFileDeletionIds: [],
+    });
+  });
+
   it('anonymizes ledger history and permits a fresh account after deletion', async () => {
     const trip = await service.createTrip(user, { name: '注销前行程' });
     const dated = await service.addDate(user.id, {
@@ -563,6 +588,9 @@ describe('LedgerService solo flow', () => {
     });
     const withFiles = {
       ...withAvatar,
+      pendingAvatarFileId: `cloud://development/avatars/${user.id}/pending.png`,
+      pendingAvatarReviewId: 'trace-delete-pending',
+      pendingAvatarExpiresAt: '2026-07-10T08:35:00.000Z',
       qrCodeFileId: `cloud://development/profile-codes/${user.id}/code.png`,
       pendingFileDeletionIds: [`cloud://development/avatars/${user.id}/older.png`],
       version: withAvatar.version + 1,
@@ -575,8 +603,12 @@ describe('LedgerService solo flow', () => {
       pendingFileDeletionIds: [
         `cloud://development/avatars/${user.id}/older.png`,
         `cloud://development/avatars/${user.id}/avatar.png`,
+        `cloud://development/avatars/${user.id}/pending.png`,
         `cloud://development/profile-codes/${user.id}/code.png`,
       ],
+      pendingAvatarFileId: null,
+      pendingAvatarReviewId: null,
+      pendingAvatarExpiresAt: null,
     });
 
     const historical = await repository.getTrip(trip.id);

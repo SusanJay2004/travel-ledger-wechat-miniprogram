@@ -10,6 +10,7 @@ vi.mock('wx-server-sdk', () => ({
 }));
 
 import {
+  expireAvatarReviews,
   maintainTrip,
   visitDocumentsById,
   type Collection,
@@ -345,5 +346,58 @@ describe('maintenance cursor pagination', () => {
 
     expect(visited).toHaveLength(101);
     expect(visited.at(-1)).toBe('trip-100');
+  });
+});
+
+describe('expired avatar review maintenance', () => {
+  it('clears an expired candidate and queues its cloud file for durable deletion', async () => {
+    const database = new MemoryDatabase();
+    database.seed('users', {
+      _id: 'alice',
+      id: 'alice',
+      avatarUrl: 'cloud://env/avatars/alice/current.jpg',
+      pendingAvatarFileId: 'cloud://env/avatars/alice/candidate.jpg',
+      pendingAvatarReviewId: 'trace-expired',
+      pendingAvatarExpiresAt: '2026-08-19T23:59:59.000Z',
+      pendingFileDeletionIds: ['cloud://env/avatars/alice/older.jpg'],
+      status: 'active',
+      updatedAt: '2026-08-19T23:00:00.000Z',
+      version: 4,
+    });
+
+    await expect(expireAvatarReviews(database, now.toISOString())).resolves.toBe(1);
+    expect(database.read<Document>('users', 'alice')).toMatchObject({
+      avatarUrl: 'cloud://env/avatars/alice/current.jpg',
+      pendingAvatarFileId: null,
+      pendingAvatarReviewId: null,
+      pendingAvatarExpiresAt: null,
+      pendingFileDeletionIds: [
+        'cloud://env/avatars/alice/older.jpg',
+        'cloud://env/avatars/alice/candidate.jpg',
+      ],
+      updatedAt: now.toISOString(),
+      version: 5,
+    });
+  });
+
+  it('leaves a future review untouched', async () => {
+    const database = new MemoryDatabase();
+    database.seed('users', {
+      _id: 'alice',
+      id: 'alice',
+      pendingAvatarFileId: 'cloud://env/avatars/alice/candidate.jpg',
+      pendingAvatarReviewId: 'trace-pending',
+      pendingAvatarExpiresAt: '2026-08-20T00:00:01.000Z',
+      pendingFileDeletionIds: [],
+      status: 'active',
+      updatedAt: '2026-08-19T23:00:00.000Z',
+      version: 4,
+    });
+
+    await expect(expireAvatarReviews(database, now.toISOString())).resolves.toBe(0);
+    expect(database.read<Document>('users', 'alice')).toMatchObject({
+      pendingAvatarReviewId: 'trace-pending',
+      version: 4,
+    });
   });
 });

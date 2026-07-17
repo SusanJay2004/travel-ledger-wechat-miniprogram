@@ -36,7 +36,13 @@ export interface CloudSdk {
   init(options: { env: symbol }): void;
   openapi: {
     security: {
-      imgSecCheck(options: { media: { contentType: string; value: Buffer } }): Promise<unknown>;
+      mediaCheckAsync(options: {
+        mediaUrl: string;
+        mediaType: number;
+        openid: string;
+        scene: number;
+        version: number;
+      }): Promise<{ traceId?: string }>;
       msgSecCheck(options: {
         content: string;
         openid: string;
@@ -54,6 +60,9 @@ export interface CloudSdk {
     };
   };
   downloadFile(options: { fileID: string }): Promise<{ fileContent: Buffer }>;
+  getTempFileURL(options: { fileList: string[] }): Promise<{
+    fileList: readonly { fileID: string; tempFileURL: string; status: number }[];
+  }>;
   uploadFile(options: { cloudPath: string; fileContent: Buffer }): Promise<{ fileID: string }>;
 }
 
@@ -508,6 +517,8 @@ function failure(
 function publicProfile(
   user: Awaited<ReturnType<LedgerService['bootstrapSession']>>,
   productMode: 'solo' | 'collaboration',
+  avatarReviewPending = user.pendingAvatarReviewId !== null &&
+    user.pendingAvatarReviewId !== undefined,
 ) {
   return {
     userId: user.id,
@@ -515,6 +526,7 @@ function publicProfile(
     displayName: user.displayName,
     signature: user.signature,
     avatarUrl: user.avatarUrl,
+    avatarReviewPending,
     productMode,
   };
 }

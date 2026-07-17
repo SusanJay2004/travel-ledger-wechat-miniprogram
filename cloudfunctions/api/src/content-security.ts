@@ -2,14 +2,25 @@ import { BusinessError } from './errors';
 
 export interface ContentSecurity {
   checkText(openId: string, scene: number, ...values: string[]): Promise<void>;
-  checkImage(openId: string, fileId: string): Promise<void>;
+  startImageReview(openId: string, fileId: string): Promise<ImageReviewSubmission>;
 }
+
+export type ImageReviewSubmission = { status: 'pass' } | { status: 'pending'; traceId: string };
 
 interface SecurityCloud {
   downloadFile(options: { fileID: string }): Promise<{ fileContent: Buffer }>;
+  getTempFileURL(options: { fileList: string[] }): Promise<{
+    fileList: readonly { fileID: string; tempFileURL: string; status: number }[];
+  }>;
   openapi: {
     security: {
-      imgSecCheck(options: { media: { contentType: string; value: Buffer } }): Promise<unknown>;
+      mediaCheckAsync(options: {
+        mediaUrl: string;
+        mediaType: number;
+        openid: string;
+        scene: number;
+        version: number;
+      }): Promise<{ traceId?: string }>;
       msgSecCheck(options: {
         content: string;
         openid: string;
@@ -59,8 +70,8 @@ export class WechatContentSecurity implements ContentSecurity {
     }
   }
 
-  async checkImage(openId: string, fileId: string): Promise<void> {
-    if (!this.enabled) return;
+  async startImageReview(openId: string, fileId: string): Promise<ImageReviewSubmission> {
+    if (!this.enabled) return { status: 'pass' };
     if (!fileId.startsWith('cloud://')) {
       throw new BusinessError('AVATAR_URL_INVALID', '头像必须来自本小程序云存储。');
     }
@@ -69,20 +80,35 @@ export class WechatContentSecurity implements ContentSecurity {
       if (downloaded.fileContent.byteLength > 1024 * 1024) {
         throw new BusinessError('AVATAR_TOO_LARGE', '头像文件不能超过 1 MB。');
       }
-      await this.cloud.openapi.security.imgSecCheck({
-        media: {
-          contentType: detectImageType(downloaded.fileContent),
-          value: downloaded.fileContent,
-        },
+      detectImageType(downloaded.fileContent);
+      const urls = await this.cloud.getTempFileURL({ fileList: [fileId] });
+      const temporary = urls.fileList.find((item) => item.fileID === fileId);
+      if (temporary?.status !== 0 || !temporary.tempFileURL.startsWith('https://')) {
+        throw new BusinessError(
+          'AVATAR_URL_UNAVAILABLE',
+          '暂时无法提交头像审核，请稍后重试。',
+          true,
+        );
+      }
+      const result = await this.cloud.openapi.security.mediaCheckAsync({
+        mediaUrl: temporary.tempFileURL,
+        mediaType: 2,
+        openid: openId,
+        scene: 1,
+        version: 2,
       });
-      void openId;
+      if (typeof result.traceId !== 'string' || result.traceId.length === 0) {
+        throw new BusinessError(
+          'CONTENT_CHECK_UNAVAILABLE',
+          '头像审核服务暂时不可用，请稍后重试。',
+          true,
+        );
+      }
+      return { status: 'pending', traceId: result.traceId };
     } catch (error: unknown) {
       if (error instanceof BusinessError) throw error;
       const code = errorCode(error);
       console.error('image-security-check-failed', { code });
-      if (code === '87014') {
-        throw new BusinessError('CONTENT_REJECTED', '头像可能不符合平台规范，请更换图片。');
-      }
       throw new BusinessError(
         'CONTENT_CHECK_UNAVAILABLE',
         '头像审核服务暂时不可用，请稍后重试。',
@@ -94,7 +120,7 @@ export class WechatContentSecurity implements ContentSecurity {
 
 const noop: ContentSecurity = {
   checkText: async () => undefined,
-  checkImage: async () => undefined,
+  startImageReview: async () => ({ status: 'pass' }),
 };
 
 export function disabledContentSecurity(): ContentSecurity {
@@ -106,9 +132,7 @@ function detectImageType(buffer: Buffer): string {
   if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
     return 'image/png';
   }
-  const header = buffer.subarray(0, 12).toString('ascii');
-  if (header.startsWith('RIFF') && header.endsWith('WEBP')) return 'image/webp';
-  throw new BusinessError('AVATAR_TYPE_INVALID', '头像仅支持 JPG、PNG 或 WebP。');
+  throw new BusinessError('AVATAR_TYPE_INVALID', '头像仅支持 JPG 或 PNG。');
 }
 
 function errorCode(error: unknown): string {

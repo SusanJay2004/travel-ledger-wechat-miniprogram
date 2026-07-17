@@ -18,6 +18,7 @@
 - `qrCodeFileId`、`qrSceneToken`：协作版个人小程序码文件和 20 位随机不透明场景令牌；二维码不包含公开 ID、内部 ID 或 `OpenID`，云端解析后只返回可申请好友的公开资料。
 - `status`、`version`、`createdAt`、`updatedAt`：生命周期与乐观并发字段。资料、二维码和注销均按 `version` 条件更新，避免并发请求覆盖注销状态。
 - `pendingFileDeletionIds`：换头像或注销时与资料版本原子记录的待删除云文件；API 立即尝试清理，失败由每日维护重试，不能只依赖客户端删除旧文件。
+- `pendingAvatarFileId`、`pendingAvatarReviewId`、`pendingAvatarExpiresAt`：2.0 异步头像审核候选、未公开的微信 `trace_id` 与 35 分钟兜底期限。旧头像在回调明确 `pass` 前继续生效；风险/超时候选进入持久化删除清单。`pendingAvatarReviewId` 使用唯一稀疏索引，`pendingAvatarExpiresAt` 使用普通索引。
 
 唯一索引：`openId`、`publicId`、稀疏 `qrSceneToken`；普通索引：`_id + version`、`status`。
 

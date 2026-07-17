@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { WechatContentSecurity } from './content-security';
 
-function createCloud(options: { suggest?: string; imageError?: unknown } = {}) {
+function createCloud(options: { suggest?: string; mediaError?: unknown; traceId?: string } = {}) {
   const msgSecCheck = vi.fn(async () => ({
     result: {
       suggest: options.suggest ?? 'pass',
@@ -12,20 +12,22 @@ function createCloud(options: { suggest?: string; imageError?: unknown } = {}) {
   return {
     cloud: {
       downloadFile: async () => ({ fileContent: Buffer.from([0xff, 0xd8, 0xff, 0x00]) }),
+      getTempFileURL: async ({ fileList }: { fileList: string[] }) => ({
+        fileList: fileList.map((fileID) => ({
+          fileID,
+          status: 0,
+          tempFileURL: 'https://example.test/avatar.jpg',
+        })),
+      }),
       openapi: {
         security: {
-          imgSecCheck: async () => {
-            if (options.imageError !== undefined) {
-              const error = new Error('image rejected') as Error & { errCode?: number };
-              if (
-                typeof options.imageError === 'object' &&
-                options.imageError !== null &&
-                'errCode' in options.imageError
-              ) {
-                error.errCode = Number(options.imageError.errCode);
-              }
-              throw error;
+          mediaCheckAsync: async () => {
+            if (options.mediaError !== undefined) {
+              throw options.mediaError instanceof Error
+                ? options.mediaError
+                : new Error('media check failed');
             }
+            return { traceId: options.traceId ?? 'trace-123456' };
           },
           msgSecCheck,
         },
@@ -53,23 +55,31 @@ describe('WechatContentSecurity', () => {
     ).rejects.toMatchObject({ code: 'CONTENT_REJECTED' });
   });
 
-  it('requires a supported cloud image and maps risky image errors', async () => {
-    const security = new WechatContentSecurity(createCloud().cloud, true);
+  it('submits a supported cloud image to the asynchronous 2.0 profile scene', async () => {
+    const setup = createCloud();
+    const mediaCheckAsync = vi.spyOn(setup.cloud.openapi.security, 'mediaCheckAsync');
+    const security = new WechatContentSecurity(setup.cloud, true);
     await expect(
-      security.checkImage('openid', 'https://example.com/avatar.jpg'),
+      security.startImageReview('openid', 'https://example.com/avatar.jpg'),
     ).rejects.toMatchObject({ code: 'AVATAR_URL_INVALID' });
-    await expect(security.checkImage('openid', 'cloud://avatar.jpg')).resolves.toBeUndefined();
-    await expect(
-      new WechatContentSecurity(
-        createCloud({ imageError: { errCode: 87014 } }).cloud,
-        true,
-      ).checkImage('openid', 'cloud://avatar.jpg'),
-    ).rejects.toMatchObject({ code: 'CONTENT_REJECTED' });
+    await expect(security.startImageReview('openid', 'cloud://avatar.jpg')).resolves.toEqual({
+      status: 'pending',
+      traceId: 'trace-123456',
+    });
+    expect(mediaCheckAsync).toHaveBeenCalledWith({
+      mediaUrl: 'https://example.test/avatar.jpg',
+      mediaType: 2,
+      openid: 'openid',
+      scene: 1,
+      version: 2,
+    });
   });
 
   it('can be explicitly disabled for local development', async () => {
     const security = new WechatContentSecurity(createCloud({ suggest: 'risky' }).cloud, false);
     await expect(security.checkText('openid', 3, 'anything')).resolves.toBeUndefined();
-    await expect(security.checkImage('openid', 'local-path')).resolves.toBeUndefined();
+    await expect(security.startImageReview('openid', 'local-path')).resolves.toEqual({
+      status: 'pass',
+    });
   });
 });

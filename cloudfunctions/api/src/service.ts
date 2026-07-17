@@ -201,19 +201,43 @@ export class LedgerService {
       '只能使用当前账号上传的头像。',
     );
     await this.contentSecurity.checkText(user.openId, 1, displayName, signature);
-    if (input.avatarUrl !== null && input.avatarUrl !== user.avatarUrl) {
-      await this.contentSecurity.checkImage(user.openId, input.avatarUrl);
-    }
+    const avatarChanged = input.avatarUrl !== user.avatarUrl;
+    const review =
+      avatarChanged && input.avatarUrl !== null
+        ? await this.contentSecurity.startImageReview(user.openId, input.avatarUrl)
+        : { status: 'pass' as const };
+    const now = this.clock.now();
+    const supersededCandidate =
+      avatarChanged && user.pendingAvatarFileId?.startsWith('cloud://') === true
+        ? [user.pendingAvatarFileId]
+        : [];
+    const immediatelyApplied =
+      !avatarChanged || input.avatarUrl === null || review.status === 'pass';
+    const replacedAvatar =
+      immediatelyApplied && avatarChanged && user.avatarUrl?.startsWith('cloud://') === true
+        ? [user.avatarUrl]
+        : [];
     const next: UserDocument = {
       ...user,
       displayName,
       signature,
-      avatarUrl: input.avatarUrl,
-      ...(input.avatarUrl !== user.avatarUrl && user.avatarUrl?.startsWith('cloud://') === true
-        ? { pendingFileDeletionIds: uniqueFileIds(user.pendingFileDeletionIds, [user.avatarUrl]) }
+      avatarUrl: immediatelyApplied ? input.avatarUrl : user.avatarUrl,
+      ...(avatarChanged
+        ? {
+            pendingAvatarFileId: review.status === 'pending' ? input.avatarUrl : null,
+            pendingAvatarReviewId: review.status === 'pending' ? review.traceId : null,
+            pendingAvatarExpiresAt:
+              review.status === 'pending'
+                ? new Date(now.getTime() + 35 * 60 * 1000).toISOString()
+                : null,
+          }
         : {}),
+      pendingFileDeletionIds: uniqueFileIds(user.pendingFileDeletionIds, [
+        ...supersededCandidate,
+        ...replacedAvatar,
+      ]),
       version: user.version + 1,
-      updatedAt: this.clock.now().toISOString(),
+      updatedAt: now.toISOString(),
     };
     const updated = await this.repository.updateUser(next, user.version);
     if (!updated)
@@ -234,6 +258,9 @@ export class LedgerService {
             displayName: '已注销用户',
             signature: DEFAULT_SIGNATURE,
             avatarUrl: null,
+            pendingAvatarFileId: null,
+            pendingAvatarReviewId: null,
+            pendingAvatarExpiresAt: null,
             qrCodeFileId: null,
             qrSceneToken: null,
             pendingFileDeletionIds: accountFileIds(user),
@@ -1076,7 +1103,11 @@ function avatarBelongsToUser(fileId: string, userId: string): boolean {
 }
 
 function accountFileIds(user: UserDocument): readonly string[] {
-  return uniqueFileIds(user.pendingFileDeletionIds, [user.avatarUrl, user.qrCodeFileId]);
+  return uniqueFileIds(user.pendingFileDeletionIds, [
+    user.avatarUrl,
+    user.pendingAvatarFileId,
+    user.qrCodeFileId,
+  ]);
 }
 
 function uniqueFileIds(

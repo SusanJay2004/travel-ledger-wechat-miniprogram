@@ -26,6 +26,8 @@
 | `users`               | 唯一      | `openId ASC`                                |
 | `users`               | 唯一      | `publicId ASC`                              |
 | `users`               | 唯一/稀疏 | `qrSceneToken ASC`                          |
+| `users`               | 唯一/稀疏 | `pendingAvatarReviewId ASC`                 |
+| `users`               | 普通      | `pendingAvatarExpiresAt ASC`                |
 | `users`               | 普通      | `_id ASC, version ASC`                      |
 | `users`               | 普通      | `status ASC`                                |
 | `trips`               | 普通      | `memberIds ASC`                             |
@@ -49,11 +51,12 @@
 ## 云函数
 
 1. 在根目录执行 `npm ci && npm run check && npm run build`。
-2. 部署 `api`、`maintenance`、`backup`，选择云端安装依赖。
-3. `api` 配置 `security.msgSecCheck`、`security.imgSecCheck`、`wxacode.getUnlimited` 权限。
-4. `maintenance` 每天北京时间 03:30 运行；`backup` 每天 04:30 运行。
-5. 开发环境可设置 `CONTENT_SECURITY_MODE=disabled`；体验和生产必须删除该变量。
-6. 根据发布门禁设置 `PRODUCT_MODE=solo` 或 `collaboration`；`MINIPROGRAM_ENV_VERSION` 与当前开发/体验/正式版一致。
+2. 部署 `api`、`avatar-review`、`maintenance`、`backup`，选择云端安装依赖。
+3. `api` 配置 `security.msgSecCheck`、`security.mediaCheckAsync`、`wxacode.getUnlimited` 权限。
+4. 在“云开发—设置—其他设置—消息推送”新增事件类型 `wxa_media_check`，目标函数选择 `avatar-review`；部署后用真实头像验证回调日志与 `trace_id` 匹配。该函数拒绝小程序、开发者工具、HTTP 与云函数主动调用来源。
+5. `maintenance` 每天北京时间 03:30 运行；`backup` 每天 04:30 运行。
+6. 开发环境可设置 `CONTENT_SECURITY_MODE=disabled`；体验和生产必须删除该变量。
+7. 根据发布门禁设置 `PRODUCT_MODE=solo` 或 `collaboration`；`MINIPROGRAM_ENV_VERSION` 与当前开发/体验/正式版一致。
 
 ## 云存储
 

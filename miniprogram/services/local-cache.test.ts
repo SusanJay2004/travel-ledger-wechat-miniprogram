@@ -19,6 +19,7 @@ describe('local read-only cache', () => {
     displayName: '旅人',
     signature: '出发',
     avatarUrl: null,
+    avatarReviewPending: false,
     productMode: 'solo',
   };
 

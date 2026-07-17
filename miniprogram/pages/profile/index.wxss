@@ -86,6 +86,13 @@
   margin-top: 12rpx;
 }
 
+.profile-review-hint {
+  margin-top: 10rpx;
+  color: #9a6518;
+  font-size: 24rpx;
+  line-height: 1.5;
+}
+
 .menu-card {
   margin-top: 28rpx;
   overflow: hidden;

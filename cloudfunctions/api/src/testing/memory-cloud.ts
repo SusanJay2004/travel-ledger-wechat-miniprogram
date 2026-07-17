@@ -75,7 +75,7 @@ export function createMemoryCloudSdk(openId = 'test-openid'): {
     init: () => undefined,
     openapi: {
       security: {
-        imgSecCheck: async () => ({}),
+        mediaCheckAsync: async () => ({ traceId: 'memory-avatar-trace' }),
         msgSecCheck: async () => ({ result: { suggest: 'pass' } }),
       },
       wxacode: {
@@ -83,6 +83,13 @@ export function createMemoryCloudSdk(openId = 'test-openid'): {
       },
     },
     downloadFile: async () => ({ fileContent: Buffer.from([0xff, 0xd8, 0xff, 0x00]) }),
+    getTempFileURL: async ({ fileList }) => ({
+      fileList: fileList.map((fileID) => ({
+        fileID,
+        status: 0,
+        tempFileURL: `https://example.test/${encodeURIComponent(fileID)}`,
+      })),
+    }),
     uploadFile: async ({ cloudPath }) => ({ fileID: `cloud://memory/${cloudPath}` }),
   };
   return { database, deletedFileIds, sdk, setOpenId: (value) => (currentOpenId = value) };

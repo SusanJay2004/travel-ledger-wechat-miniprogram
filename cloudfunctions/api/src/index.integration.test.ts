@@ -69,19 +69,20 @@ describe('cloud API command integration', () => {
     expect(forbidden).toMatchObject({ ok: false, error: { code: 'FORBIDDEN' } });
   });
 
-  it('persists, deletes and clears a replaced avatar before returning the profile', async () => {
+  it('keeps the active avatar while replacing an asynchronous review candidate', async () => {
     const cloud = createMemoryCloudSdk('openid-avatar');
     const bootstrap = await command(cloud.sdk, 'session.bootstrap', {}, 'avatar-bootstrap');
     const profile = successData(bootstrap) as { userId: string; displayName: string };
     const firstAvatar = `cloud://memory/avatars/${profile.userId}/first.jpg`;
     const secondAvatar = `cloud://memory/avatars/${profile.userId}/second.jpg`;
 
-    await command(
+    const first = await command(
       cloud.sdk,
       'session.updateProfile',
       { displayName: profile.displayName, signature: '第一张头像', avatarUrl: firstAvatar },
       'avatar-first',
     );
+    expect(successData(first)).toMatchObject({ avatarReviewPending: true, avatarUrl: null });
     const replaced = await command(
       cloud.sdk,
       'session.updateProfile',
@@ -89,10 +90,12 @@ describe('cloud API command integration', () => {
       'avatar-second',
     );
 
-    expect(successData(replaced)).toMatchObject({ avatarUrl: secondAvatar });
+    expect(successData(replaced)).toMatchObject({ avatarReviewPending: true, avatarUrl: null });
     expect(cloud.deletedFileIds).toEqual([firstAvatar]);
     expect(cloud.database.documents('users')[0]).toMatchObject({
-      avatarUrl: secondAvatar,
+      avatarUrl: null,
+      pendingAvatarFileId: secondAvatar,
+      pendingAvatarReviewId: 'memory-avatar-trace',
       pendingFileDeletionIds: [],
     });
   });
@@ -183,16 +186,41 @@ describe('cloud API command integration', () => {
     process.env['PRODUCT_MODE'] = 'collaboration';
     try {
       const cloud = createMemoryCloudSdk('openid-cleanup');
-      await command(cloud.sdk, 'session.bootstrap', {}, 'cleanup-bootstrap');
+      const bootstrapped = successData(
+        await command(cloud.sdk, 'session.bootstrap', {}, 'cleanup-bootstrap'),
+      ) as { userId: string };
       const generated = await command(cloud.sdk, 'session.qrCode', {}, 'cleanup-qr');
-      const fileId = (successData(generated) as { fileId: string }).fileId;
+      const qrCodeFileId = (successData(generated) as { fileId: string }).fileId;
+      const activeAvatar = `cloud://memory/avatars/${bootstrapped.userId}/active.jpg`;
+      const pendingAvatar = `cloud://memory/avatars/${bootstrapped.userId}/pending.jpg`;
+      const oldAvatar = `cloud://memory/avatars/${bootstrapped.userId}/old.jpg`;
+      const users = cloud.database.collection<Record<string, unknown>>('users');
+      const stored = cloud.database.documents('users')[0]!;
+      await users.doc(bootstrapped.userId).set({
+        data: {
+          ...stored,
+          avatarUrl: activeAvatar,
+          pendingAvatarFileId: pendingAvatar,
+          pendingAvatarReviewId: 'trace-cleanup-pending',
+          pendingAvatarExpiresAt: '2026-07-17T09:00:00.000Z',
+          pendingFileDeletionIds: [oldAvatar],
+          version: Number(stored['version']) + 1,
+        },
+      });
 
       const deleted = await command(cloud.sdk, 'session.deleteAccount', {}, 'cleanup-delete');
 
       expect(deleted).toMatchObject({ ok: true });
-      expect(cloud.deletedFileIds).toContain(fileId);
+      expect(cloud.deletedFileIds).toEqual(
+        expect.arrayContaining([oldAvatar, activeAvatar, pendingAvatar, qrCodeFileId]),
+      );
       expect(cloud.database.documents('users')[0]).toMatchObject({
         status: 'deleted',
+        avatarUrl: null,
+        pendingAvatarFileId: null,
+        pendingAvatarReviewId: null,
+        pendingAvatarExpiresAt: null,
+        qrCodeFileId: null,
         pendingFileDeletionIds: [],
       });
     } finally {

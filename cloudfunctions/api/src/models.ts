@@ -10,6 +10,9 @@ export interface UserDocument {
   displayName: string;
   signature: string;
   avatarUrl: string | null;
+  pendingAvatarFileId?: string | null;
+  pendingAvatarReviewId?: string | null;
+  pendingAvatarExpiresAt?: string | null;
   qrCodeFileId?: string | null;
   qrSceneToken?: string | null;
   pendingFileDeletionIds?: readonly string[];

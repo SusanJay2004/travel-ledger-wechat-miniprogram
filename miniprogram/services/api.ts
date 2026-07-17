@@ -34,6 +34,7 @@ export interface SessionProfile {
   displayName: string;
   signature: string;
   avatarUrl: string | null;
+  avatarReviewPending: boolean;
   productMode: 'solo' | 'collaboration';
 }
 

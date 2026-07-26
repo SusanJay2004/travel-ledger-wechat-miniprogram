@@ -37,9 +37,9 @@
     "esbuild": "^0.28.0",
     "eslint": "^9.30.0",
     "miniprogram-api-typings": "^4.0.0",
-    "prettier": "^3.6.0",
+    "prettier": "^3.9.6",
     "typescript": "^5.8.0",
-    "typescript-eslint": "^8.35.0",
+    "typescript-eslint": "^8.65.0",
     "vitest": "^3.2.0"
   }
 }
